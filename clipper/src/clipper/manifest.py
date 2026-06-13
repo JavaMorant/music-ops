@@ -15,7 +15,7 @@ def format_timestamp(seconds: float) -> str:
 
 def write_manifest(out_dir: Path, source: Path, clips: list[tuple[Path, Segment]]) -> Path:
     path = out_dir / "manifest.csv"
-    with path.open("w", newline="") as f:
+    with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["clip", "source", "source_timestamp", "duration_s", "score"])
         for clip_path, seg in clips:
@@ -42,5 +42,5 @@ def write_captions_stub(out_dir: Path, clips: list[tuple[Path, Segment]]) -> Pat
             "- hashtags: ",
             "",
         ]
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     return path

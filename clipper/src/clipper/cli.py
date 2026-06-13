@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import tempfile
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -19,11 +20,39 @@ app = typer.Typer(
 
 
 def _scored_audio(source: Path):
-    """Extract the audio track (long-file rule) and score it."""
-    typer.echo(f"Extracting audio from {source.name} …")
-    wav = media.extract_audio(source)
-    typer.echo("Scoring energy + onsets …")
-    return score_audio(wav)
+    """Extract the audio track (long-file rule), score it, clean up."""
+    with tempfile.TemporaryDirectory(prefix="clipper-") as tmp:
+        typer.echo(f"Extracting audio from {source.name} …")
+        wav = media.extract_audio(source, Path(tmp))
+        typer.echo("Scoring energy + onsets …")
+        return score_audio(wav)
+
+
+def _fresh_out_dir(out: Optional[Path]) -> Path:
+    """out/<date>/, suffixed with the time if that run already exists."""
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        return out
+    base = Path("out") / datetime.date.today().isoformat()
+    out_dir = base
+    if (out_dir / "manifest.csv").exists():
+        out_dir = base.parent / f"{base.name}-{datetime.datetime.now():%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def _validate_x_offset(frame: tuple[int, int], x_offset: int) -> None:
+    width, height = frame
+    crop_w = round(height * 9 / 16)
+    limit = width - crop_w
+    if not 0 <= x_offset <= limit:
+        typer.secho(
+            f"--x-offset {x_offset} out of range: source is {width}x{height}, "
+            f"crop window is {crop_w}px wide, so offset must be 0..{limit}",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -62,24 +91,25 @@ def cut(
     from .cut import cut_audio_segment, cut_segment  # deferred with the rest
 
     try:
-        is_video = media.has_video_stream(source)
+        frame = media.video_frame_size(source)
+        if frame is not None and x_offset is not None:
+            _validate_x_offset(frame, x_offset)
         scores, _ = _scored_audio(source)
         segments = select_segments(scores, clip_len=length, max_clips=clips, spacing=spacing)
         if not segments:
             typer.secho("No segments found — source too short?", fg="red", err=True)
             raise typer.Exit(1)
 
-        out_dir = out or Path("out") / datetime.date.today().isoformat()
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = _fresh_out_dir(out)
 
         results = []
-        ext = ".mp4" if is_video else source.suffix.lower()
+        ext = ".mp4" if frame is not None else source.suffix.lower()
         for i, seg in enumerate(segments, 1):
             dest = out_dir / f"clip_{i:02d}{ext}"
             typer.echo(
                 f"Cutting clip {i}/{len(segments)} @ {format_timestamp(seg.start)} (score {seg.score:.3f}) …"
             )
-            if is_video:
+            if frame is not None:
                 cut_segment(source, seg, dest, x_offset=x_offset)
             else:
                 cut_audio_segment(source, seg, dest)

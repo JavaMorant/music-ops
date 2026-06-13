@@ -27,19 +27,41 @@ class Segment:
         return self.start + self.duration
 
 
+BLOCK_SECONDS = 600  # score in 10-min blocks: bounds STFT memory on multi-hour sets
+
+
 def score_audio(path: Path) -> tuple[np.ndarray, float]:
-    """Return (per-second score array, total duration in seconds)."""
+    """Return (per-second score array, total duration in seconds).
+
+    Reads the (already mono, 22050 Hz) wav in blocks so peak memory stays
+    flat regardless of set length; normalisation is global across blocks.
+    """
     import librosa  # deferred: heavy import, keeps --help fast
+    import soundfile as sf
 
-    y, sr = librosa.load(path, sr=SAMPLE_RATE, mono=True)
-    rms = librosa.feature.rms(y=y, hop_length=HOP_LENGTH)[0]
-    onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP_LENGTH)
+    info = sf.info(str(path))
+    sr = info.samplerate
+    rms_parts: list[np.ndarray] = []
+    onset_parts: list[np.ndarray] = []
+    for block in sf.blocks(
+        str(path), blocksize=BLOCK_SECONDS * sr, dtype="float32", always_2d=False
+    ):
+        if len(block) < 2048:  # sub-frame remainder: < 0.1s, not scoreable
+            continue
+        rms_parts.append(librosa.feature.rms(y=block, hop_length=HOP_LENGTH)[0])
+        onset_parts.append(
+            librosa.onset.onset_strength(y=block, sr=sr, hop_length=HOP_LENGTH)
+        )
 
+    rms = np.concatenate(rms_parts) if rms_parts else np.array([])
+    onset = np.concatenate(onset_parts) if onset_parts else np.array([])
     n = min(len(rms), len(onset))
+    if n == 0:
+        return np.array([]), 0.0
     combined = 0.6 * _normalize(rms[:n]) + 0.4 * _normalize(onset[:n])
 
     frames_per_second = sr / HOP_LENGTH
-    duration = len(y) / sr
+    duration = info.frames / sr
     per_second = _resample_to_seconds(combined, frames_per_second, duration)
     return per_second, duration
 
