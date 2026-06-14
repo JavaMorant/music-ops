@@ -38,7 +38,15 @@ def _abutment_scores(peak_a_start: int, peak_b_start: int, clip_len: int) -> np.
 
 
 class TestSelectSegmentsAbutmentBoundary:
-    """Gap of exactly `spacing` must be accepted; gap of spacing-1 must be rejected."""
+    """Gap of exactly `spacing` must be accepted; gap of spacing-1 must be rejected.
+
+    All tests in this class pass lead_in=0 and drop_weight=0.0 to isolate the
+    spacing predicate from the drop-anchoring and rise-reward features — those
+    are covered separately in test_select_segments.py.  With lead_in=0 the
+    candidate start positions are not shifted earlier, and with drop_weight=0.0
+    the blended score is purely the sustained-level signal so peak ordering is
+    determined only by amplitude (peak A at 1.0 always beats peak B at 0.9).
+    """
 
     CLIP_LEN = 10
     SPACING = 5
@@ -49,7 +57,14 @@ class TestSelectSegmentsAbutmentBoundary:
         scores = _abutment_scores(
             peak_a_start=0, peak_b_start=self.CLIP_LEN + self.SPACING, clip_len=self.CLIP_LEN
         )
-        segs = select_segments(scores, clip_len=self.CLIP_LEN, max_clips=2, spacing=self.SPACING)
+        segs = select_segments(
+            scores,
+            clip_len=self.CLIP_LEN,
+            max_clips=2,
+            spacing=self.SPACING,
+            lead_in=0,
+            drop_weight=0.0,
+        )
         starts = sorted(s.start for s in segs)
         assert len(segs) == 2, "both windows should be accepted"
         assert starts[0] == 0.0
@@ -59,16 +74,24 @@ class TestSelectSegmentsAbutmentBoundary:
         )
 
     def test_one_short_of_spacing_is_rejected(self):
-        # Candidate at start=14: gap = 14-10 = 4 < spacing=5.
+        # peak A at 0 (value 1.0) chosen first; peak B at 14 (value 0.9) is the
+        # next candidate.  gap = 14 - (0 + 10) = 4 < spacing=5 → rejected.
         # Condition: 14 >= 15 → False; 14+10+5=29 <= 0 → False → rejected.
-        # The scores array has peak_b at 14; the next valid window (start=15)
-        # has a lower score so the algorithm falls through to it.
+        # lead_in=0, drop_weight=0.0 ensure peak ordering follows amplitude only,
+        # so peak A at start=0 is always chosen before peak B at start=14.
         scores = _abutment_scores(
             peak_a_start=0,
             peak_b_start=self.CLIP_LEN + self.SPACING - 1,  # start=14
             clip_len=self.CLIP_LEN,
         )
-        segs = select_segments(scores, clip_len=self.CLIP_LEN, max_clips=2, spacing=self.SPACING)
+        segs = select_segments(
+            scores,
+            clip_len=self.CLIP_LEN,
+            max_clips=2,
+            spacing=self.SPACING,
+            lead_in=0,
+            drop_weight=0.0,
+        )
         starts = [s.start for s in segs]
         assert float(self.CLIP_LEN + self.SPACING - 1) not in starts, (
             f"window at start={self.CLIP_LEN + self.SPACING - 1} should be rejected "
@@ -78,15 +101,21 @@ class TestSelectSegmentsAbutmentBoundary:
     def test_symmetry_new_window_before_chosen(self):
         # The symmetric direction: a high-score window chosen at a later position,
         # and a candidate that starts before it.  For chosen c.start=20, c.end=30:
-        # candidate start=10 satisfies start + clip_len + spacing <= c.start
-        #   → 10 + 10 + 5 = 25 <= 20 → False (gap=10 is NOT enough on this side).
-        # Actually gap here = c.start - (start + clip_len) = 20 - 20 = 0 < spacing.
-        # Let's use start=5: 5+10+5=20 <= 20 → True → accepted.
+        # candidate at start=5 satisfies start + clip_len + spacing <= c.start
+        #   → 5 + 10 + 5 = 20 <= 20 → True → accepted.
+        # lead_in=0, drop_weight=0.0 keep positions at the amplitude peaks (20 and 5).
         n = 60
         scores = np.zeros(n)
         scores[20:30] = 1.0   # dominant peak -> chosen first at start=20
         scores[5:15] = 0.9    # candidate at start=5: 5+10+5=20 <= 20 → accepted
-        segs = select_segments(scores, clip_len=self.CLIP_LEN, max_clips=2, spacing=self.SPACING)
+        segs = select_segments(
+            scores,
+            clip_len=self.CLIP_LEN,
+            max_clips=2,
+            spacing=self.SPACING,
+            lead_in=0,
+            drop_weight=0.0,
+        )
         starts = sorted(s.start for s in segs)
         assert len(segs) == 2
         assert starts[0] == 5.0
@@ -94,11 +123,20 @@ class TestSelectSegmentsAbutmentBoundary:
 
     def test_symmetric_one_short_rejected(self):
         # candidate at start=6: 6+10+5=21 <= 20 → False; 6 >= 30+5=35 → False → rejected.
+        # lead_in=0, drop_weight=0.0 keep peak at start=20 as the top candidate so
+        # it is chosen first, then the candidate at 6 is tested and rejected.
         n = 60
         scores = np.zeros(n)
         scores[20:30] = 1.0
         scores[6:16] = 0.9   # gap from end=16 to c.start=20 is 4 < spacing=5 → reject
-        segs = select_segments(scores, clip_len=self.CLIP_LEN, max_clips=2, spacing=self.SPACING)
+        segs = select_segments(
+            scores,
+            clip_len=self.CLIP_LEN,
+            max_clips=2,
+            spacing=self.SPACING,
+            lead_in=0,
+            drop_weight=0.0,
+        )
         starts = [s.start for s in segs]
         assert 6.0 not in starts, "candidate with gap=4 < spacing=5 must be rejected"
 

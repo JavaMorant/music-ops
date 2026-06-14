@@ -1,8 +1,10 @@
 """Segment selection engine.
 
 Scores every second of audio by RMS energy + onset strength, then picks
-non-overlapping candidate clip windows ranked by mean score. Pure functions
-on numpy arrays so the engine is testable without media files.
+non-overlapping candidate clip windows by a blend of drop strength (a sharp
+energy rise) and sustained level, anchored so the drop lands just inside each
+clip. Pure functions on numpy arrays so the engine is testable without media
+files.
 """
 
 from __future__ import annotations
@@ -85,33 +87,78 @@ def _resample_to_seconds(
     return out
 
 
+# Clip selection tuning. A good clip isn't just the loudest 30s — it's a build
+# that pays off into a drop, with the drop landing a beat or two in (not at the
+# very start, not buried). These constants encode that; they're the dials to
+# turn if selection favours the wrong moments.
+LEAD_IN_SECONDS = 5  # start a clip this many seconds before the detected drop
+BUILD_WINDOW = 8  # seconds compared before vs after a moment to measure a step up
+DROP_WEIGHT = 0.5  # blend: "is this a drop" vs "is this sustained-loud" (0..1)
+
+
+def _rise_signal(energy: np.ndarray, k: int) -> np.ndarray:
+    """Per-second energy *step up*: mean of the k seconds after each moment minus
+    the k seconds before it, clipped at zero. Peaks mark builds paying off into a
+    drop — a sharp rise scores high here even if the absolute level is moderate,
+    which is what separates a real drop from a sustained-loud stretch.
+    """
+    n = len(energy)
+    if n == 0:
+        return energy
+    cumsum = np.concatenate([[0.0], np.cumsum(energy)])
+    idx = np.arange(n)
+    after_end = np.minimum(n, idx + k)
+    before_start = np.maximum(0, idx - k)
+    after = (cumsum[after_end] - cumsum[idx]) / np.maximum(after_end - idx, 1)
+    before = (cumsum[idx] - cumsum[before_start]) / np.maximum(idx - before_start, 1)
+    rise = np.where(idx > 0, after - before, 0.0)  # second 0 has no "before"
+    return np.clip(rise, 0.0, None)
+
+
 def select_segments(
     scores: np.ndarray,
     clip_len: int,
     max_clips: int,
     spacing: int,
+    lead_in: int = LEAD_IN_SECONDS,
+    drop_weight: float = DROP_WEIGHT,
+    build_window: int = BUILD_WINDOW,
 ) -> list[Segment]:
-    """Pick up to max_clips non-overlapping windows of clip_len seconds,
-    greedily by mean score, keeping at least `spacing` seconds between the
-    end of one chosen window and the start of the next.
+    """Pick up to max_clips non-overlapping clip_len-second windows, ranked by a
+    blend of drop strength and sustained energy, keeping at least `spacing`
+    seconds between the end of one chosen clip and the start of the next.
+
+    Each candidate is anchored to a moment of rising energy (a drop) and starts
+    `lead_in` seconds before it, so the drop lands just inside the clip rather
+    than at the cut or halfway through. `drop_weight` trades off rewarding the
+    rise against rewarding overall loudness across the window.
     """
     n = len(scores)
+    if n == 0:
+        return []
     if n < clip_len:
-        if n == 0:
-            return []
         return [Segment(0.0, float(n), float(np.mean(scores)))]
 
-    window = np.convolve(scores, np.ones(clip_len) / clip_len, mode="valid")
-    order = np.argsort(window)[::-1]
+    last_start = n - clip_len
+    level = np.convolve(scores, np.ones(clip_len) / clip_len, mode="valid")
+    level_norm = _normalize(level)
+    rise_norm = _normalize(_rise_signal(scores, build_window))
+
+    # one candidate clip per second, started lead_in before the drop at that
+    # second and clamped inside the source
+    starts = np.clip(np.arange(n) - lead_in, 0, last_start)
+    combined = drop_weight * rise_norm + (1.0 - drop_weight) * level_norm[starts]
+    order = np.argsort(combined)[::-1]
 
     chosen: list[Segment] = []
-    for start in order:
+    for d in order:
         if len(chosen) >= max_clips:
             break
+        start = int(starts[d])
         ok = all(
             start + clip_len + spacing <= c.start or start >= c.end + spacing
             for c in chosen
         )
         if ok:
-            chosen.append(Segment(float(start), float(clip_len), float(window[start])))
+            chosen.append(Segment(float(start), float(clip_len), float(combined[d])))
     return sorted(chosen, key=lambda s: -s.score)
