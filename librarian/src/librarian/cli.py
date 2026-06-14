@@ -1,0 +1,125 @@
+"""librarian CLI — plan / apply / undo over the music library.
+
+The whole flow is reversible and dry-run-first:
+
+    librarian plan  <library-root>      # review a plan (no changes)
+    librarian apply <plan.json>         # execute a reviewed plan (journaled)
+    librarian undo  <run-id>            # reverse a run completely
+    librarian runs                      # list applied runs
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Annotated, Optional
+
+import typer
+
+from .engine import EngineError, apply_plan, undo_run
+from .journal import APPLIED, DONE, list_runs
+from .model import Plan
+from .planner import build_plan
+
+app = typer.Typer(
+    help="Reversible DJ-library organiser: plan, apply, undo. Dry-run by default.",
+    no_args_is_help=True,
+)
+
+DEFAULT_RUNS_DIR = Path(".librarian/runs")
+
+
+def _rel(path: Path, root: Path) -> str:
+    """Display ``path`` relative to ``root`` when possible, else absolute."""
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def _print_plan(plan: Plan) -> None:
+    if not plan.actions:
+        typer.echo("No changes proposed — the library is already clean.")
+        return
+    root = plan.library_root
+    typer.echo(f"\nPlan for {root}  ({len(plan.actions)} actions)")
+    if plan.rekordbox_xml:
+        typer.echo(f"rekordbox XML to rewrite: {plan.rekordbox_xml}")
+    typer.echo("")
+    for i, a in enumerate(plan.actions, 1):
+        tag = typer.style(f"[{a.kind}]", fg="yellow" if a.kind == "quarantine" else "cyan")
+        typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
+        typer.echo(f"      -> {_rel(a.dest, root)}")
+        typer.echo(f"      reason: {a.reason}")
+
+
+@app.command()
+def plan(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox collection XML to keep in sync")] = None,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
+) -> None:
+    """Scan the library and write a reviewable plan. Makes NO changes."""
+    p = build_plan(library_root.absolute(), rekordbox_xml.absolute() if rekordbox_xml else None)
+    _print_plan(p)
+    out.write_text(json.dumps(p.to_dict(), indent=2), encoding="utf-8")
+    typer.echo(f"\nDry run — nothing changed. Plan written to {out}")
+    if p.actions:
+        typer.echo(f"Review it, then:  librarian apply {out}")
+
+
+@app.command()
+def apply(
+    plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Reviewed plan JSON from `librarian plan`")],
+    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+) -> None:
+    """Execute a reviewed plan, journaling every move so it can be undone."""
+    p = Plan.from_dict(json.loads(plan_file.read_text(encoding="utf-8")))
+    if not p.actions:
+        typer.echo("Plan has no actions — nothing to apply.")
+        raise typer.Exit(0)
+    try:
+        journal = apply_plan(p, runs_dir.absolute())
+    except EngineError as exc:
+        typer.secho(f"Refused to apply (nothing changed): {exc}", fg="red", err=True)
+        raise typer.Exit(1)
+    done = sum(1 for a in journal.actions if a.status == DONE)
+    typer.secho(f"\nApplied {done} actions.", fg="green")
+    if journal.rekordbox and journal.rekordbox.get("rewritten"):
+        typer.echo(f"rekordbox XML updated: {journal.rekordbox['original']}")
+    typer.echo(f"Run id: {journal.run_id}")
+    typer.echo(f"Undo with:  librarian undo {journal.run_id} --runs-dir {runs_dir}")
+
+
+@app.command()
+def undo(
+    run_id: Annotated[str, typer.Argument(help="Run id from a previous apply")],
+    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+) -> None:
+    """Reverse a run completely — files and rekordbox XML back to before."""
+    try:
+        journal = undo_run(run_id, runs_dir.absolute())
+    except EngineError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+    reverted = sum(1 for a in journal.actions if a.status == "reverted")
+    typer.secho(f"Undid run {run_id}: reversed {reverted} actions.", fg="green")
+
+
+@app.command()
+def runs(
+    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+) -> None:
+    """List apply runs and their status."""
+    journals = list_runs(runs_dir.absolute())
+    if not journals:
+        typer.echo(f"No runs recorded under {runs_dir}.")
+        return
+    for j in journals:
+        n = len(j.actions)
+        marker = "✓" if j.status == APPLIED else ("↺" if j.status == "undone" else "…")
+        typer.echo(f"{marker} {j.run_id}  {j.status:8}  {n} actions  {j.library_root}")
+
+
+if __name__ == "__main__":
+    app()

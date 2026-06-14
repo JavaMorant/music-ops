@@ -1,0 +1,24 @@
+[project]
+name = "librarian"
+version = "0.1.0"
+description = "DJ library organiser: a reversible plan/apply/undo engine for the music library"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# mutagen / pyrekordbox land in later slices (tag normalisation, rekordbox DB
+# analysis). The engine itself needs none of them — rekordbox XML cue-safety is
+# plain ElementTree — so the core stays light and easy to install.
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+librarian = "librarian.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
