@@ -1,0 +1,25 @@
+[project]
+name = "releases"
+version = "0.1.0"
+description = "Release tracker + pipeline: turn idle ProducerLibrary projects into a shipping schedule"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# The scan is pure stdlib (os.walk + sqlite3). The AI 'what-it-needs-to-ship'
+# estimator (ambition tier, flagged) is the only thing that needs the API client,
+# so it stays optional and the core install stays tiny.
+dev = ["pytest>=8.0"]
+ai = ["anthropic>=0.39"]
+
+[project.scripts]
+releases = "releases.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
