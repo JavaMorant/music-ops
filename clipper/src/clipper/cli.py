@@ -12,7 +12,7 @@ import typer
 
 from . import media
 from .analyze import align_to_beats, blend_visual, score_audio, select_segments
-from .manifest import format_timestamp, write_captions_stub, write_manifest
+from .manifest import format_timestamp, write_captions, write_manifest
 
 app = typer.Typer(
     help="Turn long set recordings into ready-to-post short clips.",
@@ -45,6 +45,68 @@ def _fresh_out_dir(out: Optional[Path]) -> Path:
         out_dir = base.parent / f"{base.name}-{datetime.datetime.now():%H%M%S}"
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
+
+
+def _maybe_transcribe(wav: Path):
+    """Transcribe the wav if faster-whisper is available; warn and skip otherwise."""
+    from . import transcribe as tx
+
+    if not tx.is_available():
+        typer.secho(
+            "--transcribe needs faster-whisper (pip install 'clipper[ai]'); skipping.",
+            fg="yellow",
+            err=True,
+        )
+        return []
+    typer.echo("Transcribing (Whisper) …")
+    try:
+        return tx.transcribe(wav)
+    except tx.TranscribeError as exc:
+        typer.secho(f"transcription failed, continuing without it: {exc}", fg="yellow", err=True)
+        return []
+
+
+def _clip_transcripts(results, transcript_segments) -> dict[int, str]:
+    """Map each clip number (1..N) to the transcript text over its time window."""
+    if not transcript_segments:
+        return {}
+    from .transcribe import transcript_for_window
+
+    out = {}
+    for i, (_dest, seg) in enumerate(results, 1):
+        text = transcript_for_window(transcript_segments, seg.start, seg.end)
+        if text:
+            out[i] = text
+    return out
+
+
+def _maybe_ai_captions(results, transcripts: dict[int, str]) -> dict:
+    """Draft captions with Claude if available; warn and return {} otherwise."""
+    from . import ai
+
+    if not ai.is_available():
+        typer.secho(
+            "--ai needs the anthropic package and ANTHROPIC_API_KEY; skipping.",
+            fg="yellow",
+            err=True,
+        )
+        return {}
+    clips = [
+        {
+            "index": i,
+            "timestamp": format_timestamp(seg.start),
+            "duration": int(seg.duration),
+            "score": round(seg.score, 3),
+            "transcript": transcripts.get(i, ""),
+        }
+        for i, (_dest, seg) in enumerate(results, 1)
+    ]
+    typer.echo("Drafting captions (Claude) …")
+    try:
+        return {c.index: c for c in ai.caption_clips(clips)}
+    except ai.AIError as exc:
+        typer.secho(f"AI captioning failed, continuing without it: {exc}", fg="yellow", err=True)
+        return {}
 
 
 def _validate_x_offset(frame: tuple[int, int], x_offset: int) -> None:
@@ -102,10 +164,13 @@ def cut(
     out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/<date>/)")] = None,
     beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap clip starts to the nearest beat")] = True,
     visual: Annotated[bool, typer.Option("--visual/--no-visual", help="Blend on-camera motion/flash energy into scoring (extra video pass)")] = False,
+    transcribe: Annotated[bool, typer.Option("--transcribe", help="Transcribe with Whisper for per-clip captions (needs faster-whisper)")] = False,
+    ai: Annotated[bool, typer.Option("--ai", help="Draft captions/hashtags with Claude (needs anthropic + ANTHROPIC_API_KEY)")] = False,
 ) -> None:
     """Cut the top-N highest-energy segments to 9:16 clips + manifest."""
     from .cut import cut_audio_segment, cut_segment  # deferred with the rest
 
+    transcript_segments = []
     try:
         frame = media.video_frame_size(source)
         if frame is not None and x_offset is not None:
@@ -121,6 +186,8 @@ def cut(
             if beat_align:
                 typer.echo("Aligning to beats …")
                 segments = align_to_beats(wav, segments, duration)
+            if transcribe:
+                transcript_segments = _maybe_transcribe(wav)
 
         out_dir = _fresh_out_dir(out)
 
@@ -140,11 +207,14 @@ def cut(
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(1)
 
+    transcripts = _clip_transcripts(results, transcript_segments)
+    captions = _maybe_ai_captions(results, transcripts) if ai else {}
+
     manifest = write_manifest(out_dir, source, results)
-    captions = write_captions_stub(out_dir, results)
+    captions_path = write_captions(out_dir, results, captions=captions, transcripts=transcripts)
     typer.echo(f"\n{len(results)} clips → {out_dir}/")
     typer.echo(f"Manifest: {manifest}")
-    typer.echo(f"Captions stub: {captions}")
+    typer.echo(f"Captions: {captions_path}")
 
 
 @app.command()

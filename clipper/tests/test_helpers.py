@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from clipper.analyze import Segment, _normalize, _resample_to_seconds, select_segments
-from clipper.manifest import format_timestamp, write_captions_stub, write_manifest
+from clipper.manifest import format_timestamp, write_captions, write_captions_stub, write_manifest
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +373,27 @@ class TestWriteCaptionsStub:
         write_captions_stub(tmp_path, clips)
         text = (tmp_path / "captions.md").read_text(encoding="utf-8")
         assert "Góa_clip.mp4" in text
+
+    def test_enriched_captions_render_ai_fields_and_transcript(self, tmp_path):
+        from types import SimpleNamespace
+
+        clips = [
+            (tmp_path / "clip_01.mp4", Segment(10.0, 30.0, 0.9)),
+            (tmp_path / "clip_02.mp4", Segment(60.0, 30.0, 0.6)),
+        ]
+        captions = {
+            1: SimpleNamespace(caption="peak time energy", hashtags=["#amapiano", "#dj"], rationale="the drop lands")
+        }
+        transcripts = {1: "here comes the drop", 2: ""}
+        path = write_captions(tmp_path, clips, captions=captions, transcripts=transcripts)
+        text = path.read_text(encoding="utf-8")
+        assert "- caption: peak time energy" in text
+        assert "- hashtags: #amapiano #dj" in text
+        assert "- why this works: the drop lands" in text
+        assert "- transcript: here comes the drop" in text
+        # clip 2 has no AI caption and an empty transcript → falls back to stub fields
+        assert text.count("- caption: \n") == 1
+        assert "transcript: \n" not in text
 
 
 # ---------------------------------------------------------------------------

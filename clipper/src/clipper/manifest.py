@@ -32,15 +32,38 @@ def write_manifest(out_dir: Path, source: Path, clips: list[tuple[Path, Segment]
 
 
 def write_captions_stub(out_dir: Path, clips: list[tuple[Path, Segment]]) -> Path:
+    return write_captions(out_dir, clips)
+
+
+def write_captions(
+    out_dir: Path,
+    clips: list[tuple[Path, Segment]],
+    captions: dict | None = None,
+    transcripts: dict | None = None,
+) -> Path:
+    """Write captions.md. Clips are numbered 1..N; `captions` maps that number
+    to an object with .caption/.hashtags/.rationale (AI-filled), and
+    `transcripts` maps it to a transcript string. Missing entries fall back to
+    empty stub fields, so the no-AI path produces the original stub.
+    """
+    captions = captions or {}
+    transcripts = transcripts or {}
     path = out_dir / "captions.md"
     lines = ["# Captions", ""]
-    for clip_path, seg in clips:
-        lines += [
-            f"## {clip_path.name}",
-            f"- source timestamp: {format_timestamp(seg.start)}",
-            "- caption: ",
-            "- hashtags: ",
-            "",
-        ]
+    for i, (clip_path, seg) in enumerate(clips, 1):
+        lines += [f"## {clip_path.name}", f"- source timestamp: {format_timestamp(seg.start)}"]
+        cap = captions.get(i)
+        if cap is not None:
+            lines += [
+                f"- caption: {cap.caption}",
+                f"- hashtags: {' '.join(cap.hashtags)}",
+                f"- why this works: {cap.rationale}",
+            ]
+        else:
+            lines += ["- caption: ", "- hashtags: "]
+        transcript = transcripts.get(i)
+        if transcript:
+            lines.append(f"- transcript: {transcript}")
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
