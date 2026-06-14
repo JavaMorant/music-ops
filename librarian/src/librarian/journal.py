@@ -127,12 +127,22 @@ def load_journal(run_dir: Path) -> Journal:
 
 
 def list_runs(runs_dir: Path) -> list[Journal]:
-    """All runs under ``runs_dir``, newest first. Missing dir → empty list."""
+    """All runs under ``runs_dir``, newest first. Missing dir → empty list.
+
+    A single unreadable/corrupt journal is skipped rather than failing the whole
+    listing — one bad file must not blind the user to every other run (and the
+    undo it offers).
+    """
     if not runs_dir.is_dir():
         return []
     journals = []
     for child in runs_dir.iterdir():
         if (child / JOURNAL_NAME).exists():
-            journals.append(load_journal(child))
+            try:
+                journals.append(load_journal(child))
+            except Exception:
+                # Any malformed journal (bad JSON, wrong shape, schema drift) is
+                # skipped — one corrupt file must never blind the whole listing.
+                continue
     journals.sort(key=lambda j: j.run_id, reverse=True)
     return journals

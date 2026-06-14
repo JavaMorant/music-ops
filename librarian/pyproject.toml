@@ -9,10 +9,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# mutagen / pyrekordbox land in later slices (tag normalisation, rekordbox DB
-# analysis). The engine itself needs none of them — rekordbox XML cue-safety is
-# plain ElementTree — so the core stays light and easy to install.
-dev = ["pytest>=8.0"]
+# pyrekordbox lands in a later slice (rekordbox DB analysis). The engine needs
+# none of it — rekordbox XML cue-safety is plain ElementTree — so the core stays
+# light. The web review app is an opt-in extra so the CLI install stays minimal.
+dev = ["pytest>=8.0", "httpx>=0.27"]
+web = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9"]
 
 [project.scripts]
 librarian = "librarian.cli:app"
@@ -23,3 +24,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+librarian = ["web/index.html"]

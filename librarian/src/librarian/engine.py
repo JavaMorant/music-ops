@@ -292,16 +292,45 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
     return journal
 
 
-def undo_run(run_id: str, runs_dir: Path) -> Journal:
+def undo_run(run_id: str, runs_dir: Path, *, library_root: Path | None = None) -> Journal:
     """Reverse a run completely: every completed move back to where it was, and
-    the rekordbox XML restored byte-for-byte from its backup."""
+    the rekordbox XML restored byte-for-byte from its backup.
+
+    ``run_id`` is treated as an opaque token: it must be a single path component
+    naming a direct child of ``runs_dir``. This stops a crafted id like
+    ``../evil`` from loading an arbitrary journal and moving files anywhere.
+
+    ``library_root``, when given (the web app passes its trusted, launch-time
+    root), is the containment boundary AND must match the journal's recorded
+    root — so even a fully forged journal can't relocate a file outside the root
+    the operator actually chose. When omitted (the CLI), containment falls back
+    to the journal's own root; the run_id guard is the real boundary there.
+    """
+    # run_id must be one path component and resolve to a direct child of runs_dir.
+    if not run_id or "/" in run_id or "\\" in run_id or run_id in (".", ".."):
+        raise EngineError(f"invalid run id: {run_id!r}")
     run_dir = runs_dir / run_id
+    if run_dir.resolve().parent != runs_dir.resolve():
+        raise EngineError(f"invalid run id (escapes runs dir): {run_id!r}")
     if not (run_dir / "journal.json").exists():
         raise EngineError(f"no run found with id {run_id} under {runs_dir}")
 
     journal = load_journal(run_dir)
     if journal.status == UNDONE:
         raise EngineError(f"run {run_id} has already been undone")
+
+    # Containment boundary: a trusted root if supplied, else the journal's own.
+    if library_root is not None and _norm(journal.library_root) != _norm(library_root):
+        raise EngineError(
+            f"journal library root {journal.library_root} does not match {library_root}"
+        )
+    root = library_root or journal.library_root
+    for entry in journal.actions:
+        if entry.status == DONE:
+            if not _within(root, entry.action.src) or not _within(root, entry.action.dest):
+                raise EngineError(
+                    f"refusing undo: action escapes library root {root}: {entry.action.src}"
+                )
 
     # Reverse the done moves in the opposite order they were applied.
     for entry in reversed(journal.actions):

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>librarian</title>
+<style>
+  :root {
+    --bg:#0e0f12; --panel:#16181d; --line:#262a31; --text:#e7e9ee; --dim:#8b909b;
+    --accent:#7aa2ff; --move:#7aa2ff; --quarantine:#e0a85b; --ok:#5fd08a; --bad:#ff6b6b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex;
+    align-items:baseline; gap:16px; }
+  header h1 { margin:0; font-size:18px; letter-spacing:.04em; font-weight:600; }
+  header .root { color:var(--dim); font-size:12px; font-family:ui-monospace,monospace; }
+  main { max-width:1100px; margin:0 auto; padding:24px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; margin-bottom:18px; }
+  .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px;
+    padding:8px 16px; font-weight:600; cursor:pointer; }
+  button.secondary { background:#2a2f39; color:var(--text); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  label { color:var(--dim); display:inline-flex; gap:6px; align-items:center; }
+  input[type=text] { background:#0e0f12; border:1px solid var(--line); color:var(--text);
+    border-radius:6px; padding:6px 9px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line);
+    vertical-align:top; }
+  th { color:var(--dim); font-weight:500; }
+  td.path { font-family:ui-monospace,monospace; font-size:12px; }
+  .arrow { color:var(--dim); }
+  .badge { font-size:11px; padding:1px 7px; border-radius:999px; font-weight:600; }
+  .badge.move { background:rgba(122,162,255,.16); color:var(--move); }
+  .badge.quarantine { background:rgba(224,168,91,.16); color:var(--quarantine); }
+  .reason { color:var(--dim); }
+  .banner { padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .banner.ok { background:rgba(95,208,138,.12); color:var(--ok); border:1px solid rgba(95,208,138,.3); }
+  .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
+  .dropzone { border:1.5px dashed var(--line); border-radius:10px; padding:26px; text-align:center;
+    color:var(--dim); cursor:pointer; }
+  .dropzone.over { border-color:var(--accent); color:var(--text); }
+  pre { white-space:pre-wrap; background:#0e0f12; border:1px solid var(--line); border-radius:8px;
+    padding:14px; font-size:12px; max-height:340px; overflow:auto; }
+  .muted { color:var(--dim); font-size:12px; }
+  .runs li { display:flex; gap:12px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line);
+    font-size:13px; font-family:ui-monospace,monospace; }
+  .spacer { flex:1; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback } = React;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let body = null;
+  try { body = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((body && body.detail) || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+function Banner({ msg }) {
+  if (!msg) return null;
+  return <div className={"banner " + msg.kind}>{msg.text}</div>;
+}
+
+function ModeBar({ mode, setMode, organize, setOrganize, playlist, setPlaylist, onScan, busy }) {
+  return (
+    <div className="panel">
+      <div className="row">
+        {["plan", "cleanup", "inbox"].map((m) => (
+          <label key={m}>
+            <input type="radio" name="mode" checked={mode === m} onChange={() => setMode(m)} /> {m}
+          </label>
+        ))}
+        <label><input type="checkbox" checked={organize} onChange={(e) => setOrganize(e.target.checked)} /> organize by genre</label>
+        {mode === "inbox" && (
+          <label>playlist <input type="text" value={playlist} onChange={(e) => setPlaylist(e.target.value)} /></label>
+        )}
+        <div className="spacer" />
+        <button onClick={onScan} disabled={busy}>{busy ? "Scanning…" : "Scan"}</button>
+      </div>
+      <div className="muted" style={{ marginTop: 8 }}>Dry-run — Scan never changes anything. Review, untick rows, then Apply.</div>
+    </div>
+  );
+}
+
+function Dropzone({ onUploaded, busy }) {
+  const [over, setOver] = useState(false);
+  const send = useCallback(async (fileList) => {
+    const fd = new FormData();
+    for (const f of fileList) fd.append("files", f);
+    const r = await api("/api/inbox/upload", { method: "POST", body: fd });
+    onUploaded(r);
+  }, [onUploaded]);
+  return (
+    <div className="panel">
+      <div className={"dropzone" + (over ? " over" : "")}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); if (e.dataTransfer.files.length) send(e.dataTransfer.files); }}
+        onClick={() => document.getElementById("filepick").click()}>
+        Drop audio files here to stage them in the Inbox, then Scan an inbox plan.
+        <input id="filepick" type="file" multiple style={{ display: "none" }}
+          onChange={(e) => e.target.files.length && send(e.target.files)} />
+      </div>
+    </div>
+  );
+}
+
+function PlanTable({ actions, kept, setKept }) {
+  const allOn = actions.length > 0 && actions.every((a) => kept.has(a.id));
+  const toggle = (id) => { const n = new Set(kept); n.has(id) ? n.delete(id) : n.add(id); setKept(n); };
+  const toggleAll = () => setKept(allOn ? new Set() : new Set(actions.map((a) => a.id)));
+  return (
+    <div className="panel">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" checked={allOn} onChange={toggleAll} /></th>
+          <th>kind</th><th>from → to</th><th>reason</th>
+        </tr></thead>
+        <tbody>
+          {actions.map((a) => (
+            <tr key={a.id}>
+              <td><input type="checkbox" checked={kept.has(a.id)} onChange={() => toggle(a.id)} /></td>
+              <td><span className={"badge " + a.kind}>{a.kind}</span></td>
+              <td className="path">{a.src_rel} <span className="arrow">→</span> {a.dest_rel}</td>
+              <td className="reason">{a.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="muted" style={{ marginTop: 10 }}>{kept.size} of {actions.length} selected</div>
+    </div>
+  );
+}
+
+function RunsPanel({ runs, onUndo }) {
+  if (!runs.length) return null;
+  return (
+    <div className="panel runs">
+      <div className="muted" style={{ marginBottom: 8 }}>Runs</div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {runs.map((r) => (
+          <li key={r.run_id}>
+            <span>{r.status === "applied" ? "✓" : r.status === "undone" ? "↺" : "…"}</span>
+            <span>{r.run_id}</span><span className="muted">{r.n_actions} actions</span>
+            <div className="spacer" />
+            {r.undoable && <button className="secondary" onClick={() => onUndo(r.run_id)}>Undo</button>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function App() {
+  const [cfg, setCfg] = useState(null);
+  const [mode, setMode] = useState("cleanup");
+  const [organize, setOrganize] = useState(true);
+  const [playlist, setPlaylist] = useState("New This Week");
+  const [plan, setPlan] = useState(null);     // {plan_id, actions, report_md, ...}
+  const [kept, setKept] = useState(new Set());
+  const [backup, setBackup] = useState(true);
+  const [runs, setRuns] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const refreshRuns = useCallback(async () => {
+    try { setRuns((await api("/api/runs")).runs); } catch (e) {}
+  }, []);
+  useEffect(() => { api("/api/config").then(setCfg).catch((e) => setMsg({ kind: "bad", text: e.message })); refreshRuns(); }, [refreshRuns]);
+
+  const scan = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const p = await api("/api/plan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, organize_by_genre: organize, playlist }),
+      });
+      setPlan(p);
+      setKept(new Set(p.actions.map((a) => a.id)));   // all ticked by default
+      if (!p.actions.length) setMsg({ kind: "ok", text: "Nothing to do — already clean." });
+    } catch (e) { setMsg({ kind: "bad", text: e.message }); setPlan(null); }
+    finally { setBusy(false); }
+  };
+
+  const apply = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api("/api/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: plan.plan_id, keep_ids: [...kept], backup }),
+      });
+      let t = `Applied ${r.applied} actions (skipped ${r.skipped}). Run ${r.run_id}.`;
+      if (r.rekordbox_rewritten) t += " rekordbox XML updated.";
+      setMsg({ kind: "ok", text: t }); setPlan(null); setKept(new Set()); refreshRuns();
+    } catch (e) { setMsg({ kind: "bad", text: e.message }); }
+    finally { setBusy(false); }
+  };
+
+  const undo = async (run_id) => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api("/api/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id }),
+      });
+      setMsg({ kind: "ok", text: `Undid ${run_id}: reversed ${r.reverted} actions.` }); refreshRuns();
+    } catch (e) { setMsg({ kind: "bad", text: e.message }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <React.Fragment>
+      <header>
+        <h1>librarian</h1>
+        <span className="root">{cfg ? cfg.library_root : "…"}</span>
+      </header>
+      <main>
+        <Banner msg={msg} />
+        <ModeBar {...{ mode, setMode, organize, setOrganize, playlist, setPlaylist, busy }} onScan={scan} />
+        {mode === "inbox" && <Dropzone busy={busy} onUploaded={(r) =>
+          setMsg({ kind: "ok", text: `Staged ${r.saved.length} file(s) in Inbox${r.rejected.length ? `, rejected ${r.rejected.length}` : ""}. Now Scan.` })} />}
+        {plan && plan.actions.length > 0 && (
+          <React.Fragment>
+            <PlanTable actions={plan.actions} kept={kept} setKept={setKept} />
+            <div className="panel row">
+              <label><input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} /> back up before apply</label>
+              <div className="spacer" />
+              <button onClick={apply} disabled={busy || kept.size === 0}>Apply {kept.size} change{kept.size === 1 ? "" : "s"}</button>
+            </div>
+          </React.Fragment>
+        )}
+        {plan && plan.report_md && <div className="panel"><pre>{plan.report_md}</pre></div>}
+        <RunsPanel runs={runs} onUndo={undo} />
+      </main>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

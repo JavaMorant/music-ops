@@ -6,10 +6,10 @@ completely. It writes to the music library, so every operation is built to be
 safe and reversible first, useful second.
 
 > Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
-> and the **`inbox`** forever-pipeline are built, tested (60 pytest tests), and
-> proven on a copy of the testbed. Not yet built: tag *writing*,
-> fuzzy/fingerprint dedupe, rekordbox **database** analysis (BPM/key via
-> pyrekordbox), and the web app.
+> the **`inbox`** forever-pipeline, and the local **review web app** (`serve`)
+> are built, tested (79 pytest tests), and proven on a copy of the testbed. Not
+> yet built: tag *writing*, fuzzy/fingerprint dedupe, and rekordbox **database**
+> analysis (BPM/key via pyrekordbox).
 
 ## Safety model (non-negotiable)
 
@@ -53,8 +53,33 @@ python3.12 -m venv .venv            # or your 3.12+ interpreter
 | `librarian apply <plan.json>` | Execute a reviewed plan, journaled + backed up. |
 | `librarian undo <run-id>` | Reverse a run completely (files + rekordbox XML). |
 | `librarian runs` | List apply runs and their status. |
+| `librarian serve <root>` | Run the local review web app over this library (127.0.0.1). |
 
 Every command has `--help`.
+
+### `serve` — the local review web app
+
+A FastAPI + single-page UI wrapping the **same** engine, for reviewing plans
+visually instead of reading `plan.json`:
+
+```bash
+pip install -e ".[web]"          # one-time: install the web extra
+librarian serve ~/path/to/library --rekordbox-xml ~/rekordbox_export.xml
+# open http://127.0.0.1:8765
+```
+
+Pick a mode (`plan` / `cleanup` / `inbox`), hit **Scan** to see the proposed
+changes as a review table (old → new per row, with the reason), **untick** any
+rows you don't want, then **Apply** — and **Undo** any run from the runs list. In
+`inbox` mode you can drag-and-drop files into the page to stage them in `Inbox/`.
+
+Safety: the server binds **127.0.0.1 only**, the library root is fixed at launch
+(no endpoint accepts a library path), the built plan is cached server-side and
+applied by id (client input is only which rows to keep), mutating routes carry an
+origin/host guard, and uploads are confined to the inbox. It is the same dry-run →
+review → apply → undo flow as the CLI — the web layer adds no new way to mutate
+the library. Unticking a row also drops that row's rekordbox addition/redirect, so
+the collection never ends up referencing a track that didn't move.
 
 ### `inbox` — the forever pipeline (Mode B)
 
@@ -139,8 +164,10 @@ The suite covers the engine round-trip (byte-for-byte on a copy of the real
 testbed), the never-delete / never-clobber invariants, journal-before-execute and
 crash recovery, the backup safeguard, the cleanup planner (dedupe / rename /
 refile / report), the inbox pipeline (dedupe-against-library, rekordbox add +
-playlist, byte-for-byte inbox round-trip), adversarial path sanitisation, and the
-rekordbox trials.
+playlist, byte-for-byte inbox round-trip), adversarial path sanitisation, the
+rekordbox trials, the plan-subset filter (`select_actions`), and the web API
+(dry-run, subset-apply drops an unticked import's rekordbox track, byte-for-byte
+undo, origin guard, safe upload).
 
 ## What this is **not** (yet)
 
@@ -151,8 +178,9 @@ rekordbox trials.
   / audio-fingerprint dedupe is not built.
 - BPM/key come from existing tags only; rekordbox **database** analysis via
   pyrekordbox and librosa fallback are not wired up.
-- `inbox` is a one-shot batch (run on demand), not a live watch daemon. No web
-  app yet.
+- `inbox` is a one-shot batch (run on demand), not a live watch daemon.
+- The web app is local-only (127.0.0.1), single-user; no auth token yet (origin/
+  host guard + localhost bind only).
 
 Always run `cleanup`/`plan` (dry-run) and read the plan before `apply`, and keep
 `apply` on a copy until you've trialled it against your own rekordbox export.

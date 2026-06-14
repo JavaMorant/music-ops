@@ -192,5 +192,30 @@ def runs(
         typer.echo(f"{marker} {j.run_id}  {j.status:8}  {n} actions  {j.library_root}")
 
 
+@app.command()
+def serve(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to manage")],
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox collection XML to keep in sync")] = None,
+    runs_dir: Annotated[Optional[Path], typer.Option("--runs-dir", help="Where undo journals + backups are kept (default <root>/.librarian/runs)")] = None,
+    port: Annotated[int, typer.Option("--port", help="Port for the local web app")] = 8765,
+) -> None:
+    """Run the local review web app (FastAPI) over this library on 127.0.0.1."""
+    try:
+        from .webapp.server import serve as run_server
+    except ModuleNotFoundError:
+        typer.secho(
+            "web extra not installed — run:  pip install -e '.[web]'", fg="red", err=True
+        )
+        raise typer.Exit(1)
+    typer.echo(f"librarian web app → http://127.0.0.1:{port}  (library: {library_root})")
+    typer.echo("Dry-run first: scan, review the table, untick rows, Apply. Ctrl-C to stop.")
+    run_server(
+        library_root.absolute(),
+        rekordbox_xml=rekordbox_xml.absolute() if rekordbox_xml else None,
+        runs_dir=runs_dir.absolute() if runs_dir else None,
+        port=port,
+    )
+
+
 if __name__ == "__main__":
     app()
