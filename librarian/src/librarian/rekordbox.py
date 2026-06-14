@@ -14,11 +14,23 @@ rekordbox database access is needed here.
 from __future__ import annotations
 
 import os
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
 _LOCATION_PREFIX = "file://localhost"
+
+
+def _match_key(path: Path) -> str:
+    """A comparison key that's robust to case AND Unicode normalisation.
+
+    macOS stores filenames decomposed (NFD) while a rekordbox Location or a
+    tag-derived path may be composed (NFC); the two casefold to different
+    strings, so an accented/emoji filename would otherwise fail to match and
+    keep a dead Location. Normalise to NFC on both sides before casefolding.
+    """
+    return unicodedata.normalize("NFC", os.path.abspath(path)).casefold()
 
 
 def path_to_location(path: Path) -> str:
@@ -43,22 +55,24 @@ def rewrite_locations(xml_in: Path, path_map: dict[Path, Path], xml_out: Path) -
     # Match on case-normalised absolute paths so a Location that differs only
     # by case (macOS volumes are case-insensitive) still updates — otherwise a
     # cue would silently keep pointing at the old path.
-    resolved = {
-        os.path.abspath(k).casefold(): Path(v).absolute() for k, v in path_map.items()
-    }
+    resolved = {_match_key(Path(k)): Path(v).absolute() for k, v in path_map.items()}
 
     tree = ET.parse(xml_in)
     root = tree.getroot()
     updated = 0
     for track in root.iter("TRACK"):
-        location = track.get("Location")
-        if not location:
-            continue
-        current = os.path.abspath(location_to_path(location)).casefold()
-        new = resolved.get(current)
-        if new is not None:
-            track.set("Location", path_to_location(new))
-            updated += 1
+        # Collection tracks carry the path in Location; location-keyed playlist
+        # entries (NODE KeyType="1") carry it in Key. Rewrite whichever applies
+        # so neither the collection nor those playlists end up with dead paths.
+        for attr in ("Location", "Key"):
+            value = track.get(attr)
+            if not value or not value.startswith("file://"):
+                continue
+            current = _match_key(location_to_path(value))
+            new = resolved.get(current)
+            if new is not None:
+                track.set(attr, path_to_location(new))
+                updated += 1
 
     # Write atomically: a crash mid-write must never corrupt the live collection.
     xml_out.parent.mkdir(parents=True, exist_ok=True)

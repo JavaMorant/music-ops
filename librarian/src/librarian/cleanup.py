@@ -64,6 +64,9 @@ def build_cleanup_plan(
     actions: list[Action] = []
     reserved: set[str] = set()
     quarantined: set[Path] = set()
+    # For each duplicate we quarantine, remember which copy we kept, so rekordbox
+    # can be repointed at the keeper instead of following cues into quarantine.
+    dup_keeper: dict[Path, Path] = {}
 
     def reserve(path: Path) -> None:
         reserved.add(os.path.abspath(path).casefold())
@@ -86,6 +89,7 @@ def build_cleanup_plan(
             reason = f"exact duplicate of {keeper.name} (kept higher quality)"
             actions.append(Action(QUARANTINE, p, dest, reason))
             quarantined.add(p)
+            dup_keeper[p] = keeper
             report.duplicates.append((p, keeper, reason))
 
     # 2) Copy-marker heuristic for whatever survived dedupe.
@@ -134,5 +138,21 @@ def build_cleanup_plan(
             reasons.append(f"file into {dest.parent.name}/")
         actions.append(Action(MOVE, p, dest, "; ".join(reasons) or "normalise"))
 
-    plan = Plan(library_root=root, actions=actions, rekordbox_xml=rekordbox_xml)
+    # Where rekordbox should be pointed for each old path. Policy: never leave a
+    # dead pointer. Every moved/quarantined file's Location follows it to its new
+    # path (so even a quarantined file's cues still resolve — nothing is deleted).
+    # Exact-duplicate quarantines do better: they repoint to the keeper that
+    # stays in the library, wherever it ends up. (Copy-marker suspected dups have
+    # no known keeper, so they follow the file into quarantine.)
+    final_of = {a.src: a.dest for a in actions}
+    redirects: dict[Path, Path] = dict(final_of)
+    for dup, keeper in dup_keeper.items():
+        redirects[dup] = final_of.get(keeper, keeper)
+
+    plan = Plan(
+        library_root=root,
+        actions=actions,
+        rekordbox_xml=rekordbox_xml,
+        location_redirects=redirects,
+    )
     return plan, report

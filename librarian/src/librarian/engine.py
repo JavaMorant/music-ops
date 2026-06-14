@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import unicodedata
 from pathlib import Path
 
 from . import rekordbox
@@ -43,11 +44,13 @@ def _norm(path: Path) -> str:
     """Case-folded absolute path, for collision/containment comparisons.
 
     macOS volumes are case-insensitive but ``os.path.normcase`` is a no-op on
-    POSIX, so we casefold explicitly. This is deliberately conservative: on a
-    case-sensitive volume it treats names differing only in case as colliding,
-    which for a tool that writes to the library is the safe direction.
+    POSIX, so we casefold explicitly, and NFC-normalise so a decomposed (NFD)
+    filename from the filesystem compares equal to a composed (NFC) one from a
+    tag or plan. This is deliberately conservative: on a case-sensitive volume
+    it treats names differing only in case as colliding, which for a tool that
+    writes to the library is the safe direction.
     """
-    return os.path.abspath(path).casefold()
+    return unicodedata.normalize("NFC", os.path.abspath(path)).casefold()
 
 
 def _same_existing_file(a: Path, b: Path) -> bool:
@@ -255,7 +258,12 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
     # before the rewrite runs, the backup is byte-identical to the original, so
     # the restore is a harmless no-op.
     if plan.rekordbox_xml is not None:
+        # Start from every literal move, then overlay the plan's explicit
+        # redirects (which send a quarantined dup's cues to the kept copy).
+        # Overlaying — not replacing — means a partial redirect map can never
+        # leave a moved file with a dead Location.
         path_map = {a.action.src: a.action.dest for a in journal.actions}
+        path_map.update(plan.location_redirects or {})
         journal.rekordbox["rewritten"] = True
         write_journal(journal)
         rekordbox.rewrite_locations(plan.rekordbox_xml, path_map, plan.rekordbox_xml)

@@ -60,23 +60,39 @@ class Plan:
     ``rekordbox_xml``, when set, is an exported rekordbox collection whose track
     Locations must be rewritten to follow the moves so playlists, hot cues and
     memory cues survive.
+
+    ``location_redirects`` is where rekordbox should be pointed for each old
+    path — usually a file's new path, but for a quarantined *duplicate* it's the
+    kept copy's location (so cues land on the track that stays in the library,
+    not on the reject). When None, the engine derives a redirect straight from
+    each action's src -> dest.
     """
 
     library_root: Path
     actions: list[Action]
     rekordbox_xml: Path | None = None
+    location_redirects: dict[Path, Path] | None = None
 
     def to_dict(self) -> dict:
         return {
             "library_root": str(self.library_root),
             "rekordbox_xml": str(self.rekordbox_xml) if self.rekordbox_xml else None,
+            "location_redirects": (
+                {str(k): str(v) for k, v in self.location_redirects.items()}
+                if self.location_redirects
+                else None
+            ),
             "actions": [a.to_dict() for a in self.actions],
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> Plan:
+        redirects = data.get("location_redirects")
         return cls(
             library_root=Path(data["library_root"]),
             actions=[Action.from_dict(a) for a in data["actions"]],
             rekordbox_xml=Path(data["rekordbox_xml"]) if data.get("rekordbox_xml") else None,
+            location_redirects=(
+                {Path(k): Path(v) for k, v in redirects.items()} if redirects else None
+            ),
         )
