@@ -1,0 +1,19 @@
+# clipper overlay template — edit freely, pass with --template.
+# Each [[line]] is one row of burned-in text; {event} {date} {artist}
+# are filled from the CLI flags. Lines whose slots are empty are skipped.
+
+[style]
+font = "/System/Library/Fonts/Helvetica.ttc"
+color = "white"
+border = 3
+border_color = "black@0.6"
+
+[[line]]
+text = "{event}"
+size = 72
+y = "h*0.78"
+
+[[line]]
+text = "{date} · {artist}"
+size = 40
+y = "h*0.85"

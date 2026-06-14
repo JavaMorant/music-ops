@@ -125,5 +125,55 @@ def cut(
     typer.echo(f"Captions stub: {captions}")
 
 
+@app.command()
+def overlay(
+    source: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Clip to burn text into")],
+    event: Annotated[str, typer.Option(help="Event name")] = "",
+    date: Annotated[str, typer.Option(help="Event date")] = "",
+    artist: Annotated[str, typer.Option(help="Artist name")] = "",
+    template: Annotated[Optional[Path], typer.Option(exists=True, dir_okay=False, help="TOML overlay template")] = None,
+    out: Annotated[Optional[Path], typer.Option(help="Output file (default: <clip>_overlay.mp4)")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Overwrite an existing output file")] = False,
+) -> None:
+    """Burn an event/date/artist text overlay into a clip."""
+    from .overlay import build_filter, burn_overlay, load_template
+
+    dest = out or source.with_name(f"{source.stem}_overlay.mp4")
+    if dest.exists() and not force:
+        typer.secho(f"{dest} exists — pass --force to overwrite", fg="red", err=True)
+        raise typer.Exit(1)
+    try:
+        style, lines = load_template(template)
+        with tempfile.TemporaryDirectory(prefix="clipper-overlay-") as tmp:
+            vf = build_filter(
+                style, lines, {"event": event, "date": date, "artist": artist}, Path(tmp)
+            )
+            typer.echo(f"Burning overlay into {source.name} …")
+            burn_overlay(source, dest, vf)
+    except media.MediaError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"→ {dest}")
+
+
+@app.command()
+def artwork(
+    image: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Source artwork image")],
+    out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/artwork/<name>/)")] = None,
+) -> None:
+    """Batch-resize one artwork into every platform spec."""
+    from .artwork import ArtworkError, render_specs
+
+    out_dir = out or Path("out") / "artwork" / image.stem
+    try:
+        results = render_specs(image, out_dir)
+    except ArtworkError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+    for name, dest, upscaled in results:
+        note = "  (upscaled — source smaller than spec)" if upscaled else ""
+        typer.echo(f"{name:>8}: {dest}{note}")
+
+
 if __name__ == "__main__":
     app()
