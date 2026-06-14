@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from clipper.analyze import Segment, _resample_to_seconds, select_segments
+from clipper.analyze import Segment, _normalize, _resample_to_seconds, select_segments
 from clipper.manifest import format_timestamp, write_captions_stub, write_manifest
 
 
@@ -373,3 +373,28 @@ class TestWriteCaptionsStub:
         write_captions_stub(tmp_path, clips)
         text = (tmp_path / "captions.md").read_text(encoding="utf-8")
         assert "Góa_clip.mp4" in text
+
+
+# ---------------------------------------------------------------------------
+# _normalize – robust (percentile-clipped) scaling
+# ---------------------------------------------------------------------------
+
+
+class TestNormalize:
+    def test_single_spike_does_not_crush_the_body(self):
+        # Two genuinely distinct levels plus one huge one-sample outlier (a clip
+        # spike). Plain min-max would map the spike to 1.0 and both real levels
+        # toward 0; percentile clipping keeps the body's contrast.
+        x = np.concatenate([np.full(100, 0.2), np.full(100, 0.8), [1000.0]])
+        out = _normalize(x)
+        body_low = out[:100].mean()
+        body_high = out[100:200].mean()
+        assert body_high - body_low > 0.5, "real levels must stay well separated"
+        assert out.max() <= 1.0 and out.min() >= 0.0, "output stays clamped to 0..1"
+
+    def test_flat_input_is_zero(self):
+        out = _normalize(np.full(50, 0.4))
+        assert np.all(out == 0.0)
+
+    def test_empty_input(self):
+        assert _normalize(np.array([])).size == 0

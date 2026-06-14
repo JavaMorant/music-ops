@@ -68,11 +68,24 @@ def score_audio(path: Path) -> tuple[np.ndarray, float]:
     return per_second, duration
 
 
-def _normalize(x: np.ndarray) -> np.ndarray:
-    lo, hi = float(np.min(x)), float(np.max(x))
+NORMALIZE_PERCENTILE = 99.0  # robust range: ignore the top/bottom 1% of values
+
+
+def _normalize(x: np.ndarray, percentile: float = NORMALIZE_PERCENTILE) -> np.ndarray:
+    """Scale to 0..1 using a robust percentile range, then clamp.
+
+    A single clipping spike (feedback, a dropped mic, a bumped fader) is a huge
+    outlier in raw RMS; plain min-max would map it to 1.0 and crush every real
+    moment toward 0. Taking lo/hi from the 1st/99th percentiles and clamping
+    keeps the scale set by the body of the audio, not its worst sample.
+    """
+    if x.size == 0:
+        return x
+    lo = float(np.percentile(x, 100.0 - percentile))
+    hi = float(np.percentile(x, percentile))
     if hi - lo < 1e-9:
         return np.zeros_like(x)
-    return (x - lo) / (hi - lo)
+    return np.clip((x - lo) / (hi - lo), 0.0, 1.0)
 
 
 def _resample_to_seconds(
