@@ -170,8 +170,42 @@ def preflight(plan: Plan) -> None:
             raise EngineError(f"cross-volume move refused: {src} -> {dest}")
 
 
-def apply_plan(plan: Plan, runs_dir: Path) -> Journal:
-    """Execute a reviewed plan, journaling every step. Returns the Journal."""
+def _backup_sources(plan: Plan, run_dir: Path, full: bool) -> dict:
+    """Copy at-risk files into ``run_dir/backup`` before any move.
+
+    By default this is every file the plan touches; ``full`` snapshots the whole
+    library. Either way it's a safety net independent of the undo journal —
+    the brief's "back up before the first apply" — and it lives outside the
+    library so it never pollutes the tree. Returns journal bookkeeping.
+    """
+    root = plan.library_root.absolute()
+    backup_dir = run_dir / "backup"
+    if full:
+        sources = [p for p in root.rglob("*") if p.is_file()]
+    else:
+        sources = [a.src for a in plan.actions]
+    copied = 0
+    for src in sources:
+        src = src.absolute()
+        try:
+            rel = src.relative_to(root)
+        except ValueError:
+            rel = Path(src.name)  # outside root (shouldn't happen post-preflight)
+        dest = backup_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        copied += 1
+    return {"dir": str(backup_dir), "mode": "full" if full else "sources", "files": copied}
+
+
+def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: bool = False) -> Journal:
+    """Execute a reviewed plan, journaling every step. Returns the Journal.
+
+    ``backup`` (default on) copies every file the plan touches into the run's
+    backup dir before anything moves; ``full_backup`` snapshots the whole
+    library instead. Pass ``backup=False`` only when a separate backup or
+    copy-mode already protects the originals.
+    """
     preflight(plan)
 
     run_id = new_run_id()
@@ -185,20 +219,29 @@ def apply_plan(plan: Plan, runs_dir: Path) -> Journal:
         run_dir=run_dir,
     )
 
+    # Journal before anything: the run is recorded on disk before we copy or
+    # move a single byte, so even a crash during backup leaves an auditable run
+    # that `librarian runs` will list.
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_journal(journal)
+
+    # Safety net: back up at-risk files before the first move, then re-journal
+    # so the backup is part of the audit trail.
+    if backup:
+        journal.backup = _backup_sources(plan, run_dir, full_backup)
+        write_journal(journal)
+
     # Back up the rekordbox XML *before* anything moves, so even a crash
     # mid-apply leaves undo able to restore the collection.
     if plan.rekordbox_xml is not None:
-        run_dir.mkdir(parents=True, exist_ok=True)
-        backup = run_dir / "rekordbox.orig.xml"
-        shutil.copy2(plan.rekordbox_xml, backup)
+        rb_backup = run_dir / "rekordbox.orig.xml"
+        shutil.copy2(plan.rekordbox_xml, rb_backup)
         journal.rekordbox = {
             "original": str(plan.rekordbox_xml),
-            "backup": str(backup),
+            "backup": str(rb_backup),
             "rewritten": False,
         }
-
-    # Journal-before-execute: the full intent hits disk before the first move.
-    write_journal(journal)
+        write_journal(journal)
 
     for entry in journal.actions:
         _safe_move(entry.action.src, entry.action.dest)

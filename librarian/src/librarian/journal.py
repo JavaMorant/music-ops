@@ -59,6 +59,8 @@ class Journal:
     # rekordbox bookkeeping: original XML path + backup copy, so undo can restore
     # the collection byte-for-byte. None when the run touched no rekordbox XML.
     rekordbox: dict | None = None
+    # Pre-apply backup bookkeeping (dir, mode, file count). None if skipped.
+    backup: dict | None = None
     run_dir: Path | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
@@ -68,6 +70,7 @@ class Journal:
             "status": self.status,
             "library_root": str(self.library_root),
             "rekordbox": self.rekordbox,
+            "backup": self.backup,
             "actions": [a.to_dict() for a in self.actions],
         }
 
@@ -79,6 +82,7 @@ class Journal:
             status=data["status"],
             library_root=Path(data["library_root"]),
             rekordbox=data.get("rekordbox"),
+            backup=data.get("backup"),
             actions=[JournalAction.from_dict(a) for a in data["actions"]],
         )
 

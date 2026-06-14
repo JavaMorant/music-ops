@@ -5,6 +5,7 @@ description = "DJ library organiser: a reversible plan/apply/undo engine for the
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
+    "mutagen>=1.47",
 ]
 
 [project.optional-dependencies]

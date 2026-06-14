@@ -16,6 +16,7 @@ from typing import Annotated, Optional
 
 import typer
 
+from .cleanup import build_cleanup_plan
 from .engine import EngineError, apply_plan, undo_run
 from .journal import APPLIED, DONE, list_runs
 from .model import Plan
@@ -69,9 +70,33 @@ def plan(
 
 
 @app.command()
+def cleanup(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox collection XML to keep in sync")] = None,
+    organize: Annotated[bool, typer.Option("--organize/--no-organize", help="File tracks into Genre/ folders")] = True,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
+    report_out: Annotated[Path, typer.Option("--report", help="Where to write the cleanup report")] = Path("cleanup-report.md"),
+) -> None:
+    """Deep-clean scan: dedupe, rename to Artist - Title, refile by genre. NO changes."""
+    p, report = build_cleanup_plan(
+        library_root.absolute(),
+        organize_by_genre=organize,
+        rekordbox_xml=rekordbox_xml.absolute() if rekordbox_xml else None,
+    )
+    _print_plan(p)
+    out.write_text(json.dumps(p.to_dict(), indent=2), encoding="utf-8")
+    report_out.write_text(report.render(), encoding="utf-8")
+    typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
+    if p.actions:
+        typer.echo(f"Review both, then:  librarian apply {out}")
+
+
+@app.command()
 def apply(
     plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Reviewed plan JSON from `librarian plan`")],
-    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals + backups are kept")] = DEFAULT_RUNS_DIR,
+    no_backup: Annotated[bool, typer.Option("--no-backup", help="Skip the pre-apply backup (only if you already have one)")] = False,
+    full_backup: Annotated[bool, typer.Option("--full-backup", help="Back up the whole library, not just touched files")] = False,
 ) -> None:
     """Execute a reviewed plan, journaling every move so it can be undone."""
     p = Plan.from_dict(json.loads(plan_file.read_text(encoding="utf-8")))
@@ -79,12 +104,14 @@ def apply(
         typer.echo("Plan has no actions — nothing to apply.")
         raise typer.Exit(0)
     try:
-        journal = apply_plan(p, runs_dir.absolute())
+        journal = apply_plan(p, runs_dir.absolute(), backup=not no_backup, full_backup=full_backup)
     except EngineError as exc:
         typer.secho(f"Refused to apply (nothing changed): {exc}", fg="red", err=True)
         raise typer.Exit(1)
     done = sum(1 for a in journal.actions if a.status == DONE)
     typer.secho(f"\nApplied {done} actions.", fg="green")
+    if journal.backup:
+        typer.echo(f"Backup ({journal.backup['mode']}): {journal.backup['files']} files in {journal.backup['dir']}")
     if journal.rekordbox and journal.rekordbox.get("rewritten"):
         typer.echo(f"rekordbox XML updated: {journal.rekordbox['original']}")
     typer.echo(f"Run id: {journal.run_id}")

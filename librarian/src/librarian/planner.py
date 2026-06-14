@@ -16,6 +16,7 @@ slice. The engine is the same; only the plan gets richer.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def build_plan(library_root: Path, rekordbox_xml: Path | None = None) -> Plan:
     """Produce a reviewable Plan for ``library_root`` (no filesystem changes)."""
     root = library_root.absolute()
     actions: list[Action] = []
-    reserved: set[Path] = set()
+    reserved: set[str] = set()
 
     # Sorted for a deterministic, reviewable plan.
     for path in sorted(p for p in root.rglob("*") if p.is_file() and is_audio(p)):
@@ -52,7 +53,7 @@ def build_plan(library_root: Path, rekordbox_xml: Path | None = None) -> Plan:
         # Suspected duplicate -> quarantine (keep the canonical copy untouched).
         if _DUP_MARKER.search(stem):
             dest = quarantine_dest(root, path.name, reserved)
-            reserved.add(dest)
+            reserved.add(os.path.abspath(dest).casefold())
             actions.append(
                 Action(QUARANTINE, path, dest, reason="suspected duplicate (copy marker)")
             )
@@ -61,8 +62,8 @@ def build_plan(library_root: Path, rekordbox_xml: Path | None = None) -> Plan:
         # Otherwise, normalise the name if it isn't already clean.
         new_stem = normalize_stem(stem)
         if new_stem and new_stem != stem:
-            dest = collision_free(path.with_name(new_stem + path.suffix), reserved)
-            reserved.add(dest)
+            dest = collision_free(path.with_name(new_stem + path.suffix), reserved, ignore=path)
+            reserved.add(os.path.abspath(dest).casefold())
             actions.append(
                 Action(MOVE, path, dest, reason="normalise filename (strip download junk)")
             )
