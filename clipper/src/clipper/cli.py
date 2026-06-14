@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
 from . import media
-from .analyze import score_audio, select_segments
+from .analyze import align_to_beats, score_audio, select_segments
 from .manifest import format_timestamp, write_captions_stub, write_manifest
 
 app = typer.Typer(
@@ -19,13 +20,18 @@ app = typer.Typer(
 )
 
 
-def _scored_audio(source: Path):
-    """Extract the audio track (long-file rule), score it, clean up."""
+@contextmanager
+def _audio_workspace(source: Path):
+    """Extract the audio track once (long-file rule) and yield (wav, scores,
+    duration). The wav stays available for beat alignment too; the temp dir is
+    cleaned on exit. Video is never decoded here — only at cut time.
+    """
     with tempfile.TemporaryDirectory(prefix="clipper-") as tmp:
         typer.echo(f"Extracting audio from {source.name} …")
         wav = media.extract_audio(source, Path(tmp))
         typer.echo("Scoring energy + onsets …")
-        return score_audio(wav)
+        scores, duration = score_audio(wav)
+        yield wav, scores, duration
 
 
 def _fresh_out_dir(out: Optional[Path]) -> Path:
@@ -61,11 +67,15 @@ def analyze(
     length: Annotated[int, typer.Option("--len", min=15, max=60, help="Candidate clip length in seconds")] = 30,
     spacing: Annotated[int, typer.Option(min=0, help="Min seconds between candidates")] = 60,
     top: Annotated[int, typer.Option(min=1, help="How many candidates to show")] = 10,
+    beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap candidate starts to the nearest beat")] = True,
 ) -> None:
     """Rank the highest-energy moments of a set recording."""
     try:
-        scores, duration = _scored_audio(source)
-        segments = select_segments(scores, clip_len=length, max_clips=top, spacing=spacing)
+        with _audio_workspace(source) as (wav, scores, duration):
+            segments = select_segments(scores, clip_len=length, max_clips=top, spacing=spacing)
+            if beat_align:
+                typer.echo("Aligning to beats …")
+                segments = align_to_beats(wav, segments, duration)
     except media.MediaError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(1)
@@ -86,6 +96,7 @@ def cut(
     spacing: Annotated[int, typer.Option(min=0, help="Min seconds between clips")] = 60,
     x_offset: Annotated[Optional[int], typer.Option(help="Manual crop x-offset in px (default: centre)")] = None,
     out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/<date>/)")] = None,
+    beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap clip starts to the nearest beat")] = True,
 ) -> None:
     """Cut the top-N highest-energy segments to 9:16 clips + manifest."""
     from .cut import cut_audio_segment, cut_segment  # deferred with the rest
@@ -94,11 +105,14 @@ def cut(
         frame = media.video_frame_size(source)
         if frame is not None and x_offset is not None:
             _validate_x_offset(frame, x_offset)
-        scores, _ = _scored_audio(source)
-        segments = select_segments(scores, clip_len=length, max_clips=clips, spacing=spacing)
-        if not segments:
-            typer.secho("No segments found — source too short?", fg="red", err=True)
-            raise typer.Exit(1)
+        with _audio_workspace(source) as (wav, scores, duration):
+            segments = select_segments(scores, clip_len=length, max_clips=clips, spacing=spacing)
+            if not segments:
+                typer.secho("No segments found — source too short?", fg="red", err=True)
+                raise typer.Exit(1)
+            if beat_align:
+                typer.echo("Aligning to beats …")
+                segments = align_to_beats(wav, segments, duration)
 
         out_dir = _fresh_out_dir(out)
 

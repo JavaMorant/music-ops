@@ -128,6 +128,52 @@ def _rise_signal(energy: np.ndarray, k: int) -> np.ndarray:
     return np.clip(rise, 0.0, None)
 
 
+def snap_to_beat(
+    wav_path: Path,
+    start: float,
+    max_start: float,
+    window: float = 6.0,
+    search: float = 2.0,
+) -> float:
+    """Snap a clip start to the nearest beat within ±`search` seconds.
+
+    Tracks beats on a short audio window loaded around `start` only — so the
+    tempo is local (a DJ set's BPM drifts across transitions) and no large file
+    is ever loaded. Returns the original start unchanged if beats can't be found,
+    and never moves the start past `max_start` (so the clip stays in-bounds).
+    """
+    import librosa  # deferred: heavy import, keeps --help fast
+
+    if not Path(wav_path).is_file():
+        return start
+    offset = max(0.0, start - window / 2)
+    try:
+        y, sr = librosa.load(str(wav_path), sr=SAMPLE_RATE, offset=offset, duration=window)
+    except Exception:
+        return start
+    if y.size < SAMPLE_RATE // 2:  # under half a second of audio: nothing to track
+        return start
+    _, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP_LENGTH, units="time")
+    times = np.asarray(beats, dtype=float) + offset
+    times = times[np.abs(times - start) <= search]
+    if times.size == 0:
+        return start
+    snapped = float(times[int(np.argmin(np.abs(times - start)))])
+    return min(max(0.0, snapped), max_start)
+
+
+def align_to_beats(
+    wav_path: Path, segments: list[Segment], duration: float
+) -> list[Segment]:
+    """Return segments with each start snapped to the nearest beat."""
+    aligned = []
+    for seg in segments:
+        max_start = max(0.0, duration - seg.duration)
+        start = snap_to_beat(wav_path, seg.start, max_start)
+        aligned.append(Segment(start, seg.duration, seg.score))
+    return aligned
+
+
 def select_segments(
     scores: np.ndarray,
     clip_len: int,
