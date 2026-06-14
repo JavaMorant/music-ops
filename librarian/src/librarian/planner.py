@@ -16,12 +16,11 @@ slice. The engine is the same; only the plan gets richer.
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 from .model import MOVE, QUARANTINE, Action, Plan
-from .paths import QUARANTINE_DIRNAME, collision_free, is_audio, quarantine_dest
+from .paths import QUARANTINE_DIRNAME, collision_free, is_audio, norm_key, quarantine_dest
 
 _JUNK_SUBSTRINGS = ("_spotdown.org",)
 # A trailing copy marker like " (1)" just before the extension.
@@ -53,7 +52,7 @@ def build_plan(library_root: Path, rekordbox_xml: Path | None = None) -> Plan:
         # Suspected duplicate -> quarantine (keep the canonical copy untouched).
         if _DUP_MARKER.search(stem):
             dest = quarantine_dest(root, path.name, reserved)
-            reserved.add(os.path.abspath(dest).casefold())
+            reserved.add(norm_key(dest))
             actions.append(
                 Action(QUARANTINE, path, dest, reason="suspected duplicate (copy marker)")
             )
@@ -63,7 +62,7 @@ def build_plan(library_root: Path, rekordbox_xml: Path | None = None) -> Plan:
         new_stem = normalize_stem(stem)
         if new_stem and new_stem != stem:
             dest = collision_free(path.with_name(new_stem + path.suffix), reserved, ignore=path)
-            reserved.add(os.path.abspath(dest).casefold())
+            reserved.add(norm_key(dest))
             actions.append(
                 Action(MOVE, path, dest, reason="normalise filename (strip download junk)")
             )

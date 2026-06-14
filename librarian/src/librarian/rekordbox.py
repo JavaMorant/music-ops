@@ -19,6 +19,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
+from .model import RekordboxAddition
+
 _LOCATION_PREFIX = "file://localhost"
 
 
@@ -74,9 +76,134 @@ def rewrite_locations(xml_in: Path, path_map: dict[Path, Path], xml_out: Path) -
                 track.set(attr, path_to_location(new))
                 updated += 1
 
-    # Write atomically: a crash mid-write must never corrupt the live collection.
+    _atomic_write(tree, xml_out)
+    return updated
+
+
+def _atomic_write(tree: ET.ElementTree, xml_out: Path) -> None:
+    """Write the tree via temp + os.replace — a crash mid-write must never
+    corrupt the live collection."""
     xml_out.parent.mkdir(parents=True, exist_ok=True)
     tmp = xml_out.with_name(xml_out.name + ".librarian-tmp")
     tree.write(tmp, encoding="UTF-8", xml_declaration=True)
     os.replace(tmp, xml_out)
-    return updated
+
+
+def _find_or_create_playlist(playlists: ET.Element, name: str) -> ET.Element:
+    """Find a playlist NODE by name, or create a TrackID-keyed one under ROOT.
+
+    TrackID-keyed (KeyType="0") is deliberate: playlist membership then survives
+    later moves/renames with no rewrite, unlike a location-keyed list.
+
+    Only a *top-level* (direct child of ROOT) TrackID-keyed node is reused — we
+    never descend into the user's folder tree (a match could be anywhere and
+    non-deterministic), and we never append TrackID keys into a location-keyed
+    (KeyType="1") node of the same name, which would corrupt it.
+    """
+    # Find the ROOT folder node (Type="0"); create a minimal skeleton if absent.
+    root_node = None
+    for node in playlists:
+        if node.tag == "NODE" and node.get("Type") == "0":
+            root_node = node
+            break
+    if root_node is None:
+        root_node = ET.SubElement(playlists, "NODE", {"Type": "0", "Name": "ROOT", "Count": "0"})
+
+    for node in root_node.findall("NODE"):
+        if node.get("Type") == "1" and node.get("Name") == name and node.get("KeyType") == "0":
+            return node
+
+    node = ET.SubElement(
+        root_node, "NODE", {"Name": name, "Type": "1", "KeyType": "0", "Entries": "0"}
+    )
+    # Keep the parent folder's Count attribute honest if it has one.
+    if root_node.get("Count") is not None:
+        root_node.set("Count", str(len(root_node.findall("NODE"))))
+    return node
+
+
+def add_tracks_and_playlist(
+    xml_in: Path,
+    additions: list[RekordboxAddition],
+    playlist_name: str | None,
+    xml_out: Path | None = None,
+) -> int:
+    """ADD new tracks to <COLLECTION> and (optionally) to a playlist NODE.
+
+    TrackIDs are assigned ``max(existing) + 1`` upward, computed from the live
+    XML at call time. Idempotent on Location: a track whose Location is already
+    in the collection is skipped, so re-applying a plan never duplicates a TRACK.
+    Returns the number of tracks actually added. Writes atomically.
+    """
+    out = xml_out or xml_in
+    tree = ET.parse(xml_in)
+    root = tree.getroot()
+    collection = root.find("COLLECTION")
+    if collection is None:
+        raise ValueError("rekordbox XML has no <COLLECTION> to add tracks to")
+
+    existing_ids: list[int] = []
+    existing_locs: set[str] = set()
+    for track in collection.iter("TRACK"):
+        tid = track.get("TrackID")
+        if tid and tid.isdigit():
+            existing_ids.append(int(tid))
+        loc = track.get("Location")
+        if loc and loc.startswith("file://"):
+            existing_locs.add(_match_key(location_to_path(loc)))
+    # Also clear any TrackIDs referenced by playlist entries (a dangling Key left
+    # after a manual delete can exceed the collection's max); reusing one would
+    # silently enrol the new track into that unrelated playlist.
+    playlists = root.find("PLAYLISTS")
+    if playlists is not None:
+        for entry in playlists.iter("TRACK"):
+            key = entry.get("Key")
+            if key and key.isdigit():
+                existing_ids.append(int(key))
+    next_id = (max(existing_ids) + 1) if existing_ids else 1
+
+    new_track_ids: list[int] = []
+    for add in additions:
+        key = _match_key(add.location)
+        if key in existing_locs:  # already present — never duplicate a TRACK
+            continue
+        tid = next_id
+        next_id += 1
+        attrs = {
+            "TrackID": str(tid),
+            "Name": add.name,
+            "Location": path_to_location(add.location.absolute()),
+        }
+        if add.artist:
+            attrs["Artist"] = add.artist
+        if add.genre:
+            attrs["Genre"] = add.genre
+        if add.total_time is not None:
+            attrs["TotalTime"] = str(add.total_time)
+        if add.average_bpm:
+            attrs["AverageBpm"] = add.average_bpm
+        if add.tonality:  # musical key — only when actually tagged
+            attrs["Tonality"] = add.tonality
+        if add.bitrate_kbps is not None:
+            attrs["BitRate"] = str(add.bitrate_kbps)
+        if add.kind:
+            attrs["Kind"] = add.kind
+        ET.SubElement(collection, "TRACK", attrs)  # no TEMPO/POSITION_MARK — never fabricated
+        existing_locs.add(key)
+        new_track_ids.append(tid)
+
+    collection.set("Entries", str(len(collection.findall("TRACK"))))
+
+    if playlist_name and new_track_ids:
+        playlists = root.find("PLAYLISTS")
+        if playlists is None:
+            playlists = ET.SubElement(root, "PLAYLISTS")
+        node = _find_or_create_playlist(playlists, playlist_name)
+        present = {t.get("Key") for t in node.findall("TRACK")}
+        for tid in new_track_ids:
+            if str(tid) not in present:  # idempotent on playlist membership
+                ET.SubElement(node, "TRACK", {"Key": str(tid)})
+        node.set("Entries", str(len(node.findall("TRACK"))))
+
+    _atomic_write(tree, out)
+    return len(new_track_ids)

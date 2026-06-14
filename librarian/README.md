@@ -5,10 +5,11 @@ review them, **applies** only what you approve, and can **undo** any run
 completely. It writes to the music library, so every operation is built to be
 safe and reversible first, useful second.
 
-> Status: the **plan / apply / undo engine** and the one-time **`cleanup`** scan
-> are built, tested (31 pytest tests), and proven on a copy of the testbed.
-> Not yet built: tag *writing*, fuzzy/fingerprint dedupe, rekordbox **database**
-> analysis (BPM/key via pyrekordbox), the `inbox` pipeline, and the web app.
+> Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
+> and the **`inbox`** forever-pipeline are built, tested (60 pytest tests), and
+> proven on a copy of the testbed. Not yet built: tag *writing*,
+> fuzzy/fingerprint dedupe, rekordbox **database** analysis (BPM/key via
+> pyrekordbox), and the web app.
 
 ## Safety model (non-negotiable)
 
@@ -48,11 +49,37 @@ python3.12 -m venv .venv            # or your 3.12+ interpreter
 |---|---|
 | `librarian plan <root>` | Minimal plan: strip download-junk filenames, quarantine copy-markers. Dry-run. |
 | `librarian cleanup <root>` | Full deep-clean plan: exact-dup → quarantine, rename to `Artist - Title`, refile into `Genre/`, + a report. Dry-run. |
+| `librarian inbox <root>` | Drain `<root>/Inbox`: dedupe new drops against the library, file them, add them to rekordbox + a "New This Week" playlist. Dry-run. |
 | `librarian apply <plan.json>` | Execute a reviewed plan, journaled + backed up. |
 | `librarian undo <run-id>` | Reverse a run completely (files + rekordbox XML). |
 | `librarian runs` | List apply runs and their status. |
 
 Every command has `--help`.
+
+### `inbox` — the forever pipeline (Mode B)
+
+Drop new tracks into `<library-root>/Inbox/`, then:
+
+```bash
+librarian inbox ~/path/to/library --rekordbox-xml ~/rekordbox_export.xml
+# review plan.json + inbox-report.md
+librarian apply plan.json
+librarian undo <run-id>   # if needed
+```
+
+Each dropped file is deduped against the existing library (exact content hash)
+and against the rest of the drop — duplicates go to quarantine (the kept copy's
+cues are redirected to it), never deleted. Genuinely new tracks are renamed to
+`Artist - Title`, filed into `Genre/`, **added** to the rekordbox collection, and
+appended to a TrackID-keyed "New This Week" playlist (`--playlist` to rename it).
+`Tonality` is written only when the file is actually tagged with a key — never
+guessed. Low-bitrate / missing-key / missing-tag files are still filed and
+flagged in the report for re-acquisition.
+
+This is a **one-shot batch** run on demand, not a background daemon: a watcher
+can't be dry-run/reviewed, which the safety model requires. The Inbox must live
+**inside** the library root and on the **same volume** (so moves are atomic
+renames and stay contained); `inbox` validates this up front.
 
 ### Typical flow
 
@@ -111,7 +138,9 @@ cues/playlists survive and only moved tracks change.
 The suite covers the engine round-trip (byte-for-byte on a copy of the real
 testbed), the never-delete / never-clobber invariants, journal-before-execute and
 crash recovery, the backup safeguard, the cleanup planner (dedupe / rename /
-refile / report), adversarial path sanitisation, and the rekordbox trial.
+refile / report), the inbox pipeline (dedupe-against-library, rekordbox add +
+playlist, byte-for-byte inbox round-trip), adversarial path sanitisation, and the
+rekordbox trials.
 
 ## What this is **not** (yet)
 
@@ -122,7 +151,8 @@ refile / report), adversarial path sanitisation, and the rekordbox trial.
   / audio-fingerprint dedupe is not built.
 - BPM/key come from existing tags only; rekordbox **database** analysis via
   pyrekordbox and librosa fallback are not wired up.
-- No `inbox` watch pipeline and no web app yet.
+- `inbox` is a one-shot batch (run on demand), not a live watch daemon. No web
+  app yet.
 
 Always run `cleanup`/`plan` (dry-run) and read the plan before `apply`, and keep
 `apply` on a copy until you've trialled it against your own rekordbox export.

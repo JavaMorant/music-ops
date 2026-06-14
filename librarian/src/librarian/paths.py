@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 QUARANTINE_DIRNAME = "_quarantine"
@@ -17,6 +18,17 @@ _ILLEGAL = re.compile(r"[/\\:\x00-\x1f]")
 
 def is_audio(path: Path) -> bool:
     return path.suffix.lower() in AUDIO_EXTS
+
+
+def audio_files(root: Path, *, extra_skip_dirs: frozenset[str] = frozenset()) -> list[Path]:
+    """Every audio file under ``root``, sorted, skipping the quarantine dir (and
+    any ``extra_skip_dirs`` by name) so it never re-plans set-aside files."""
+    skip = {QUARANTINE_DIRNAME, *extra_skip_dirs}
+    return sorted(
+        p
+        for p in root.rglob("*")
+        if p.is_file() and is_audio(p) and not (skip & set(p.relative_to(root).parts))
+    )
 
 
 # Keep a margin under the common 255-byte per-component filesystem limit so a
@@ -33,8 +45,15 @@ def sanitize_component(name: str) -> str:
     return cleaned or "Unknown"
 
 
-def _norm(path: Path) -> str:
-    return os.path.abspath(path).casefold()
+def norm_key(path: Path) -> str:
+    """Case- and Unicode-normalised absolute path key. Must stay identical to
+    ``engine._norm`` so a destination reserved by a planner is recognised as a
+    collision by the engine's preflight (macOS stores NFD; tags are often NFC)."""
+    return unicodedata.normalize("NFC", os.path.abspath(path)).casefold()
+
+
+# Internal alias for the collision helpers below.
+_norm = norm_key
 
 
 def _samefile(a: Path, b: Path) -> bool:

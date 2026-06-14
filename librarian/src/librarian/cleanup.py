@@ -18,37 +18,19 @@ captures the flags (low bitrate, missing key, missing tags) for review.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from .metadata import TrackMeta, content_hash, quality_rank, read_meta
+from .metadata import content_hash, read_meta
 from .model import MOVE, QUARANTINE, Action, Plan
-from .paths import (
-    QUARANTINE_DIRNAME,
-    collision_free,
-    is_audio,
-    quarantine_dest,
-    sanitize_component,
-)
-from .planner import _DUP_MARKER, normalize_stem
+from .naming import pick_keeper
+from .naming import target_stem as _target_stem
+from .paths import audio_files, collision_free, norm_key, quarantine_dest, sanitize_component
+from .planner import _DUP_MARKER
 from .report import CleanupReport
 
 
 def _audio_files(root: Path) -> list[Path]:
-    return sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file()
-        and is_audio(p)
-        and QUARANTINE_DIRNAME not in p.relative_to(root).parts
-    )
-
-
-def _target_stem(meta: TrackMeta) -> str:
-    """`Artist - Title` from tags, else a cleaned version of the filename."""
-    if meta.has_artist_title:
-        return sanitize_component(f"{meta.artist} - {meta.title}")
-    return sanitize_component(normalize_stem(meta.path.stem))
+    return audio_files(root)
 
 
 def build_cleanup_plan(
@@ -69,7 +51,7 @@ def build_cleanup_plan(
     dup_keeper: dict[Path, Path] = {}
 
     def reserve(path: Path) -> None:
-        reserved.add(os.path.abspath(path).casefold())
+        reserved.add(norm_key(path))
 
     # 1) Exact-duplicate dedupe — group by content hash, keep the best copy.
     by_hash: dict[str, list[Path]] = {}
@@ -78,9 +60,10 @@ def build_cleanup_plan(
     for group in by_hash.values():
         if len(group) < 2:
             continue
-        # Highest quality wins; on a tie, max() keeps the first in `files`
-        # order (which is sorted), so the keeper is deterministic.
-        keeper = max(group, key=lambda p: quality_rank(metas[p]))
+        # Highest quality wins; on a tie, prefer a clean name over a copy-marker
+        # one (else the marker copy could win and then be quarantined by step 2,
+        # dropping the whole group). Deterministic via the sorted `files` order.
+        keeper = pick_keeper(group, metas)
         for p in group:
             if p == keeper:
                 continue

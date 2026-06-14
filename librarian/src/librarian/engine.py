@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from . import rekordbox
@@ -139,8 +140,18 @@ def preflight(plan: Plan) -> None:
     boundary that keeps a (mis)edited plan from escaping the library or
     clobbering anything.
     """
-    if plan.rekordbox_xml is not None and not plan.rekordbox_xml.is_file():
-        raise EngineError(f"rekordbox XML not found: {plan.rekordbox_xml}")
+    if plan.rekordbox_xml is not None:
+        if not plan.rekordbox_xml.is_file():
+            raise EngineError(f"rekordbox XML not found: {plan.rekordbox_xml}")
+        # Parse it now, before any file moves: a malformed XML (or one with no
+        # <COLLECTION> we'd add tracks to) must fail the whole plan up front, not
+        # crash mid-apply after every file has already been relocated.
+        try:
+            xml_root = ET.parse(plan.rekordbox_xml).getroot()
+        except ET.ParseError as exc:
+            raise EngineError(f"rekordbox XML is not parseable: {plan.rekordbox_xml}: {exc}")
+        if plan.rekordbox_additions and xml_root.find("COLLECTION") is None:
+            raise EngineError(f"rekordbox XML has no <COLLECTION> to add tracks to: {plan.rekordbox_xml}")
 
     root = plan.library_root
     # Keys are case-normalised so a case-only collision can't slip through on a
@@ -267,6 +278,14 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
         journal.rekordbox["rewritten"] = True
         write_journal(journal)
         rekordbox.rewrite_locations(plan.rekordbox_xml, path_map, plan.rekordbox_xml)
+        # Then ADD any brand-new tracks (inbox imports) + their playlist. This
+        # runs after the rewrite and operates on disjoint paths (the new tracks
+        # aren't in the collection yet). It's covered by the same XML backup, so
+        # undo restores byte-for-byte — the `rewritten` flag is already armed.
+        if plan.rekordbox_additions:
+            rekordbox.add_tracks_and_playlist(
+                plan.rekordbox_xml, plan.rekordbox_additions, plan.rekordbox_playlist
+            )
 
     journal.status = APPLIED
     write_journal(journal)

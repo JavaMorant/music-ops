@@ -97,6 +97,23 @@ def test_quality_rank_prefers_lossless_then_bitrate(tmp_path: Path):
     assert quality_rank(lossless) > quality_rank(lossy) > quality_rank(lo)
 
 
+def test_cleanup_copy_marker_does_not_steal_keeper(tmp_path: Path, runs_dir: Path, monkeypatch):
+    """For identical bytes named `Track.mp3` and `Track (1).mp3`, cleanup must
+    keep the CLEAN-named copy in the library and quarantine the marker — never
+    send the whole group to quarantine (which would lose the track)."""
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Track.mp3").write_bytes(b"identical-bytes")
+    (root / "Track (1).mp3").write_bytes(b"identical-bytes")
+    monkeypatch.setattr(cleanup, "read_meta", _fake_meta({}))
+
+    plan, _ = build_cleanup_plan(root, organize_by_genre=False)
+    quarantined = [a.src.name for a in plan.actions if a.kind == QUARANTINE]
+    assert quarantined == ["Track (1).mp3"], "only the marker copy is set aside"
+    apply_plan(plan, runs_dir)
+    assert (root / "Track.mp3").exists(), "the clean copy stays in the library"
+
+
 def test_no_genre_left_in_place_not_dumped_in_unknown(tmp_path: Path, monkeypatch):
     root = tmp_path / "lib"
     root.mkdir()

@@ -18,6 +18,7 @@ import typer
 
 from .cleanup import build_cleanup_plan
 from .engine import EngineError, apply_plan, undo_run
+from .inbox import InboxError, build_inbox_plan
 from .journal import APPLIED, DONE, list_runs
 from .model import Plan
 from .planner import build_plan
@@ -89,6 +90,49 @@ def cleanup(
     typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
     if p.actions:
         typer.echo(f"Review both, then:  librarian apply {out}")
+
+
+@app.command()
+def inbox(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root — the inbox must live inside it")],
+    inbox_dir: Annotated[Optional[Path], typer.Option("--inbox", file_okay=False, help="Folder to drain (default: <library-root>/Inbox)")] = None,
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="Collection XML: new tracks are ADDED to it + a playlist")] = None,
+    playlist: Annotated[str, typer.Option("--playlist", help="Playlist node to create/append in the XML")] = "New This Week",
+    organize: Annotated[bool, typer.Option("--organize/--no-organize", help="File new tracks into Genre/ folders")] = True,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
+    report_out: Annotated[Path, typer.Option("--report", help="Where to write the inbox report")] = Path("inbox-report.md"),
+) -> None:
+    """Drain the Inbox: dedupe against the library, file new tracks, add them to
+    rekordbox + a 'New This Week' playlist. Dry-run by default — NO changes."""
+    root = library_root.absolute()
+    inbox_path = (inbox_dir or (root / "Inbox")).absolute()
+    if not inbox_path.is_dir():
+        typer.echo(f"Inbox {inbox_path} does not exist — nothing to file.")
+        raise typer.Exit(0)
+    try:
+        p, report = build_inbox_plan(
+            root,
+            inbox_path,
+            organize_by_genre=organize,
+            rekordbox_xml=rekordbox_xml.absolute() if rekordbox_xml else None,
+            playlist_name=playlist,
+        )
+    except InboxError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+    if not p.actions:
+        typer.echo("Inbox empty — nothing to file.")
+        report_out.write_text(report.render(), encoding="utf-8")
+        raise typer.Exit(0)
+    _print_plan(p)
+    if p.rekordbox_additions and p.rekordbox_xml:
+        typer.echo(f"\n+ {len(p.rekordbox_additions)} new tracks → rekordbox '{playlist}' playlist")
+    elif p.rekordbox_additions:
+        typer.echo(f"\n{len(p.rekordbox_additions)} new tracks filed (pass --rekordbox-xml to also add them to rekordbox)")
+    out.write_text(json.dumps(p.to_dict(), indent=2), encoding="utf-8")
+    report_out.write_text(report.render(), encoding="utf-8")
+    typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
+    typer.echo(f"Review both, then:  librarian apply {out}")
 
 
 @app.command()

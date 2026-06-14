@@ -38,6 +38,72 @@ def test_clobber_is_refused_and_nothing_moves(tmp_path: Path, runs_dir: Path):
     assert tree_digest(root) == before, "a refused apply must leave the tree untouched"
 
 
+def test_inbox_apply_undo_conserves_every_file(tmp_path: Path, monkeypatch):
+    """An inbox apply+undo cycle must never lose a file: each ends up either in
+    the library or back in the Inbox — total file count is conserved."""
+    from librarian import inbox as inbox_mod
+    from librarian.inbox import build_inbox_plan
+    from librarian.metadata import TrackMeta
+
+    root = tmp_path / "lib"
+    inbox = root / "Inbox"
+    inbox.mkdir(parents=True)
+    (root / "Existing.mp3").write_bytes(b"already-here")
+    (inbox / "new.mp3").write_bytes(b"fresh")
+    (inbox / "dup.mp3").write_bytes(b"already-here")  # exact dup of the library file
+    runs_dir = tmp_path / "runs"
+    monkeypatch.setattr(
+        inbox_mod, "read_meta",
+        lambda p: TrackMeta(path=p, artist="A", title=p.stem, genre="House"),
+    )
+
+    n_before = sum(1 for p in root.rglob("*") if p.is_file())
+    plan, _ = build_inbox_plan(root, inbox)
+    journal = apply_plan(plan, runs_dir)
+    assert sum(1 for p in root.rglob("*") if p.is_file()) == n_before, "no file lost on apply"
+    from librarian.engine import undo_run
+
+    undo_run(journal.run_id, runs_dir)
+    assert sum(1 for p in root.rglob("*") if p.is_file()) == n_before, "no file lost on undo"
+
+
+def test_preflight_rejects_unparseable_rekordbox_xml(tmp_path: Path, runs_dir: Path):
+    """A malformed rekordbox XML must fail the whole plan up front — never crash
+    mid-apply after files have already moved."""
+    root = tmp_path / "lib"
+    make_library(root, ["a.mp3"])
+    bad_xml = tmp_path / "broken.xml"
+    bad_xml.write_text("<DJ_PLAYLISTS><COLLECTION></broken>", encoding="utf-8")
+    before = tree_digest(root)
+    plan = Plan(
+        library_root=root,
+        actions=[Action(MOVE, root / "a.mp3", root / "b.mp3", reason="x")],
+        rekordbox_xml=bad_xml,
+    )
+    with pytest.raises(EngineError, match="not parseable"):
+        apply_plan(plan, runs_dir, backup=False)
+    assert tree_digest(root) == before, "a rejected plan must not move anything"
+
+
+def test_preflight_rejects_xml_without_collection_when_adding(tmp_path: Path, runs_dir: Path):
+    from librarian.model import RekordboxAddition
+
+    root = tmp_path / "lib"
+    make_library(root, ["a.mp3"])
+    xml = tmp_path / "no_collection.xml"
+    xml.write_text('<?xml version="1.0"?>\n<DJ_PLAYLISTS></DJ_PLAYLISTS>\n', encoding="utf-8")
+    before = tree_digest(root)
+    plan = Plan(
+        library_root=root,
+        actions=[Action(MOVE, root / "a.mp3", root / "b.mp3", reason="x")],
+        rekordbox_xml=xml,
+        rekordbox_additions=[RekordboxAddition(location=root / "b.mp3", name="b")],
+    )
+    with pytest.raises(EngineError, match="no <COLLECTION>"):
+        apply_plan(plan, runs_dir, backup=False)
+    assert tree_digest(root) == before
+
+
 def test_engine_source_has_no_delete_or_copydelete_calls():
     """Belt-and-suspenders: the engine never calls a delete primitive, and never
     uses shutil.move (which silently becomes copy+delete across volumes)."""
