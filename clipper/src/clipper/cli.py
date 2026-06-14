@@ -109,17 +109,32 @@ def _maybe_ai_captions(results, transcripts: dict[int, str]) -> dict:
         return {}
 
 
+def _output_ext(frame: Optional[tuple[int, int]]) -> str:
+    """Video sources → .mp4; audio-only → .m4a (AAC). Never reuse the raw source
+    extension, so a .wav set recording yields a compact, postable clip."""
+    return ".mp4" if frame is not None else ".m4a"
+
+
 def _validate_x_offset(frame: tuple[int, int], x_offset: int) -> None:
     width, height = frame
-    crop_w = round(height * 9 / 16)
+    # Clamp to the source: a source already 9:16 or taller crops to its full
+    # width, so the valid offset range collapses to {0} rather than going negative.
+    # Floor-divide to match ffmpeg's crop truncation (int(ih*9/16)) exactly, so
+    # the reported limit is the true headroom, not 1px over on odd dimensions.
+    crop_w = min(width, height * 9 // 16)
     limit = width - crop_w
     if not 0 <= x_offset <= limit:
-        typer.secho(
-            f"--x-offset {x_offset} out of range: source is {width}x{height}, "
-            f"crop window is {crop_w}px wide, so offset must be 0..{limit}",
-            fg="red",
-            err=True,
-        )
+        if limit == 0:
+            msg = (
+                f"--x-offset has no effect: source {width}x{height} is already "
+                "9:16 or taller, so the crop spans the full width (use 0)"
+            )
+        else:
+            msg = (
+                f"--x-offset {x_offset} out of range: source is {width}x{height}, "
+                f"crop window is {crop_w}px wide, so offset must be 0..{limit}"
+            )
+        typer.secho(msg, fg="red", err=True)
         raise typer.Exit(1)
 
 
@@ -192,7 +207,7 @@ def cut(
         out_dir = _fresh_out_dir(out)
 
         results = []
-        ext = ".mp4" if frame is not None else source.suffix.lower()
+        ext = _output_ext(frame)
         for i, seg in enumerate(segments, 1):
             dest = out_dir / f"clip_{i:02d}{ext}"
             typer.echo(
