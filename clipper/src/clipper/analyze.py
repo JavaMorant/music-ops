@@ -128,6 +128,29 @@ def _rise_signal(energy: np.ndarray, k: int) -> np.ndarray:
     return np.clip(rise, 0.0, None)
 
 
+VISUAL_WEIGHT = 0.35  # how much the on-camera signal counts vs audio energy
+
+
+def blend_visual(
+    audio: np.ndarray, visual: list[float] | np.ndarray, visual_weight: float = VISUAL_WEIGHT
+) -> np.ndarray:
+    """Blend a per-second visual-activity signal into the audio score array.
+
+    The audio scores are already 0..1; the visual signal is normalized and the
+    two are combined per second. Lengths are truncated to the shorter of the
+    two (the audio and video streams rarely report identical second counts).
+    Returns the audio scores unchanged when there's no visual signal, so a
+    source with no usable video degrades to audio-only selection.
+    """
+    if visual is None or len(visual) == 0 or audio.size == 0:
+        return audio
+    vis = np.asarray(visual, dtype=float)
+    n = min(audio.shape[0], vis.shape[0])
+    if n == 0:
+        return audio
+    return (1.0 - visual_weight) * audio[:n] + visual_weight * _normalize(vis[:n])
+
+
 def snap_to_beat(
     wav_path: Path,
     start: float,

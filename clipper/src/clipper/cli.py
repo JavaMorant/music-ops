@@ -11,7 +11,7 @@ from typing import Annotated, Optional
 import typer
 
 from . import media
-from .analyze import align_to_beats, score_audio, select_segments
+from .analyze import align_to_beats, blend_visual, score_audio, select_segments
 from .manifest import format_timestamp, write_captions_stub, write_manifest
 
 app = typer.Typer(
@@ -68,10 +68,14 @@ def analyze(
     spacing: Annotated[int, typer.Option(min=0, help="Min seconds between candidates")] = 60,
     top: Annotated[int, typer.Option(min=1, help="How many candidates to show")] = 10,
     beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap candidate starts to the nearest beat")] = True,
+    visual: Annotated[bool, typer.Option("--visual/--no-visual", help="Blend on-camera motion/flash energy into scoring (extra video pass)")] = False,
 ) -> None:
     """Rank the highest-energy moments of a set recording."""
     try:
         with _audio_workspace(source) as (wav, scores, duration):
+            if visual and media.video_frame_size(source) is not None:
+                typer.echo("Analyzing visual activity …")
+                scores = blend_visual(scores, media.visual_activity(source, wav.parent))
             segments = select_segments(scores, clip_len=length, max_clips=top, spacing=spacing)
             if beat_align:
                 typer.echo("Aligning to beats …")
@@ -97,6 +101,7 @@ def cut(
     x_offset: Annotated[Optional[int], typer.Option(help="Manual crop x-offset in px (default: centre)")] = None,
     out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/<date>/)")] = None,
     beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap clip starts to the nearest beat")] = True,
+    visual: Annotated[bool, typer.Option("--visual/--no-visual", help="Blend on-camera motion/flash energy into scoring (extra video pass)")] = False,
 ) -> None:
     """Cut the top-N highest-energy segments to 9:16 clips + manifest."""
     from .cut import cut_audio_segment, cut_segment  # deferred with the rest
@@ -106,6 +111,9 @@ def cut(
         if frame is not None and x_offset is not None:
             _validate_x_offset(frame, x_offset)
         with _audio_workspace(source) as (wav, scores, duration):
+            if visual and frame is not None:
+                typer.echo("Analyzing visual activity …")
+                scores = blend_visual(scores, media.visual_activity(source, wav.parent))
             segments = select_segments(scores, clip_len=length, max_clips=clips, spacing=spacing)
             if not segments:
                 typer.secho("No segments found — source too short?", fg="red", err=True)

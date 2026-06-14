@@ -7,6 +7,7 @@ with spaces, unicode, and emoji survive.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -89,4 +90,58 @@ def extract_audio(source: Path, dest_dir: Path, sample_rate: int = 22050) -> Pat
         ],
         subject=source,
     )
+    return out
+
+
+_PTS_TIME_RE = re.compile(r"pts_time:([0-9.]+)")
+
+
+def visual_activity(source: Path, workdir: Path, fps: int = 4) -> list[float]:
+    """Per-second visual motion/flash energy from the video stream.
+
+    One low-fps, read-only decode pass: consecutive-frame difference (tblend)
+    then the average luma of that difference (signalstats YAVG) — i.e. how much
+    the frame changed, which rises on strobes, crowd motion, and camera moves.
+    ffmpeg writes per-frame metadata to a file we parse and average per second.
+
+    Returns a list indexed by second (empty if the source has no parseable
+    video metadata). The source is only read, never re-encoded.
+    """
+    meta = Path(workdir) / "visual.txt"
+    _run(
+        [
+            "ffmpeg",
+            "-v", "error",
+            "-i", str(source),
+            "-an",
+            "-vf",
+            f"fps={fps},tblend=all_mode=difference,signalstats,"
+            f"metadata=print:file={meta}",
+            "-f", "null",
+            "-",
+        ],
+        subject=source,
+    )
+    if not meta.is_file():
+        return []
+
+    per_second: dict[int, list[float]] = {}
+    current_second: int | None = None
+    for line in meta.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if line.startswith("frame:"):
+            m = _PTS_TIME_RE.search(line)
+            current_second = int(float(m.group(1))) if m else None
+        elif current_second is not None and line.startswith("lavfi.signalstats.YAVG="):
+            try:
+                value = float(line.split("=", 1)[1])
+            except ValueError:
+                continue
+            per_second.setdefault(current_second, []).append(value)
+
+    if not per_second:
+        return []
+    out = [0.0] * (max(per_second) + 1)
+    for second, values in per_second.items():
+        out[second] = sum(values) / len(values)
     return out
