@@ -29,6 +29,13 @@ releases list --stage complete --limit 20       # filter by stage
 releases plan --cadence single/3w --target "EP by Aug 31"
 releases status "Encara" scheduled --note "first single"
 releases dashboard                              # counts, schedule, overdue
+
+# curate a release (single/EP) by hand, then schedule it:
+releases release new "Summer EP" --kind ep
+releases release add "Summer EP" --top 3        # grab the 3 closest-to-done
+releases release add "Summer EP" "Hong Tonky"   # or by name
+releases release reorder "Summer EP" "Iswear"   # set the lead single
+releases plan --release "Summer EP" --target "EP by Aug 31"
 ```
 
 Every command takes `--db PATH` to point at a different index.
@@ -60,6 +67,37 @@ top of the ranking. With `--target "EP by Aug 31"` the run fills until the
 deadline and caps with the EP; without a target, `--count N` sets how many
 singles to schedule. The calendar is saved so `dashboard` can show it; pass
 `--no-save` to preview only.
+
+### `release …` — curate singles/EPs by hand
+
+A **release** is a named container (single or EP) holding an ordered set of
+chosen tracks (references to scanned projects). It's how you *bundle* tracks
+toward a drop — entirely in the index, **no files are moved**.
+
+```bash
+releases release new [NAME] [--kind single|ep]   # NAME omitted → "Untitled N"
+releases release ls                              # all releases + status + counts
+releases release show <release>                  # ordered tracklist + readiness
+releases release add <release> <query>... [--top N] [--at POS]
+releases release move <track> --to <release> [--at POS]
+releases release rm <release> <query>...
+releases release reorder <release> <query>...    # unnamed tracks keep order after
+releases release rename <release> <new-name> [--kind single|ep]
+releases release ship <release>                  # mark released (cascades tracks)
+releases release delete <release> [--force]      # container only; projects untouched
+```
+
+`<release>` resolves by id or unique name substring; `<query>` matches a project
+the same way `status` does (ambiguous matches are listed, not guessed). `--top N`
+bulk-adds the N closest-to-done projects not already in any release — the fast
+way to fill a release. A track whose project later vanishes from a scan shows as
+`MISSING` (its snapshot name is kept) rather than being silently dropped.
+
+Schedule a curated release with `plan --release <name>`: its tracks lay onto the
+Friday cadence **in your order** (not the closeness ranking), with the EP slot
+now referencing the real member tracks. `--together` drops all tracks on the EP
+date instead of as lead singles. Scheduling sets the release to `scheduled`;
+`ship` sets it `released` and logs each track's transition.
 
 ### `status <project> <stage>`
 Moves a project along the pipeline and logs the change. `<project>` is a

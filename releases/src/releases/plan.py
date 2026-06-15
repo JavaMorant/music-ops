@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
 
-from .score import Scored, rank
+from .score import Scored, rank, score_project
 
 _CADENCE_RE = re.compile(r"^\s*([A-Za-z]+)\s*/\s*(\d+)\s*([wdm])\s*$", re.IGNORECASE)
 _UNIT_DAYS = {"d": 1, "w": 7, "m": 30}
@@ -52,6 +52,8 @@ class Slot:
     slot_type: str             # "single" | "ep"
     scored: Optional[Scored]   # the project filling a single (None for the EP)
     label: str = ""            # used for the EP slot
+    release_id: Optional[int] = None   # set when the slot came from a curated release
+    position: Optional[int] = None     # member ordinal within that release
 
 
 def parse_cadence(text: str) -> Cadence:
@@ -163,4 +165,71 @@ def plan_releases(
     candidates = [p for p in projects if p.effective_stage != "released"]
     ranked = rank(candidates)
     slots = build_calendar(ranked, cadence, target, today, count=count)
+    return slots, cadence, target
+
+
+def build_release_calendar(
+    scored: list[Scored],
+    cadence: Cadence,
+    target: Target,
+    today: date,
+    kind: str,
+    release_id: int,
+    release_name: str,
+    together: bool = False,
+    lead_days: int = 7,
+) -> list[Slot]:
+    """Lay a *curated* release onto the calendar. Tracks keep their stored order
+    (no closeness re-ranking — the user curated it). A single ships one slot; an
+    EP ships its tracks as lead singles then the EP culmination, unless
+    ``together`` (all tracks drop on the EP date)."""
+    slots: list[Slot] = []
+    slot_date = _next_friday(today + timedelta(days=lead_days))
+
+    if kind == "single":
+        if scored:
+            slots.append(Slot(slot_date, "single", scored[0], release_id=release_id, position=1))
+        return slots
+
+    if together:
+        ep_date = target.deadline or slot_date
+        slots.append(Slot(ep_date, "ep", None, label=release_name, release_id=release_id))
+        return slots
+
+    for i, sc in enumerate(scored, 1):
+        # Stop laying lead singles once we'd cross the deadline — the EP must be
+        # able to land on the requested date. Overflow tracks still ship *on* the
+        # EP (they're members of the release), they just get no advance single.
+        if target.deadline is not None and slot_date >= target.deadline:
+            break
+        slots.append(Slot(slot_date, "single", sc, release_id=release_id, position=i))
+        slot_date = _next_friday(slot_date + timedelta(days=cadence.interval_days))
+    # EP lands on the deadline if given, else just after the last lead single.
+    ep_date = target.deadline if target.deadline is not None else slot_date
+    slots.append(Slot(ep_date, "ep", None, label=release_name, release_id=release_id))
+    return slots
+
+
+def plan_release(
+    projects_ordered,
+    cadence_text: str,
+    target_text: Optional[str],
+    today: date,
+    kind: str,
+    release_id: int,
+    release_name: str,
+    together: bool = False,
+) -> tuple[list[Slot], Cadence, Target]:
+    """Plan a hand-curated release. ``projects_ordered`` are the present member
+    projects in track order (missing tracks already filtered out)."""
+    cadence = parse_cadence(cadence_text)
+    target = parse_target(target_text, today)
+    if target.deadline is not None and target.deadline <= today:
+        raise PlanError(
+            f"target deadline {target.deadline.isoformat()} is not in the future"
+        )
+    scored = [score_project(p) for p in projects_ordered]  # keep curated order
+    slots = build_release_calendar(
+        scored, cadence, target, today, kind, release_id, release_name, together
+    )
     return slots, cadence, target
