@@ -1,0 +1,17 @@
+# build output
+dist/
+.astro/
+
+# deps
+node_modules/
+
+# generated press kit (rebuilt from content/press-kit/ on every build)
+public/press-kit.zip
+
+# vercel
+.vercel/
+
+# env / os
+.env
+.env.production
+.DS_Store

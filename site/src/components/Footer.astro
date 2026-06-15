@@ -1,0 +1,15 @@
+---
+import site from "../../content/site.json";
+const year = new Date().getFullYear();
+---
+<footer>
+  <div class="wrap row">
+    <div>© {year} {site.name} · {site.location}</div>
+    <div class="socials">
+      {site.socials.map((s) => (
+        <a href={s.url} target="_blank" rel="noopener noreferrer">{s.label}</a>
+      ))}
+      <a href={`mailto:${site.bookingEmail}`}>Email</a>
+    </div>
+  </div>
+</footer>

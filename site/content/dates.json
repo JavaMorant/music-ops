@@ -1,0 +1,10 @@
+{
+  "upcoming": [
+    { "date": "2026-07-18", "event": "Summer Rooftop Series", "venue": "Netil House", "city": "London", "ticketUrl": "" },
+    { "date": "2026-08-09", "event": "Amapiano All Dayer", "venue": "Colour Factory", "city": "London", "ticketUrl": "" }
+  ],
+  "past": [
+    { "date": "2026-05-03", "event": "Garage Nation", "venue": "XOYO", "city": "London" },
+    { "date": "2026-03-21", "event": "Launch Party", "venue": "The Cause", "city": "London" }
+  ]
+}

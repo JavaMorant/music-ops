@@ -1,0 +1,2 @@
+Add press photos (.jpg / .png) to this folder. They will be included in
+press-kit.zip on the next build. Delete this placeholder once you add real ones.

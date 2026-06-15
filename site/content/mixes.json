@@ -1,0 +1,15 @@
+{
+  "note": "Paste the EMBED url for each mix. SoundCloud: open a track/set, Share -> Embed, copy the src that starts with https://w.soundcloud.com/player/. Spotify: Share -> Embed, copy the https://open.spotify.com/embed/... url. provider sets the player height (soundcloud | spotify).",
+  "items": [
+    {
+      "title": "Amapiano Rooftop Mix",
+      "provider": "soundcloud",
+      "embedUrl": "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/playlists/1234567890&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false"
+    },
+    {
+      "title": "UK Garage Selection",
+      "provider": "spotify",
+      "embedUrl": "https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M"
+    }
+  ]
+}

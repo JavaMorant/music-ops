@@ -1,0 +1,158 @@
+---
+import Base from "../layouts/Base.astro";
+import Embed from "../components/Embed.astro";
+import site from "../../content/site.json";
+import stats from "../../content/stats.json";
+import dates from "../../content/dates.json";
+import mixes from "../../content/mixes.json";
+import highlights from "../../content/highlights.json";
+
+// Bio is markdown so it can hold formatting; render it natively.
+const bioMods = import.meta.glob("../../content/bio.md", { eager: true });
+const Bio = (Object.values(bioMods)[0] as any)?.Content;
+
+const fmt = (iso: string) => {
+  // Guard a blank/TBA/malformed date so one bad entry can't crash the build.
+  const d = new Date(`${iso}T00:00:00`);
+  return isNaN(d.getTime())
+    ? iso || "TBA"
+    : new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d);
+};
+
+const hasMixes = mixes.items?.length > 0;
+const hasHighlights = highlights.items?.length > 0;
+const hasUpcoming = dates.upcoming?.length > 0;
+const hasPast = dates.past?.length > 0;
+---
+<Base>
+  <!-- HERO -->
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="wrap">
+      <h1 id="hero-h">{site.name}</h1>
+      <p class="tagline">{site.tagline}</p>
+      <div class="meta"><span>{site.location}</span><span>Bookings open</span></div>
+      <div class="btn-row">
+        <a class="btn" href="#mixes">Listen</a>
+        <a class="btn ghost" href="#booking">Book</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section id="about" aria-labelledby="about-h">
+    <div class="wrap cols">
+      <h2 class="label" id="about-h">About</h2>
+      <div class="bio">{Bio ? <Bio /> : <p>{site.tagline}</p>}</div>
+    </div>
+  </section>
+
+  <!-- MIXES -->
+  {hasMixes && (
+    <section id="mixes" aria-labelledby="mixes-h">
+      <div class="wrap">
+        <p class="label">Listen</p>
+        <h2 id="mixes-h">Mixes</h2>
+        <div class="embed-grid">
+          {mixes.items.map((m) => (
+            <Embed title={m.title} provider={m.provider} embedUrl={m.embedUrl} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- HIGHLIGHTS -->
+  {hasHighlights && (
+    <section id="watch" aria-labelledby="watch-h">
+      <div class="wrap">
+        <p class="label">Watch</p>
+        <h2 id="watch-h">Highlight reel</h2>
+        <div class="embed-grid">
+          {highlights.items.map((h) => (
+            <Embed title={h.title} provider="youtube" embedUrl={h.embedUrl} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- STATS -->
+  {stats.items?.length > 0 && (
+    <section id="stats" aria-labelledby="stats-h">
+      <div class="wrap">
+        <h2 class="label" id="stats-h">Selected stats</h2>
+        <div class="stats">
+          {stats.items.map((s) => (
+            <div class="stat"><div class="v">{s.value}</div><div class="l">{s.label}</div></div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- DATES -->
+  {(hasUpcoming || hasPast) && (
+    <section id="dates" aria-labelledby="dates-h">
+      <div class="wrap dates">
+        <p class="label">Live</p>
+        <h2 id="dates-h">Dates</h2>
+        {hasUpcoming && (
+          <>
+            <h3>Upcoming</h3>
+            {dates.upcoming.map((d) => (
+              <div class="date">
+                <span class="when">{fmt(d.date)}</span>
+                <span class="what">{d.event}<span class="where"> · {d.venue}, {d.city}</span></span>
+                {d.ticketUrl
+                  ? <a class="tix" href={d.ticketUrl} target="_blank" rel="noopener noreferrer">Tickets</a>
+                  : <span class="where">—</span>}
+              </div>
+            ))}
+          </>
+        )}
+        {hasPast && (
+          <>
+            <h3 style="margin-top:36px">Past</h3>
+            {dates.past.map((d) => (
+              <div class="date past">
+                <span class="when">{fmt(d.date)}</span>
+                <span class="what">{d.event}<span class="where"> · {d.venue}, {d.city}</span></span>
+                <span class="where"></span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </section>
+  )}
+
+  <!-- BOOKING -->
+  <section id="booking" aria-labelledby="booking-h">
+    <div class="wrap cols">
+      <h2 class="label" id="booking-h">Booking</h2>
+      <div class="booking">
+        <p class="big">Club nights, festivals, brand events, private bookings.</p>
+        <p class="dim">Every enquiry is read and answered personally.</p>
+        <div class="btn-row">
+          <a class="btn" href={`mailto:${site.bookingEmail}?subject=${encodeURIComponent(`Booking enquiry — ${site.name}`)}`}>
+            Email for bookings
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRESS KIT -->
+  <section id="press" aria-labelledby="press-h">
+    <div class="wrap cols">
+      <h2 class="label" id="press-h">Press</h2>
+      <div class="booking">
+        <p class="big">Press kit</p>
+        <p class="dim">Bio, photos, logos and tech rider in one download.</p>
+        <div class="btn-row">
+          <a class="btn" href="/press-kit.zip" download>Download press kit (.zip)</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,28 @@
+---
+// Renders one embed (SoundCloud / Spotify audio, or a YouTube video) from a
+// content entry { title, provider, embedUrl }. Provider only sets the sizing.
+interface Props {
+  title?: string;
+  provider?: string;
+  embedUrl: string;
+}
+const { title, provider = "soundcloud", embedUrl } = Astro.props;
+const klass =
+  provider === "youtube" ? "embed video"
+  : provider === "spotify" ? "embed audio-tall"
+  : "embed audio";
+const allow =
+  provider === "youtube"
+    ? "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    : "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+---
+<div class={klass}>
+  {title && <h3>{title}</h3>}
+  <iframe
+    src={embedUrl}
+    title={title ?? "embedded media"}
+    loading="lazy"
+    allow={allow}
+    referrerpolicy="strict-origin-when-cross-origin"
+  ></iframe>
+</div>
