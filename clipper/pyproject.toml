@@ -12,10 +12,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27"]  # httpx powers FastAPI's TestClient
 # Ambition-tier extras (feature-flagged; core runs without them):
 #   --transcribe → faster-whisper, --ai → anthropic (model claude-sonnet-4-6)
 ai = ["faster-whisper>=1.0", "anthropic>=0.69"]
+# Local web UI (clipper web): a single-page studio over the analyze/cut engine.
+web = ["fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.scripts]
 clipper = "clipper.cli:app"
@@ -26,3 +28,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+clipper = ["web_static/*.html"]

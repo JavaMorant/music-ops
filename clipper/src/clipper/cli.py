@@ -302,6 +302,24 @@ def overlay(
 
 
 @app.command()
+def web(
+    host: Annotated[str, typer.Option(help="Interface to bind")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to serve on")] = 8765,
+    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload on code changes (dev)")] = False,
+) -> None:
+    """Launch the local clip-studio web UI (needs the [web] extra)."""
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        typer.secho(
+            "clipper web needs the web extra: pip install -e '.[web]'", fg="red", err=True
+        )
+        raise typer.Exit(1)
+    typer.echo(f"clipper studio → http://{host}:{port}  (Ctrl-C to stop)")
+    uvicorn.run("clipper.web:app", host=host, port=port, reload=reload)
+
+
+@app.command()
 def artwork(
     image: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Source artwork image")],
     out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/artwork/<name>/)")] = None,

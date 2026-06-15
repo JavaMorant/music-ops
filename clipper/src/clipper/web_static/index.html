@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>clipper studio</title>
+<style>
+  :root {
+    --bg: #0c0d10; --panel: #15171c; --panel2: #1c1f26; --line: #2a2e38;
+    --ink: #e8e9ec; --muted: #8b90a0; --accent: #ff5c7a; --accent2: #5cc8ff;
+    --ok: #51d88a; --warn: #ffcf5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent2); }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .12em; text-transform: uppercase; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 22px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  label.fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  input[type=text], input[type=number] {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 8px 10px; font: inherit;
+  }
+  input[type=text] { min-width: 340px; flex: 1; }
+  input[type=range] { width: 150px; accent-color: var(--accent); }
+  button {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0410; font-weight: 600; }
+  button.primary:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: transparent; }
+  .dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-top: 14px; }
+  .dial { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .dial .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .dial .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .toggles { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
+  .toggles label { display: flex; gap: 7px; align-items: center; color: var(--muted); }
+  .status { color: var(--muted); min-height: 20px; margin-top: 6px; }
+  .status.err { color: var(--accent); }
+  .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--line);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 7px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .viewtabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .viewtabs button.on { background: var(--accent2); border-color: var(--accent2); color: #03121c; font-weight: 600; }
+  #chartWrap { position: relative; }
+  canvas { width: 100%; height: 230px; display: block; background: var(--panel2); border-radius: 10px; border: 1px solid var(--line); }
+  .moment { margin-top: 12px; display: none; gap: 12px; align-items: center; flex-wrap: wrap;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  .moment.show { display: flex; }
+  .moment .tag { font-weight: 600; }
+  .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card.on { border-color: var(--accent); }
+  .card .hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .card .rank { font-weight: 700; }
+  .card .sc { font-variant-numeric: tabular-nums; color: var(--accent2); }
+  .card video, .card audio, #player video, #player audio, .clip video, .clip audio { width: 100%; border-radius: 8px; background: #000; margin: 6px 0; }
+  .card .ctl { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .meterbar { height: 5px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .meterbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+  #player { margin-top: 12px; }
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 12px; }
+  .clip { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .muted { color: var(--muted); }
+  .hidden { display: none !important; }
+  /* file browser */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 10; }
+  .overlay.show { display: flex; }
+  .browser { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(720px, 92vw); max-height: 80vh; display: flex; flex-direction: column; }
+  .browser .bh { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .browser .bh code { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .browser .list { overflow: auto; padding: 6px; }
+  .entry { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+  .entry:hover { background: var(--panel2); }
+  .entry .ic { width: 18px; text-align: center; }
+  .entry.media { color: var(--accent2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>clipper<span style="color:var(--accent)">·</span>studio</h1>
+  <span class="sub">find the moments → cut 9:16 → post</span>
+</header>
+
+<main>
+  <!-- SOURCE + DIALS -->
+  <section class="panel">
+    <div class="row">
+      <input id="source" type="text" placeholder="/path/to/set-recording.mp4 (or .wav)" />
+      <button onclick="openBrowser()">Browse…</button>
+      <button id="analyzeBtn" class="primary" onclick="analyze()">▶ Analyze</button>
+    </div>
+
+    <div class="dials">
+      <div class="dial">
+        <div class="top"><span>clip length</span><span class="val"><span id="lengthV">30</span>s</span></div>
+        <input type="range" id="length" min="15" max="60" step="1" value="30" oninput="lengthV.textContent=this.value">
+      </div>
+      <div class="dial">
+        <div class="top"><span>spacing</span><span class="val"><span id="spacingV">60</span>s</span></div>
+        <input type="range" id="spacing" min="0" max="300" step="5" value="60" oninput="spacingV.textContent=this.value">
+      </div>
+      <div class="dial">
+        <div class="top"><span>how many</span><span class="val" id="topV">10</span></div>
+        <input type="range" id="top" min="1" max="40" step="1" value="10" oninput="topV.textContent=this.value">
+      </div>
+      <div class="dial">
+        <div class="top"><span>drop-weight</span><span class="val" id="dropV">0.50</span></div>
+        <input type="range" id="drop_weight" min="0" max="1" step="0.05" value="0.5" oninput="dropV.textContent=(+this.value).toFixed(2)">
+      </div>
+      <div class="dial">
+        <div class="top"><span>crowd-weight</span><span class="val" id="crowdV">0.00</span></div>
+        <input type="range" id="crowd_weight" min="0" max="1" step="0.05" value="0" oninput="crowdV.textContent=(+this.value).toFixed(2)">
+      </div>
+      <div class="dial">
+        <div class="top"><span>lead-in</span><span class="val"><span id="leadV">5</span>s</span></div>
+        <input type="range" id="lead_in" min="0" max="20" step="1" value="5" oninput="leadV.textContent=this.value">
+      </div>
+      <div class="dial">
+        <div class="top"><span>build-window</span><span class="val"><span id="buildV">8</span>s</span></div>
+        <input type="range" id="build_window" min="1" max="30" step="1" value="8" oninput="buildV.textContent=this.value">
+      </div>
+    </div>
+
+    <div class="toggles">
+      <label><input type="checkbox" id="beat_align" checked> beat-align</label>
+      <label><input type="checkbox" id="visual"> visual (video motion/flash)</label>
+      <label class="fld" style="flex-direction:row;align-items:center;gap:7px;">x-offset
+        <input type="number" id="x_offset" placeholder="centre" style="width:90px" min="0"></label>
+    </div>
+    <div id="status" class="status"></div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="panel hidden">
+    <div class="row" style="justify-content:space-between">
+      <div class="viewtabs">
+        <button id="tabTimeline" class="on" onclick="setView('timeline')">Energy timeline</button>
+        <button id="tabList" onclick="setView('list')">Ranked list</button>
+      </div>
+      <div class="row">
+        <span id="summary" class="muted"></span>
+        <button class="ghost" onclick="setAll(true)">select all</button>
+        <button class="ghost" onclick="setAll(false)">none</button>
+        <button id="cutBtn" class="primary" onclick="cut()">✂ Cut selected</button>
+      </div>
+    </div>
+
+    <div id="timelineView">
+      <div id="chartWrap"><canvas id="chart"></canvas></div>
+      <div id="moment" class="moment">
+        <span class="tag" id="mTag"></span>
+        <span class="pill" id="mScore"></span>
+        <button onclick="previewActive()">▶ Preview</button>
+        <button id="mInclude" onclick="toggleActive()"></button>
+        <span class="muted" id="mHint">click a band on the timeline to audition a moment</span>
+      </div>
+    </div>
+
+    <div id="listView" class="hidden"><div id="cards" class="cards"></div></div>
+
+    <div id="player"></div>
+  </section>
+
+  <!-- CUT OUTPUT -->
+  <section id="output" class="panel hidden">
+    <div class="row" style="justify-content:space-between">
+      <strong>Cut clips</strong>
+      <span id="outDir" class="muted"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <a id="manifestLink" href="#">↓ manifest.csv</a>
+      <a id="captionsLink" href="#">↓ captions.md</a>
+    </div>
+    <div id="clips" class="clips"></div>
+  </section>
+</main>
+
+<!-- FILE BROWSER -->
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeBrowser()">
+  <div class="browser">
+    <div class="bh">
+      <button onclick="browseUp()">↑ up</button>
+      <code id="bDir"></code>
+      <button class="ghost" style="margin-left:auto" onclick="closeBrowser()">✕</button>
+    </div>
+    <div id="bList" class="list"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = s => { s = Math.floor(s); const h=(s/3600|0), m=((s%3600)/60|0), x=s%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`; };
+
+let state = { result: null, view: 'timeline', active: null };
+
+function params() {
+  const v = id => $(id).value;
+  return {
+    source: $('source').value.trim(),
+    length: +v('length'), spacing: +v('spacing'), top: +v('top'),
+    drop_weight: +v('drop_weight'), lead_in: +v('lead_in'),
+    build_window: +v('build_window'), crowd_weight: +v('crowd_weight'),
+    beat_align: $('beat_align').checked, visual: $('visual').checked,
+  };
+}
+
+function setStatus(msg, busy, err) {
+  const s = $('status'); s.className = 'status' + (err ? ' err' : '');
+  s.innerHTML = (busy ? '<span class="spinner"></span>' : '') + (msg || '');
+}
+
+async function pollJob(jobId, onProgress) {
+  while (true) {
+    const r = await fetch('/api/job/' + jobId).then(r => r.json());
+    if (r.status === 'running') { onProgress(r.stage); await new Promise(x => setTimeout(x, 450)); continue; }
+    return r;
+  }
+}
+
+async function analyze() {
+  const p = params();
+  if (!p.source) { setStatus('pick a source file first', false, true); return; }
+  $('analyzeBtn').disabled = true;
+  setStatus('starting…', true);
+  try {
+    const { job_id } = await fetch('/api/analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p),
+    }).then(r => r.json());
+    const job = await pollJob(job_id, stage => setStatus(stage, true));
+    if (job.status === 'error') { setStatus(job.error, false, true); return; }
+    const res = job.result;
+    res.segments.forEach(s => s.include = true);
+    state.result = res; state.active = res.segments.length ? res.segments[0].rank : null;
+    setStatus(`found ${res.segments.length} moments in ${fmt(res.duration)} · ${res.is_video ? 'video' : 'audio-only'} source`);
+    $('results').classList.remove('hidden');
+    $('output').classList.add('hidden');
+    render();
+  } catch (e) { setStatus('' + e, false, true); }
+  finally { $('analyzeBtn').disabled = false; }
+}
+
+function setView(v) {
+  state.view = v;
+  $('tabTimeline').classList.toggle('on', v === 'timeline');
+  $('tabList').classList.toggle('on', v === 'list');
+  $('timelineView').classList.toggle('hidden', v !== 'timeline');
+  $('listView').classList.toggle('hidden', v !== 'list');
+  render();
+}
+
+function render() {
+  if (!state.result) return;
+  const segs = state.result.segments;
+  const n = segs.filter(s => s.include).length;
+  $('summary').textContent = `${n}/${segs.length} selected`;
+  $('cutBtn').disabled = n === 0;
+  if (state.view === 'timeline') drawChart(); else renderCards();
+  renderMoment();
+}
+
+function setAll(v) { state.result.segments.forEach(s => s.include = v); render(); }
+
+/* ---------- timeline ---------- */
+function drawChart() {
+  const c = $('chart'), wrap = $('chartWrap');
+  const W = wrap.clientWidth, H = 230, dpr = window.devicePixelRatio || 1;
+  c.width = W * dpr; c.height = H * dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  g.clearRect(0, 0, W, H);
+  const res = state.result, e = res.energy, dur = res.duration;
+  const pad = 8, plotH = H - pad * 2;
+  // energy area
+  g.beginPath(); g.moveTo(0, H - pad);
+  for (let i = 0; i < e.length; i++) {
+    const x = e.length > 1 ? i / (e.length - 1) * W : 0;
+    g.lineTo(x, H - pad - e[i] * plotH);
+  }
+  g.lineTo(W, H - pad); g.closePath();
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(92,200,255,.45)'); grad.addColorStop(1, 'rgba(92,200,255,.04)');
+  g.fillStyle = grad; g.fill();
+  // segment bands
+  for (const s of res.segments) {
+    const x0 = s.start / dur * W, x1 = s.end / dur * W;
+    g.fillStyle = s.include ? 'rgba(255,92,122,.22)' : 'rgba(139,144,160,.10)';
+    g.fillRect(x0, pad, Math.max(2, x1 - x0), plotH);
+    g.strokeStyle = (state.active === s.rank) ? '#ffcf5c' : (s.include ? 'rgba(255,92,122,.8)' : 'rgba(139,144,160,.5)');
+    g.lineWidth = (state.active === s.rank) ? 2 : 1;
+    g.strokeRect(x0, pad, Math.max(2, x1 - x0), plotH);
+    g.fillStyle = s.include ? '#ffb3c1' : '#8b90a0';
+    g.font = '11px ui-sans-serif'; g.fillText('#' + s.rank, x0 + 3, pad + 13);
+  }
+  c.onclick = ev => {
+    const rect = c.getBoundingClientRect();
+    const t = (ev.clientX - rect.left) / rect.width * dur;
+    const hit = res.segments.find(s => t >= s.start && t <= s.end);
+    if (hit) { state.active = hit.rank; render(); previewActive(); }
+  };
+}
+
+function renderMoment() {
+  const m = $('moment');
+  if (state.view !== 'timeline' || state.active == null) { m.classList.remove('show'); return; }
+  const s = state.result.segments.find(x => x.rank === state.active);
+  if (!s) { m.classList.remove('show'); return; }
+  m.classList.add('show');
+  $('mTag').textContent = `#${s.rank} · ${fmt(s.start)}–${fmt(s.end)}`;
+  $('mScore').textContent = 'score ' + s.score.toFixed(3);
+  $('mInclude').textContent = s.include ? '✓ included' : '✗ excluded';
+  $('mInclude').style.color = s.include ? 'var(--ok)' : 'var(--muted)';
+  $('mHint').style.display = 'none';
+}
+function toggleActive() { const s = seg(state.active); if (s) { s.include = !s.include; render(); } }
+function previewActive() { const s = seg(state.active); if (s) preview(s); }
+function seg(rank) { return state.result.segments.find(s => s.rank === rank); }
+
+/* ---------- list / cards ---------- */
+function renderCards() {
+  const wrap = $('cards'); wrap.innerHTML = '';
+  for (const s of state.result.segments) {
+    const card = document.createElement('div');
+    card.className = 'card' + (s.include ? ' on' : '');
+    card.innerHTML = `
+      <div class="hd"><span class="rank">#${s.rank} · ${fmt(s.start)}</span><span class="sc">${s.score.toFixed(3)}</span></div>
+      <div class="meterbar"><i style="width:${Math.round(s.score*100)}%"></i></div>
+      <div class="ctl" style="margin-top:10px">
+        <label><input type="checkbox" ${s.include?'checked':''} data-r="${s.rank}"> include</label>
+        <button data-prev="${s.rank}">▶ preview</button>
+      </div>`;
+    card.querySelector('input').onchange = e => { s.include = e.target.checked; card.classList.toggle('on', s.include); render(); };
+    card.querySelector('button').onclick = () => { state.active = s.rank; preview(s); };
+    wrap.appendChild(card);
+  }
+}
+
+/* ---------- shared preview player ---------- */
+function preview(s) {
+  const res = state.result;
+  const url = `/api/preview?source=${encodeURIComponent(res.source)}&start=${s.start}&dur=${s.duration}`;
+  const tag = res.is_video ? 'video' : 'audio';
+  $('player').innerHTML = `<div class="muted" style="margin-bottom:6px">previewing #${s.rank} · ${fmt(s.start)} (source moment, not the 9:16 crop)</div>
+    <${tag} src="${url}" controls autoplay></${tag}>`;
+}
+
+/* ---------- cut ---------- */
+async function cut() {
+  const res = state.result;
+  const chosen = res.segments.filter(s => s.include).map(s => ({ start: s.start, duration: s.duration, score: s.score }));
+  if (!chosen.length) return;
+  const xo = $('x_offset').value.trim();
+  $('cutBtn').disabled = true;
+  setStatus(`cutting ${chosen.length} clip(s)…`, true);
+  try {
+    const body = { source: res.source, segments: chosen, x_offset: xo === '' ? null : +xo };
+    const { job_id } = await fetch('/api/cut', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }).then(r => r.json());
+    const job = await pollJob(job_id, stage => setStatus(stage, true));
+    if (job.status === 'error') { setStatus(job.error, false, true); return; }
+    renderOutput(job.result);
+    setStatus(`cut ${job.result.clips.length} clip(s) → ${job.result.out_dir}`);
+  } catch (e) { setStatus('' + e, false, true); }
+  finally { $('cutBtn').disabled = false; }
+}
+
+function renderOutput(out) {
+  $('output').classList.remove('hidden');
+  $('outDir').textContent = out.out_dir;
+  $('manifestLink').href = out.manifest_url;
+  $('captionsLink').href = out.captions_url;
+  const tag = out.is_video ? 'video' : 'audio';
+  const wrap = $('clips'); wrap.innerHTML = '';
+  for (const c of out.clips) {
+    const d = document.createElement('div');
+    d.className = 'clip';
+    d.innerHTML = `<div class="hd" style="display:flex;justify-content:space-between">
+        <strong>${c.name}</strong><span class="muted">${c.timestamp}</span></div>
+      <${tag} src="${c.url}" controls></${tag}>
+      <a href="${c.download_url}">↓ download</a>`;
+    wrap.appendChild(d);
+  }
+  $('output').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ---------- file browser ---------- */
+let bDir = null;
+async function openBrowser() {
+  const cur = $('source').value.trim();
+  let start = null;
+  if (cur) { const i = Math.max(cur.lastIndexOf('/'), cur.lastIndexOf('\\')); if (i > 0) start = cur.slice(0, i); }
+  $('overlay').classList.add('show');
+  await loadDir(start);
+}
+function closeBrowser() { $('overlay').classList.remove('show'); }
+function browseUp() { const r = state._browse; if (r && r.parent) loadDir(r.parent); }
+async function loadDir(dir) {
+  const url = '/api/browse' + (dir ? '?dir=' + encodeURIComponent(dir) : '');
+  const r = await fetch(url).then(r => r.json());
+  state._browse = r;
+  $('bDir').textContent = r.dir;
+  const list = $('bList'); list.innerHTML = '';
+  for (const e of r.entries) {
+    const row = document.createElement('div');
+    row.className = 'entry' + (e.is_media ? ' media' : '');
+    row.innerHTML = `<span class="ic">${e.is_dir ? '📁' : '🎬'}</span><span>${e.name}</span>`;
+    row.onclick = () => { if (e.is_dir) loadDir(e.path); else { $('source').value = e.path; closeBrowser(); } };
+    list.appendChild(row);
+  }
+}
+
+window.addEventListener('resize', () => { if (state.result && state.view === 'timeline') drawChart(); });
+
+// Deep link: /?source=/path/to/set.mp4&auto=1 pre-fills (and optionally runs) — handy for bookmarking a set.
+(function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  const src = q.get('source');
+  if (src) $('source').value = src;
+  if (src && q.get('auto') === '1') analyze();
+})();
+</script>
+</body>
+</html>
