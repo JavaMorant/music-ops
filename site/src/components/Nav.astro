@@ -1,14 +1,24 @@
 ---
 import site from "../../content/site.json";
+import mixes from "../../content/mixes.json";
+import productions from "../../content/productions.json";
+import dates from "../../content/dates.json";
+
+// Only link to sections that actually render (mirror index.astro's gating).
+const links = [
+  mixes.items?.length > 0 && { href: "#mixes", label: "Mixes" },
+  productions.items?.some((p) => p.embedUrl || p.link) && { href: "#productions", label: "Productions" },
+  (dates.upcoming?.length > 0 || dates.past?.length > 0) && { href: "#dates", label: "Dates" },
+  { href: "#booking", label: "Booking" },
+  { href: "#collab", label: "Collab" },
+  { href: "#press", label: "Press kit" },
+].filter(Boolean);
 ---
 <nav class="nav">
   <div class="wrap">
     <a class="brand" href="#top">{site.name}</a>
     <div class="links">
-      <a href="#mixes">Mixes</a>
-      <a href="#dates">Dates</a>
-      <a href="#booking">Booking</a>
-      <a href="#press">Press kit</a>
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
     </div>
   </div>
 </nav>

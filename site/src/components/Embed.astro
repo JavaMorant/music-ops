@@ -1,26 +1,35 @@
 ---
-// Renders one embed (SoundCloud / Spotify audio, or a YouTube video) from a
-// content entry { title, provider, embedUrl }. Provider only sets the sizing.
+// Renders one embed (SoundCloud / Spotify audio, or a YouTube video). `title`
+// shows a visible heading AND names the iframe; `label` names the iframe only
+// (used where the title is already shown elsewhere, e.g. Productions). Provider
+// sets the sizing; if it's missing we infer it from the embed URL host so a
+// Spotify/YouTube embed isn't mis-sized as SoundCloud.
 interface Props {
   title?: string;
+  label?: string;
   provider?: string;
   embedUrl: string;
 }
-const { title, provider = "soundcloud", embedUrl } = Astro.props;
+const { title, label, embedUrl } = Astro.props;
+const provider =
+  Astro.props.provider ??
+  (/open\.spotify\.com/.test(embedUrl) ? "spotify"
+    : /youtube\.com|youtu\.be/.test(embedUrl) ? "youtube"
+    : "soundcloud");
 const klass =
   provider === "youtube" ? "embed video"
   : provider === "spotify" ? "embed audio-tall"
   : "embed audio";
 const allow =
   provider === "youtube"
-    ? "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-    : "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+    ? "accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    : "clipboard-write; encrypted-media; fullscreen; picture-in-picture";
 ---
 <div class={klass}>
   {title && <h3>{title}</h3>}
   <iframe
     src={embedUrl}
-    title={title ?? "embedded media"}
+    title={title ?? label ?? "embedded media"}
     loading="lazy"
     allow={allow}
     referrerpolicy="strict-origin-when-cross-origin"

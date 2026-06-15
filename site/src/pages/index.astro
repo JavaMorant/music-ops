@@ -5,6 +5,8 @@ import site from "../../content/site.json";
 import stats from "../../content/stats.json";
 import dates from "../../content/dates.json";
 import mixes from "../../content/mixes.json";
+import productions from "../../content/productions.json";
+import collab from "../../content/collab.json";
 import highlights from "../../content/highlights.json";
 
 // Bio is markdown so it can hold formatting; render it natively.
@@ -20,6 +22,9 @@ const fmt = (iso: string) => {
 };
 
 const hasMixes = mixes.items?.length > 0;
+// Only productions with something to play or link to (no orphan header cards).
+const releases = (productions.items ?? []).filter((p) => p.embedUrl || p.link);
+const hasProductions = releases.length > 0;
 const hasHighlights = highlights.items?.length > 0;
 const hasUpcoming = dates.upcoming?.length > 0;
 const hasPast = dates.past?.length > 0;
@@ -55,6 +60,32 @@ const hasPast = dates.past?.length > 0;
         <div class="embed-grid">
           {mixes.items.map((m) => (
             <Embed title={m.title} provider={m.provider} embedUrl={m.embedUrl} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- PRODUCTIONS -->
+  {hasProductions && (
+    <section id="productions" aria-labelledby="productions-h">
+      <div class="wrap">
+        <p class="label">In the studio</p>
+        <h2 id="productions-h">Productions</h2>
+        <div class="embed-grid">
+          {releases.map((p) => (
+            <div class="release">
+              <div class="release-head">
+                <span class="rtitle">{p.title}</span>
+                <span class="rmeta">{[p.role, p.year].filter(Boolean).join(" · ")}</span>
+              </div>
+              {p.embedUrl && <Embed label={p.title} provider={p.provider} embedUrl={p.embedUrl} />}
+              {p.link && (
+                <a class="open-link" href={p.link} target="_blank" rel="noopener noreferrer">
+                  {p.embedUrl ? "Open on platform ↗" : "Listen ↗"}
+                </a>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -136,6 +167,25 @@ const hasPast = dates.past?.length > 0;
         <div class="btn-row">
           <a class="btn" href={`mailto:${site.bookingEmail}?subject=${encodeURIComponent(`Booking enquiry — ${site.name}`)}`}>
             Email for bookings
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COLLABORATE (artists & producers) -->
+  <section id="collab" aria-labelledby="collab-h">
+    <div class="wrap cols">
+      <h2 class="label" id="collab-h">Collaborate</h2>
+      <div class="booking">
+        {collab.heading && <p class="big">{collab.heading}</p>}
+        {collab.blurb && <p class="dim">{collab.blurb}</p>}
+        {collab.offers?.length > 0 && (
+          <ul class="offers">{collab.offers.map((o) => <li>{o}</li>)}</ul>
+        )}
+        <div class="btn-row">
+          <a class="btn" href={`mailto:${site.collabEmail ?? site.bookingEmail}?subject=${encodeURIComponent(`Collab / production — ${site.name}`)}`}>
+            Send a track or idea
           </a>
         </div>
       </div>

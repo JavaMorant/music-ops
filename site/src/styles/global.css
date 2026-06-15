@@ -78,11 +78,20 @@ p { margin: 0 0 1em; }
 .nav .links { display: flex; gap: 26px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
 .nav .links a { color: var(--dim); transition: color 0.15s; padding: 6px 0; }
 .nav .links a:hover { color: var(--text); }
-/* keep links reachable on mobile (no hidden hamburger) — just tighten them */
-@media (max-width: 640px) {
-  .nav .links { gap: 16px; font-size: 11px; letter-spacing: 0.05em; }
+/* keep every link reachable on mobile (no hidden hamburger): the row scrolls
+   horizontally rather than wrapping or hiding */
+@media (max-width: 720px) {
+  .nav .links {
+    gap: 18px; font-size: 12px; letter-spacing: 0.05em;
+    overflow-x: auto; flex-wrap: nowrap; white-space: nowrap;
+    max-width: 74%; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    /* right-edge fade so it's visible the row scrolls (no visible scrollbar) */
+    -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent);
+    mask-image: linear-gradient(90deg, #000 86%, transparent);
+  }
+  .nav .links::-webkit-scrollbar { display: none; }
+  .nav .links a { flex: 0 0 auto; display: inline-block; padding: 11px 0; } /* ~44px tap target */
 }
-@media (max-width: 380px) { .nav .links { gap: 12px; } }
 
 /* ---- hero ---- */
 .hero { padding: clamp(80px, 16vh, 180px) 0 96px; border-top: 0; }
@@ -144,8 +153,17 @@ p { margin: 0 0 1em; }
   .date .where { margin-bottom: 2px; }
 }
 
-/* ---- booking ---- */
-.booking .big { font-family: var(--display); font-size: clamp(26px, 4vw, 40px); max-width: 20ch; margin-bottom: 6px; }
+/* ---- productions / releases ---- */
+.release-head { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.release-head .rtitle { font-family: var(--display); font-size: 20px; }
+.release-head .rmeta { color: var(--dim); font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+.open-link { display: inline-block; margin-top: 12px; color: var(--accent); font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 0; }
+.open-link:hover { color: var(--text); }
+
+/* ---- booking / collab ---- */
+.booking .big { font-family: var(--display); font-size: clamp(26px, 4vw, 40px); max-width: 22ch; margin-bottom: 6px; }
+.offers { list-style: none; padding: 0; margin: 20px 0 4px; display: flex; flex-wrap: wrap; gap: 10px; }
+.offers li { border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px; font-size: 13px; color: var(--text); }
 
 /* ---- footer ---- */
 footer { border-top: 1px solid var(--line); padding: 48px 0; color: var(--dim); font-size: 14px; }
