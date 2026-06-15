@@ -10,5 +10,11 @@ build/
 # Clipper output
 clipper/out/
 
+# Outreach runtime artifacts (pipeline DB, generated drafts, the user's filled
+# sender profile — the .example.toml template IS tracked)
+outreach/outreach.db
+outreach/drafts/
+outreach/outreach-profile.toml
+
 # macOS
 .DS_Store

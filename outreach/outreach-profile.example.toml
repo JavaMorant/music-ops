@@ -1,0 +1,13 @@
+# Sender profile for `outreach draft`. Copy this to `outreach-profile.toml`,
+# fill it in, and pass it with `--profile outreach-profile.toml` (the drafter
+# substitutes these into the templates' {{ me.* }} slots). Anything left blank
+# shows up in the draft as a [[ FILL: me.x ]] marker, so you'll notice.
+
+[me]
+name = "Dibsss"
+tagline = "a London DJ/producer working amapiano into UK club"
+email = "awanded75@gmail.com"
+links = [
+  "Resident mix: https://soundcloud.com/…",
+  "EPK: https://dibsss.live",
+]

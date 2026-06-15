@@ -1,0 +1,28 @@
+[project]
+name = "outreach"
+version = "0.1.0"
+description = "Booking-outreach CRM: drafts and tracks personalised promoter/venue outreach — never sends"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# Ambition-tier research step (enriches a draft with real, specific detail before
+# it is written — still drafts only, still never sends). Opt-in so the core CLI
+# stays dependency-light (stdlib sqlite3 + csv + tomllib + typer).
+ai = ["anthropic>=0.40"]
+
+[project.scripts]
+outreach = "outreach.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+outreach = ["templates/*.md"]
