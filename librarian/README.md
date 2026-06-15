@@ -7,7 +7,7 @@ safe and reversible first, useful second.
 
 > Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
 > the **`inbox`** forever-pipeline, and the local **review web app** (`serve`)
-> are built, tested (79 pytest tests), and proven on a copy of the testbed. Not
+> are built, tested (91 pytest tests), and proven on a copy of the testbed. Not
 > yet built: tag *writing*, fuzzy/fingerprint dedupe, and rekordbox **database**
 > analysis (BPM/key via pyrekordbox).
 
