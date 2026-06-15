@@ -45,6 +45,10 @@ clipper analyze "<set recording>"
 | `--len` | 30 | Candidate clip length in seconds (15–60) |
 | `--spacing` | 60 | Minimum seconds between candidates |
 | `--top` | 10 | How many candidates to show |
+| `--drop-weight` | 0.5 | Selection blend: 0 = sustained loudness, 1 = sharp drops |
+| `--lead-in` | 5 | Start each candidate this many seconds before the detected drop |
+| `--build-window` | 8 | Seconds compared before/after a moment to measure the energy step up |
+| `--crowd-weight` | 0 (off) | Reward crowd-roar moments; try `0.4` (extra audio analysis) |
 | `--beat-align / --no-beat-align` | on | Snap starts to the nearest beat |
 | `--visual / --no-visual` | off | Blend on-camera motion/flash energy into scoring (extra video pass) |
 
@@ -62,6 +66,10 @@ clipper cut "<set recording>" --clips 5 --len 30
 | `--clips` | 5 | Number of clips to cut |
 | `--len` | 30 | Clip length in seconds (15–60) |
 | `--spacing` | 60 | Minimum seconds between clips |
+| `--drop-weight` | 0.5 | Selection blend: 0 = sustained loudness, 1 = sharp drops |
+| `--lead-in` | 5 | Start each clip this many seconds before the detected drop |
+| `--build-window` | 8 | Seconds compared before/after a moment to measure the energy step up |
+| `--crowd-weight` | 0 (off) | Reward crowd-roar moments; try `0.4` (extra audio analysis) |
 | `--x-offset` | centre | Manual crop x-offset in px |
 | `--out` | `out/<date>/` | Output directory |
 | `--beat-align / --no-beat-align` | on | Snap starts to the nearest beat |
@@ -123,6 +131,30 @@ out/2026-06-14/
 4. `--beat-align` snaps each start to the nearest beat (local tempo, handles a
    DJ set's BPM drift); `--visual` blends in on-camera motion/flash energy so
    selection isn't deaf to the footage.
+
+### Tuning the selection
+
+The blend in step 3 is adjustable, so you can aim it at the kind of moment you
+want to pull:
+
+- **`--drop-weight`** (0–1, default 0.5) trades off *what makes a clip win*.
+  Toward **1.0** it chases sharp build→drop transitions; toward **0.0** it
+  rewards sustained loudness, which is better for anthem/sing-along sections that
+  never really "drop". Start here if selection keeps grabbing the wrong kind of
+  moment.
+- **`--crowd-weight`** (0–1, default 0 = off) rewards moments the audience
+  reacts to. It detects a crowd roar by its sound — broadband, noise-like energy
+  up in the 2–8 kHz cheer/whistle band, unlike the tonal music underneath — and
+  mixes that into the ranking. Try **`0.4`**. It needs a recording with audible
+  crowd (real room/crowd mics), and adds an extra spectral pass over the audio
+  (still a single decode, no second file read).
+- **`--lead-in`** (default 5s) is how far *before* the detected drop each clip
+  starts, so the drop lands just inside the clip. **`--build-window`** (default
+  8s) is how many seconds before vs after a moment are compared to call it a
+  drop — widen it for slow builds, narrow it for snappy ones.
+
+With `--crowd-weight 0` (the default) selection is exactly the energy-only
+behaviour above; the crowd signal is opt-in and never changes results when off.
 
 ## Ambition-tier AI (optional, off by default)
 

@@ -32,11 +32,14 @@ class Segment:
 BLOCK_SECONDS = 600  # score in 10-min blocks: bounds STFT memory on multi-hour sets
 
 
-def score_audio(path: Path) -> tuple[np.ndarray, float]:
-    """Return (per-second score array, total duration in seconds).
+def score_audio(path: Path, want_crowd: bool = False) -> tuple[np.ndarray, np.ndarray, float]:
+    """Return (per-second energy score, per-second crowd-roar score, duration).
 
-    Reads the (already mono, 22050 Hz) wav in blocks so peak memory stays
-    flat regardless of set length; normalisation is global across blocks.
+    Reads the (already mono, 22050 Hz) wav in blocks so peak memory stays flat
+    regardless of set length; normalisation is global across blocks. The crowd
+    signal is only computed when `want_crowd` is set — it adds an STFT per block
+    on the already-decoded audio (no extra file pass) — and is an empty array
+    otherwise, so the energy-only path costs exactly what it did before.
     """
     import librosa  # deferred: heavy import, keeps --help fast
     import soundfile as sf
@@ -45,6 +48,9 @@ def score_audio(path: Path) -> tuple[np.ndarray, float]:
     sr = info.samplerate
     rms_parts: list[np.ndarray] = []
     onset_parts: list[np.ndarray] = []
+    flat_parts: list[np.ndarray] = []
+    band_parts: list[np.ndarray] = []
+    band_mask: np.ndarray | None = None
     for block in sf.blocks(
         str(path), blocksize=BLOCK_SECONDS * sr, dtype="float32", always_2d=False
     ):
@@ -54,18 +60,31 @@ def score_audio(path: Path) -> tuple[np.ndarray, float]:
         onset_parts.append(
             librosa.onset.onset_strength(y=block, sr=sr, hop_length=HOP_LENGTH)
         )
+        if want_crowd:
+            mag = np.abs(librosa.stft(block, hop_length=HOP_LENGTH))
+            if band_mask is None:  # freq grid is constant across blocks
+                freqs = librosa.fft_frequencies(sr=sr, n_fft=2 * (mag.shape[0] - 1))
+                band_mask = (freqs >= CROWD_BAND_HZ[0]) & (freqs <= CROWD_BAND_HZ[1])
+            total = mag.sum(axis=0)
+            band_parts.append(mag[band_mask].sum(axis=0) / np.maximum(total, 1e-9))
+            flat_parts.append(librosa.feature.spectral_flatness(S=mag)[0])
 
     rms = np.concatenate(rms_parts) if rms_parts else np.array([])
     onset = np.concatenate(onset_parts) if onset_parts else np.array([])
     n = min(len(rms), len(onset))
     if n == 0:
-        return np.array([]), 0.0
+        return np.array([]), np.array([]), 0.0
     combined = 0.6 * _normalize(rms[:n]) + 0.4 * _normalize(onset[:n])
 
     frames_per_second = sr / HOP_LENGTH
     duration = info.frames / sr
     per_second = _resample_to_seconds(combined, frames_per_second, duration)
-    return per_second, duration
+
+    crowd_per_second = np.array([])
+    if want_crowd and flat_parts and band_parts:
+        crowd_frames = _crowd_signal(np.concatenate(flat_parts), np.concatenate(band_parts))
+        crowd_per_second = _resample_to_seconds(crowd_frames, frames_per_second, duration)
+    return per_second, crowd_per_second, duration
 
 
 NORMALIZE_PERCENTILE = 99.0  # robust range: ignore the top/bottom 1% of values
@@ -126,6 +145,30 @@ def _rise_signal(energy: np.ndarray, k: int) -> np.ndarray:
     before = (cumsum[idx] - cumsum[before_start]) / np.maximum(idx - before_start, 1)
     rise = np.where(idx > 0, after - before, 0.0)  # second 0 has no "before"
     return np.clip(rise, 0.0, None)
+
+
+# Crowd-roar detection (opt-in via --crowd-weight). A crowd losing it is the
+# single biggest "this moment is shareable" cue, and it's audible: a broadband,
+# noise-like roar with energy up in the cheer/whistle band — unlike the tonal
+# music underneath it.
+CROWD_BAND_HZ = (2000.0, 8000.0)  # where crowd noise/whistles sit
+CROWD_WEIGHT = 0.0  # blend weight for the crowd signal; 0 = off (opt-in)
+
+
+def _crowd_signal(flatness: np.ndarray, highband_ratio: np.ndarray) -> np.ndarray:
+    """Per-frame crowd-roar likelihood from two cues that, multiplied, separate a
+    sustained crowd roar from the track itself:
+
+    * spectral flatness — noise-like (a roar) is high, tonal (synths/vocals) low;
+    * high-band ratio — the share of energy in the 2-8 kHz cheer/whistle band.
+
+    A second only scores high when it is *both* noisy and bright, so a tonal bass
+    drop won't trigger it. Both inputs are robust-normalised before multiplying.
+    """
+    n = min(len(flatness), len(highband_ratio))
+    if n == 0:
+        return np.array([])
+    return _normalize(flatness[:n]) * _normalize(highband_ratio[:n])
 
 
 VISUAL_WEIGHT = 0.35  # how much the on-camera signal counts vs audio energy
@@ -205,6 +248,8 @@ def select_segments(
     lead_in: int = LEAD_IN_SECONDS,
     drop_weight: float = DROP_WEIGHT,
     build_window: int = BUILD_WINDOW,
+    crowd: np.ndarray | None = None,
+    crowd_weight: float = CROWD_WEIGHT,
 ) -> list[Segment]:
     """Pick up to max_clips non-overlapping clip_len-second windows, ranked by a
     blend of drop strength and sustained energy, keeping at least `spacing`
@@ -214,6 +259,11 @@ def select_segments(
     `lead_in` seconds before it, so the drop lands just inside the clip rather
     than at the cut or halfway through. `drop_weight` trades off rewarding the
     rise against rewarding overall loudness across the window.
+
+    When a per-second `crowd` signal is supplied and `crowd_weight` > 0, the
+    average crowd-roar level over each window is mixed into the final score, so a
+    moment the audience reacts to outranks an equally-loud one they don't. With
+    `crowd_weight` = 0 (or no crowd signal) the ranking is unchanged.
     """
     n = len(scores)
     if n == 0:
@@ -230,6 +280,17 @@ def select_segments(
     # second and clamped inside the source
     starts = np.clip(np.arange(n) - lead_in, 0, last_start)
     combined = drop_weight * rise_norm + (1.0 - drop_weight) * level_norm[starts]
+    if crowd is not None and crowd_weight > 0:
+        crowd_arr = np.asarray(crowd, dtype=float)
+        if crowd_arr.size:
+            crowd_arr = (
+                np.pad(crowd_arr, (0, n - crowd_arr.size))
+                if crowd_arr.size < n
+                else crowd_arr[:n]
+            )
+            crowd_level = np.convolve(crowd_arr, np.ones(clip_len) / clip_len, mode="valid")
+            crowd_norm = _normalize(crowd_level)
+            combined = (1.0 - crowd_weight) * combined + crowd_weight * crowd_norm[starts]
     order = np.argsort(combined)[::-1]
 
     chosen: list[Segment] = []

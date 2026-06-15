@@ -220,3 +220,63 @@ def test_select_segments_is_deterministic():
         assert s1.start == s2.start
         assert s1.duration == s2.duration
         assert s1.score == s2.score
+
+
+# ---------------------------------------------------------------------------
+# Crowd-roar blending (--crowd-weight)
+# ---------------------------------------------------------------------------
+
+
+def _two_equal_peaks(n=300, a=(50, 80), b=(200, 230)):
+    """Two regions of identical energy preceded by silence (so their rise/level
+    signals are symmetric and the base ranking is a tie broken only by index)."""
+    s = np.zeros(n)
+    s[a[0] : a[1]] = 1.0
+    s[b[0] : b[1]] = 1.0
+    return s
+
+
+def test_crowd_weight_zero_is_identical_to_no_crowd():
+    """Supplying a crowd signal with crowd_weight=0 must not change selection at
+    all — the opt-in feature is provably inert when off (regression guard)."""
+    scores = _two_equal_peaks()
+    crowd = np.zeros_like(scores)
+    crowd[200:230] = 1.0
+    base = select_segments(scores, clip_len=20, max_clips=2, spacing=40)
+    with_off = select_segments(
+        scores, clip_len=20, max_clips=2, spacing=40, crowd=crowd, crowd_weight=0.0
+    )
+    assert [(s.start, s.score) for s in base] == [(s.start, s.score) for s in with_off]
+
+
+def test_crowd_boosts_the_region_with_the_roar():
+    """Two equally-energetic regions; a crowd roar sits over the *earlier* one.
+    On a tie the later region naturally wins (argsort is reverse-stable), so a
+    crowd boost on the earlier region flipping it to the top proves the signal
+    actually moves the ranking, not just rides the default order."""
+    scores = _two_equal_peaks()
+    crowd = np.zeros_like(scores)
+    crowd[50:80] = 1.0  # audience only erupts over the earlier region A
+
+    no_crowd = select_segments(scores, clip_len=20, max_clips=2, spacing=40)
+    assert no_crowd[0].start >= 150, "without crowd, the later equal region wins the tiebreak"
+
+    with_crowd = select_segments(
+        scores, clip_len=20, max_clips=2, spacing=40, crowd=crowd, crowd_weight=0.5
+    )
+    assert with_crowd[0].start < 100, (
+        f"with crowd_weight=0.5 the roar region (start<100) should rank first; "
+        f"got start={with_crowd[0].start}"
+    )
+
+
+def test_crowd_signal_shorter_than_scores_does_not_crash():
+    """A crowd array shorter than the score array (stream length mismatch) is
+    padded, not an error — mirrors blend_visual's length tolerance."""
+    scores = _two_equal_peaks()
+    crowd = np.zeros(120)  # deliberately shorter than scores (300)
+    crowd[60:90] = 1.0
+    segs = select_segments(
+        scores, clip_len=20, max_clips=2, spacing=40, crowd=crowd, crowd_weight=0.5
+    )
+    assert len(segs) == 2  # no exception, still returns clips

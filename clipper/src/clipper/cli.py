@@ -11,7 +11,16 @@ from typing import Annotated, Optional
 import typer
 
 from . import media
-from .analyze import align_to_beats, blend_visual, score_audio, select_segments
+from .analyze import (
+    BUILD_WINDOW,
+    CROWD_WEIGHT,
+    DROP_WEIGHT,
+    LEAD_IN_SECONDS,
+    align_to_beats,
+    blend_visual,
+    score_audio,
+    select_segments,
+)
 from .manifest import format_timestamp, write_captions, write_manifest
 
 app = typer.Typer(
@@ -21,17 +30,18 @@ app = typer.Typer(
 
 
 @contextmanager
-def _audio_workspace(source: Path):
+def _audio_workspace(source: Path, want_crowd: bool = False):
     """Extract the audio track once (long-file rule) and yield (wav, scores,
-    duration). The wav stays available for beat alignment too; the temp dir is
-    cleaned on exit. Video is never decoded here — only at cut time.
+    crowd, duration). The wav stays available for beat alignment too; the temp
+    dir is cleaned on exit. Video is never decoded here — only at cut time.
+    `crowd` is an empty array unless `want_crowd` is set.
     """
     with tempfile.TemporaryDirectory(prefix="clipper-") as tmp:
         typer.echo(f"Extracting audio from {source.name} …")
         wav = media.extract_audio(source, Path(tmp))
         typer.echo("Scoring energy + onsets …")
-        scores, duration = score_audio(wav)
-        yield wav, scores, duration
+        scores, crowd, duration = score_audio(wav, want_crowd=want_crowd)
+        yield wav, scores, crowd, duration
 
 
 def _fresh_out_dir(out: Optional[Path]) -> Path:
@@ -144,16 +154,30 @@ def analyze(
     length: Annotated[int, typer.Option("--len", min=15, max=60, help="Candidate clip length in seconds")] = 30,
     spacing: Annotated[int, typer.Option(min=0, help="Min seconds between candidates")] = 60,
     top: Annotated[int, typer.Option(min=1, help="How many candidates to show")] = 10,
+    drop_weight: Annotated[float, typer.Option("--drop-weight", min=0.0, max=1.0, help="Selection blend: 0 = sustained loudness, 1 = sharp drops")] = DROP_WEIGHT,
+    lead_in: Annotated[int, typer.Option("--lead-in", min=0, help="Start each candidate this many seconds before the detected drop")] = LEAD_IN_SECONDS,
+    build_window: Annotated[int, typer.Option("--build-window", min=1, help="Seconds compared before/after a moment to measure the energy step up")] = BUILD_WINDOW,
+    crowd_weight: Annotated[float, typer.Option("--crowd-weight", min=0.0, max=1.0, help="Reward crowd-roar moments: 0 = off, try 0.4 (extra audio analysis)")] = CROWD_WEIGHT,
     beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap candidate starts to the nearest beat")] = True,
     visual: Annotated[bool, typer.Option("--visual/--no-visual", help="Blend on-camera motion/flash energy into scoring (extra video pass)")] = False,
 ) -> None:
     """Rank the highest-energy moments of a set recording."""
     try:
-        with _audio_workspace(source) as (wav, scores, duration):
+        with _audio_workspace(source, want_crowd=crowd_weight > 0) as (wav, scores, crowd, duration):
             if visual and media.video_frame_size(source) is not None:
                 typer.echo("Analyzing visual activity …")
                 scores = blend_visual(scores, media.visual_activity(source, wav.parent))
-            segments = select_segments(scores, clip_len=length, max_clips=top, spacing=spacing)
+            segments = select_segments(
+                scores,
+                clip_len=length,
+                max_clips=top,
+                spacing=spacing,
+                lead_in=lead_in,
+                drop_weight=drop_weight,
+                build_window=build_window,
+                crowd=crowd,
+                crowd_weight=crowd_weight,
+            )
             if beat_align:
                 typer.echo("Aligning to beats …")
                 segments = align_to_beats(wav, segments, duration)
@@ -175,6 +199,10 @@ def cut(
     clips: Annotated[int, typer.Option(min=1, help="Number of clips to cut")] = 5,
     length: Annotated[int, typer.Option("--len", min=15, max=60, help="Clip length in seconds")] = 30,
     spacing: Annotated[int, typer.Option(min=0, help="Min seconds between clips")] = 60,
+    drop_weight: Annotated[float, typer.Option("--drop-weight", min=0.0, max=1.0, help="Selection blend: 0 = sustained loudness, 1 = sharp drops")] = DROP_WEIGHT,
+    lead_in: Annotated[int, typer.Option("--lead-in", min=0, help="Start each clip this many seconds before the detected drop")] = LEAD_IN_SECONDS,
+    build_window: Annotated[int, typer.Option("--build-window", min=1, help="Seconds compared before/after a moment to measure the energy step up")] = BUILD_WINDOW,
+    crowd_weight: Annotated[float, typer.Option("--crowd-weight", min=0.0, max=1.0, help="Reward crowd-roar moments: 0 = off, try 0.4 (extra audio analysis)")] = CROWD_WEIGHT,
     x_offset: Annotated[Optional[int], typer.Option(help="Manual crop x-offset in px (default: centre)")] = None,
     out: Annotated[Optional[Path], typer.Option(help="Output dir (default out/<date>/)")] = None,
     beat_align: Annotated[bool, typer.Option("--beat-align/--no-beat-align", help="Snap clip starts to the nearest beat")] = True,
@@ -190,11 +218,21 @@ def cut(
         frame = media.video_frame_size(source)
         if frame is not None and x_offset is not None:
             _validate_x_offset(frame, x_offset)
-        with _audio_workspace(source) as (wav, scores, duration):
+        with _audio_workspace(source, want_crowd=crowd_weight > 0) as (wav, scores, crowd, duration):
             if visual and frame is not None:
                 typer.echo("Analyzing visual activity …")
                 scores = blend_visual(scores, media.visual_activity(source, wav.parent))
-            segments = select_segments(scores, clip_len=length, max_clips=clips, spacing=spacing)
+            segments = select_segments(
+                scores,
+                clip_len=length,
+                max_clips=clips,
+                spacing=spacing,
+                lead_in=lead_in,
+                drop_weight=drop_weight,
+                build_window=build_window,
+                crowd=crowd,
+                crowd_weight=crowd_weight,
+            )
             if not segments:
                 typer.secho("No segments found — source too short?", fg="red", err=True)
                 raise typer.Exit(1)

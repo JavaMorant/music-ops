@@ -15,7 +15,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from clipper.analyze import Segment, _normalize, _resample_to_seconds, select_segments
+from clipper.analyze import (
+    Segment,
+    _crowd_signal,
+    _normalize,
+    _resample_to_seconds,
+    select_segments,
+)
 from clipper.manifest import format_timestamp, write_captions, write_captions_stub, write_manifest
 
 
@@ -419,3 +425,34 @@ class TestNormalize:
 
     def test_empty_input(self):
         assert _normalize(np.array([])).size == 0
+
+
+# ---------------------------------------------------------------------------
+# _crowd_signal – noise-like AND high-band gates a crowd roar
+# ---------------------------------------------------------------------------
+
+
+class TestCrowdSignal:
+    def test_peaks_only_where_both_cues_are_high(self):
+        # frame 2 is both noise-like (flat) and bright (high-band); the others
+        # have at most one cue, so the product must single out frame 2.
+        flat = np.array([0.1, 0.9, 0.9, 0.1])
+        band = np.array([0.9, 0.1, 0.9, 0.1])
+        out = _crowd_signal(flat, band)
+        assert out.argmax() == 2
+        assert out[0] == pytest.approx(0.0)  # bright but tonal → not a roar
+        assert out[1] == pytest.approx(0.0)  # noisy but dull → not a roar
+
+    def test_tonal_audio_scores_zero(self):
+        # Low, flat spectral flatness everywhere (pure music) → no crowd anywhere.
+        flat = np.full(20, 0.05)
+        band = np.linspace(0.1, 0.9, 20)
+        out = _crowd_signal(flat, band)
+        assert np.all(out == 0.0)
+
+    def test_empty_inputs_return_empty(self):
+        assert _crowd_signal(np.array([]), np.array([])).size == 0
+
+    def test_mismatched_lengths_truncate_to_shorter(self):
+        out = _crowd_signal(np.array([0.2, 0.8, 0.9]), np.array([0.9, 0.9]))
+        assert out.size == 2
