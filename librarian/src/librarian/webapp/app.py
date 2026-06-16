@@ -18,11 +18,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .. import ai
 from ..cleanup import build_cleanup_plan
 from ..engine import EngineError, _within, apply_plan, undo_run
 from ..inbox import InboxError, build_inbox_plan
 from ..journal import DONE, REVERTED, UNDONE, list_runs
-from ..paths import AUDIO_EXTS, collision_free, norm_key, sanitize_component
+from ..metadata import read_meta
+from ..organize import OrganizeError, OrganizeSpec, build_organize_plan
+from ..paths import AUDIO_EXTS, audio_files, collision_free, norm_key, sanitize_component
 from ..planner import build_plan
 from ..select import select_actions
 from .security import guard_origin
@@ -50,6 +53,11 @@ class ApplyRequest(BaseModel):
 
 class UndoRequest(BaseModel):
     run_id: str
+
+
+class OrganizeRequest(BaseModel):
+    instruction: str | None = None
+    spec: dict | None = None  # power users / tests can pass a rule-set directly
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -85,6 +93,39 @@ def _build(state: AppState, req: PlanRequest):
     return plan, report.render()
 
 
+def _cache_and_serialize(st: AppState, plan, mode: str, report_md):
+    """Cache a freshly-built plan (bounded, single-use) and serialise it to the
+    review-table shape the frontend renders. Shared by every plan endpoint so the
+    row shape stays identical no matter which builder produced the plan."""
+    cfg = st.config
+    plan_id = uuid4().hex
+    while len(st.plans) >= MAX_CACHED_PLANS:
+        st.plans.pop(next(iter(st.plans)))
+    st.plans[plan_id] = plan
+    rows = [
+        {
+            "id": i,
+            "kind": a.kind,
+            "src": str(a.src),
+            "dest": str(a.dest),
+            "src_rel": _rel(a.src, cfg.library_root),
+            "dest_rel": _rel(a.dest, cfg.library_root),
+            "reason": a.reason,
+        }
+        for i, a in enumerate(plan.actions)
+    ]
+    return {
+        "plan_id": plan_id,
+        "mode": mode,
+        "library_root": str(cfg.library_root),
+        "rekordbox_xml": str(cfg.rekordbox_xml) if cfg.rekordbox_xml else None,
+        "actions": rows,
+        "rekordbox_additions": len(plan.rekordbox_additions or []),
+        "rekordbox_redirects": len(plan.location_redirects or {}),
+        "report_md": report_md,
+    }
+
+
 def create_app(config: AppConfig) -> FastAPI:
     app = FastAPI(title="librarian", version="0.1.0")
     app.state.librarian = AppState(config=config)
@@ -109,41 +150,50 @@ def create_app(config: AppConfig) -> FastAPI:
             "rekordbox_xml": str(cfg.rekordbox_xml) if cfg.rekordbox_xml else None,
             "inbox_dir": str(cfg.inbox_dir),
             "inbox_exists": cfg.inbox_dir.is_dir(),
+            "ai_available": ai.is_available(),
             "version": app.version,
         }
 
     @app.post("/api/plan", dependencies=[Depends(guard_origin)])
     def post_plan(req: PlanRequest, st: AppState = Depends(state)) -> dict:
-        cfg = st.config
         plan, report_md = _build(st, req)
-        plan_id = uuid4().hex
-        # Bound the cache: a long session (or a CSRF flood) must not grow memory
-        # without limit. Evict oldest first (dict preserves insertion order).
-        while len(st.plans) >= MAX_CACHED_PLANS:
-            st.plans.pop(next(iter(st.plans)))
-        st.plans[plan_id] = plan
-        rows = [
-            {
-                "id": i,
-                "kind": a.kind,
-                "src": str(a.src),
-                "dest": str(a.dest),
-                "src_rel": _rel(a.src, cfg.library_root),
-                "dest_rel": _rel(a.dest, cfg.library_root),
-                "reason": a.reason,
-            }
-            for i, a in enumerate(plan.actions)
-        ]
-        return {
-            "plan_id": plan_id,
-            "mode": req.mode,
-            "library_root": str(cfg.library_root),
-            "rekordbox_xml": str(cfg.rekordbox_xml) if cfg.rekordbox_xml else None,
-            "actions": rows,
-            "rekordbox_additions": len(plan.rekordbox_additions or []),
-            "rekordbox_redirects": len(plan.location_redirects or {}),
-            "report_md": report_md,
-        }
+        return _cache_and_serialize(st, plan, req.mode, report_md)
+
+    @app.post("/api/organize", dependencies=[Depends(guard_origin)])
+    def post_organize(req: OrganizeRequest, st: AppState = Depends(state)) -> dict:
+        """Build a plan from a plain-English instruction (AI authors rules; the
+        deterministic engine applies them). A ``spec`` may be passed directly to
+        replay a saved rule-set with no API call."""
+        cfg = st.config
+        if req.spec is not None:
+            try:
+                spec = OrganizeSpec.from_dict(req.spec)
+            except OrganizeError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+        else:
+            if not (req.instruction or "").strip():
+                raise HTTPException(status_code=400, detail="give an instruction to organize by")
+            if not ai.is_available():
+                raise HTTPException(
+                    status_code=400,
+                    detail="AI not configured — set ANTHROPIC_API_KEY and install the .[ai] extra, or use cleanup mode",
+                )
+            files = audio_files(cfg.library_root)
+            genres = sorted({m.genre for m in (read_meta(p) for p in files) if m.genre})
+            try:
+                spec = ai.infer_spec(
+                    req.instruction, sample_names=[p.name for p in files[:80]], genres=genres
+                )
+            except ai.AIError as exc:
+                raise HTTPException(status_code=502, detail=str(exc))
+        try:
+            plan, report_md = build_organize_plan(cfg.library_root, spec, cfg.rekordbox_xml)
+        except OrganizeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        resp = _cache_and_serialize(st, plan, "organize", report_md)
+        resp["summary"] = spec.summary
+        resp["rules"] = [r.to_dict() for r in spec.rules]
+        return resp
 
     @app.post("/api/apply", dependencies=[Depends(guard_origin)])
     def post_apply(req: ApplyRequest, st: AppState = Depends(state)) -> dict:

@@ -276,6 +276,57 @@ def test_runs_survives_a_corrupt_journal(tmp_path: Path):
     assert r.status_code == 200 and r.json()["runs"] == []
 
 
+def test_organize_spec_passthrough_builds_and_applies(tmp_path: Path):
+    """A rule-set posted directly (no AI) builds a plan that flows through the
+    same apply path — quarantine the rips, leave the rest, nothing deleted."""
+    client, root = _client(tmp_path)
+    make_library(root, ["Track_spotdown.org.mp3", "Clean.mp3"])
+    spec = {
+        "summary": "Quarantine the spotdown rips.",
+        "default": "leave",
+        "rules": [{"field": "filename", "op": "contains", "value": "_spotdown.org",
+                   "action": "quarantine", "target": "", "reason": "download-site rip"}],
+    }
+    r = client.post("/api/organize", json={"spec": spec}).json()
+    assert r["mode"] == "organize"
+    assert r["summary"] == "Quarantine the spotdown rips."
+    assert len(r["actions"]) == 1 and r["actions"][0]["kind"] == "quarantine"
+
+    res = client.post("/api/apply", json={"plan_id": r["plan_id"],
+                                          "keep_ids": [a["id"] for a in r["actions"]]})
+    assert res.status_code == 200, res.text
+    assert (root / "_quarantine" / "Track_spotdown.org.mp3").exists()
+    assert (root / "Clean.mp3").exists()  # untouched
+
+
+def test_organize_without_ai_or_spec_400(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client, root = _client(tmp_path)
+    res = client.post("/api/organize", json={"instruction": "do something clever"})
+    assert res.status_code == 400
+
+
+def test_organize_bad_spec_422(tmp_path: Path):
+    client, root = _client(tmp_path)
+    bad = {"summary": "", "default": "leave",
+           "rules": [{"field": "bpm", "op": "contains", "value": "x",
+                      "action": "folder", "target": "", "reason": ""}]}
+    res = client.post("/api/organize", json={"spec": bad})
+    assert res.status_code == 422
+
+
+def test_organize_has_origin_guard(tmp_path: Path):
+    client, root = _client(tmp_path)
+    res = client.post("/api/organize", json={"spec": {"rules": [], "default": "leave", "summary": ""}},
+                      headers={"Origin": "http://evil.example.com"})
+    assert res.status_code == 403
+
+
+def test_config_exposes_ai_flag(tmp_path: Path):
+    client, root = _client(tmp_path)
+    assert "ai_available" in client.get("/api/config").json()
+
+
 def test_apply_undo_byte_for_byte_with_rekordbox(tmp_path: Path):
     """Byte-for-byte undo through HTTP including the rekordbox XML restore."""
     root = tmp_path / "lib"

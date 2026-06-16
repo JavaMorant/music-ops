@@ -95,10 +95,29 @@ async function api(path, opts) {
 // --- state -----------------------------------------------------------------
 const state = {
   cfg: null, mode: "cleanup", organize: true, playlist: "New This Week",
-  plan: null, kept: new Set(), backup: true, runs: [], busy: false, msg: null,
+  instruction: "", plan: null, kept: new Set(), backup: true, runs: [], busy: false, msg: null,
 };
 
 // --- views -----------------------------------------------------------------
+function organizePanel(s) {
+  if (s.cfg && s.cfg.ai_available === false) {
+    return h("div", { class: "panel" },
+      h("div", { class: "muted" },
+        "AI organize is off — set ANTHROPIC_API_KEY and install the .[ai] extra to "
+        + "describe changes in plain English. The cleanup mode below works without it."));
+  }
+  return h("div", { class: "panel" },
+    h("div", { class: "row" },
+      h("input", { type: "text", value: s.instruction,
+        placeholder: "Describe how to organize — e.g. put all Avicii in Festival/, quarantine the _spotdown rips",
+        style: { flex: "1", minWidth: "320px" },
+        onInput: (e) => { s.instruction = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") organize(); } }),
+      h("button", { onClick: organize, disabled: s.busy }, s.busy ? "Thinking…" : "Plan it")),
+    h("div", { class: "muted", style: { marginTop: "8px" } },
+      "AI proposes a plan from your words; you review every row and Apply — it never changes files directly."));
+}
+
 function modeBar(s) {
   const radios = ["plan", "cleanup", "inbox"].map((m) =>
     h("label", null,
@@ -195,6 +214,7 @@ function render() {
       h("span", { class: "root" }, s.cfg ? s.cfg.library_root : "…")),
     h("main", null,
       s.msg && h("div", { class: "banner " + s.msg.kind }, s.msg.text),
+      organizePanel(s),
       modeBar(s),
       s.mode === "inbox" && dropzone(),
       hasPlan && planTable(s),
@@ -206,6 +226,23 @@ function render() {
 // --- actions ---------------------------------------------------------------
 async function refreshRuns() {
   try { state.runs = (await api("/api/runs")).runs; render(); } catch (e) {}
+}
+
+async function organize() {
+  if (!state.instruction.trim()) return;
+  state.busy = true; state.msg = null; render();
+  try {
+    const p = await api("/api/organize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction: state.instruction }),
+    });
+    state.plan = p; state.kept = new Set(p.actions.map((a) => a.id));
+    const lead = p.summary ? "Interpreted as: " + p.summary + " — " : "";
+    state.msg = { kind: "ok", text: p.actions.length
+      ? lead + p.actions.length + " change(s) proposed. Review and Apply."
+      : lead + "nothing to change." };
+  } catch (e) { state.msg = { kind: "bad", text: e.message }; state.plan = null; }
+  finally { state.busy = false; render(); }
 }
 
 async function scan() {

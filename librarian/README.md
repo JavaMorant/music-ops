@@ -6,10 +6,11 @@ completely. It writes to the music library, so every operation is built to be
 safe and reversible first, useful second.
 
 > Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
-> the **`inbox`** forever-pipeline, and the local **review web app** (`serve`)
-> are built, tested (91 pytest tests), and proven on a copy of the testbed. Not
-> yet built: tag *writing*, fuzzy/fingerprint dedupe, and rekordbox **database**
-> analysis (BPM/key via pyrekordbox).
+> the **`inbox`** forever-pipeline, the local **review web app** (`serve`), and
+> the AI **`organize`** front-door are built, tested (115 pytest tests), and
+> proven on a copy of the testbed. Not yet built: tag *writing*,
+> fuzzy/fingerprint dedupe, and rekordbox **database** analysis (BPM/key via
+> pyrekordbox).
 
 ## Safety model (non-negotiable)
 
@@ -76,6 +77,7 @@ testbed until you've trialled it against your own rekordbox export (below).
 |---|---|
 | `librarian plan <root>` | Minimal plan: strip download-junk filenames, quarantine copy-markers. Dry-run. |
 | `librarian cleanup <root>` | Full deep-clean plan: exact-dup → quarantine, rename to `Artist - Title`, refile into `Genre/`, + a report. Dry-run. |
+| `librarian organize <root> "…"` | Plan from a plain-English instruction (AI turns it into rules; the engine applies them). Dry-run. |
 | `librarian inbox <root>` | Drain `<root>/Inbox`: dedupe new drops against the library, file them, add them to rekordbox + a "New This Week" playlist. Dry-run. |
 | `librarian apply <plan.json>` | Execute a reviewed plan, journaled + backed up. |
 | `librarian undo <run-id>` | Reverse a run completely (files + rekordbox XML). |
@@ -83,6 +85,37 @@ testbed until you've trialled it against your own rekordbox export (below).
 | `librarian serve <root>` | Run the local review web app over this library (127.0.0.1). |
 
 Every command has `--help`.
+
+### `organize` — describe it in plain English (AI)
+
+The one ambition-tier AI feature. You describe how you want the library arranged
+and Claude turns it into a small **rule-set**, which is applied deterministically
+to produce the same reviewable plan as everything else. The AI only *authors
+rules* — it never touches files, never sees the apply path, and never guesses
+musical key/BPM. Every move still goes through the engine's preflight, journal and
+undo, so all the safety invariants hold unchanged.
+
+```bash
+pip install -e '.[ai]'                 # one-time: install the anthropic SDK
+export ANTHROPIC_API_KEY=sk-…          # your key — nothing runs without it
+
+librarian organize ~/path/to/library \
+  "put all Avicii in Festival/, quarantine the _spotdown rips, file the rest by genre"
+# review plan.json + organize-report.md, then:  librarian apply plan.json
+```
+
+Rules match one field (`artist`, `title`, `genre`, `filename`, `extension`,
+`quality`) with one op (`contains`, `equals`, `startswith`, `endswith`,
+`is_low_quality`, `any`) and take one action (`folder`, `by_genre`,
+`rename_artist_title`, `quarantine`); the first matching rule wins and the rest
+fall to a default. Save the inferred rule-set with `--save-spec rules.json` and
+replay it later with `--spec rules.json` — no API call, fully deterministic.
+
+It degrades gracefully: with no key (or without the `.[ai]` extra) the command
+says so and points you at `cleanup`, the non-AI deep-clean. In the web app the
+same box appears at the top once AI is configured; otherwise it shows a hint.
+*Privacy:* the AI step sends a sample of your filenames + the genres already in
+the library to Anthropic, using your own key; nothing else leaves the machine.
 
 ### `serve` — the local review web app
 

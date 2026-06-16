@@ -14,6 +14,9 @@ dependencies = [
 # light. The web review app is an opt-in extra so the CLI install stays minimal.
 dev = ["pytest>=8.0", "httpx>=0.27"]
 web = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9"]
+# Ambition-tier `organize`: natural-language → rule-set via Claude. Opt-in so the
+# core install stays light; the deterministic `cleanup` is the non-AI equivalent.
+ai = ["anthropic>=0.40"]
 
 [project.scripts]
 librarian = "librarian.cli:app"

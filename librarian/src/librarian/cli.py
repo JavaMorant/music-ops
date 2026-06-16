@@ -16,11 +16,15 @@ from typing import Annotated, Optional
 
 import typer
 
+from . import ai
 from .cleanup import build_cleanup_plan
 from .engine import EngineError, apply_plan, undo_run
 from .inbox import InboxError, build_inbox_plan
 from .journal import APPLIED, DONE, list_runs
+from .metadata import read_meta
 from .model import Plan
+from .organize import OrganizeError, OrganizeSpec, build_organize_plan
+from .paths import audio_files
 from .planner import build_plan
 
 app = typer.Typer(
@@ -90,6 +94,72 @@ def cleanup(
     typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
     if p.actions:
         typer.echo(f"Review both, then:  librarian apply {out}")
+
+
+@app.command()
+def organize(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
+    instruction: Annotated[Optional[str], typer.Argument(help="Plain-English request, e.g. 'put all Avicii in Festival/ and quarantine the _spotdown rips'")] = None,
+    spec_file: Annotated[Optional[Path], typer.Option("--spec", exists=True, dir_okay=False, help="Replay a saved rule-set JSON instead of calling the AI (no API key needed)")] = None,
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox collection XML to keep in sync")] = None,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
+    report_out: Annotated[Path, typer.Option("--report", help="Where to write the organize report")] = Path("organize-report.md"),
+    save_spec: Annotated[Optional[Path], typer.Option("--save-spec", help="Also save the inferred rule-set here (replay later with --spec)")] = None,
+) -> None:
+    """Organize the library from a plain-English instruction (AI). Dry-run.
+
+    Claude turns your request into a small rule-set; the rules are applied
+    deterministically and shown as a reviewable plan — nothing changes until you
+    `librarian apply`. The AI only authors rules; it never touches files. Use
+    --spec to replay a saved rule-set with no API call. (`cleanup` is the
+    non-AI deep-clean.)
+    """
+    root = library_root.absolute()
+    if spec_file:
+        try:
+            spec = OrganizeSpec.from_dict(json.loads(spec_file.read_text(encoding="utf-8")))
+        except (OrganizeError, ValueError) as exc:
+            typer.secho(f"Bad spec file: {exc}", fg="red", err=True)
+            raise typer.Exit(1)
+    else:
+        if not instruction:
+            typer.secho("Give an instruction, or replay one with --spec.", fg="red", err=True)
+            raise typer.Exit(1)
+        if not ai.is_available():
+            typer.secho(
+                "AI organize needs the Anthropic API: set ANTHROPIC_API_KEY and "
+                "install the extra (pip install -e '.[ai]').\nThe non-AI equivalent "
+                "is:  librarian cleanup",
+                fg="red", err=True,
+            )
+            raise typer.Exit(1)
+        files = audio_files(root)
+        genres = sorted({m.genre for m in (read_meta(p) for p in files) if m.genre})
+        try:
+            spec = ai.infer_spec(instruction, sample_names=[p.name for p in files[:80]], genres=genres)
+        except ai.AIError as exc:
+            typer.secho(f"AI request failed: {exc}", fg="red", err=True)
+            raise typer.Exit(1)
+
+    try:
+        plan, report_md = build_organize_plan(
+            root, spec, rekordbox_xml.absolute() if rekordbox_xml else None
+        )
+    except OrganizeError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+
+    if spec.summary:
+        typer.secho(f"Interpreted as: {spec.summary}", fg="cyan")
+    _print_plan(plan)
+    out.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+    report_out.write_text(report_md, encoding="utf-8")
+    if save_spec:
+        save_spec.write_text(json.dumps(spec.to_dict(), indent=2), encoding="utf-8")
+        typer.echo(f"Saved rule-set: {save_spec}  (replay with --spec)")
+    typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
+    if plan.actions:
+        typer.echo(f"Review it, then:  librarian apply {out}")
 
 
 @app.command()
