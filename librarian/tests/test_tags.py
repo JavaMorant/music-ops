@@ -9,6 +9,7 @@ testbed isn't present.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +24,15 @@ def test_is_taggable_false_for_non_audio(tmp_path):
     txt = tmp_path / "notes.txt"
     txt.write_text("not audio", encoding="utf-8")
     assert tags.is_taggable(txt) is False
+
+
+def test_read_tags_preserves_empty_and_handles_missing(monkeypatch):
+    # artist set to empty string, title present-but-valueless, genre set, album absent
+    stub = {"artist": [""], "title": [], "genre": ["House"]}
+    monkeypatch.setattr(tags, "_open", lambda p, create=False: stub)
+    out = tags.read_tags(Path("x.mp3"), ["artist", "title", "genre", "album"])
+    # empty string is preserved (not dropped to None); [] and missing → None (no IndexError)
+    assert out == {"artist": "", "title": None, "genre": "House", "album": None}
 
 
 @pytest.mark.skipif(not SAMPLE_LIBRARY.is_dir(), reason="testbed not present")

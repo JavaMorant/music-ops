@@ -26,6 +26,7 @@ from .model import Plan
 from .organize import OrganizeError, OrganizeSpec, build_organize_plan
 from .paths import audio_files
 from .planner import build_plan
+from .retag import TagProposal, build_retag_plan
 
 app = typer.Typer(
     help="Reversible DJ-library organiser: plan, apply, undo. Dry-run by default.",
@@ -44,19 +45,28 @@ def _rel(path: Path, root: Path) -> str:
 
 
 def _print_plan(plan: Plan) -> None:
-    if not plan.actions:
+    if not plan.actions and not plan.tag_edits:
         typer.echo("No changes proposed — the library is already clean.")
         return
     root = plan.library_root
-    typer.echo(f"\nPlan for {root}  ({len(plan.actions)} actions)")
-    if plan.rekordbox_xml:
-        typer.echo(f"rekordbox XML to rewrite: {plan.rekordbox_xml}")
-    typer.echo("")
-    for i, a in enumerate(plan.actions, 1):
-        tag = typer.style(f"[{a.kind}]", fg="yellow" if a.kind == "quarantine" else "cyan")
-        typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
-        typer.echo(f"      -> {_rel(a.dest, root)}")
-        typer.echo(f"      reason: {a.reason}")
+    if plan.actions:
+        typer.echo(f"\nPlan for {root}  ({len(plan.actions)} actions)")
+        if plan.rekordbox_xml:
+            typer.echo(f"rekordbox XML to rewrite: {plan.rekordbox_xml}")
+        typer.echo("")
+        for i, a in enumerate(plan.actions, 1):
+            tag = typer.style(f"[{a.kind}]", fg="yellow" if a.kind == "quarantine" else "cyan")
+            typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
+            typer.echo(f"      -> {_rel(a.dest, root)}")
+            typer.echo(f"      reason: {a.reason}")
+    if plan.tag_edits:
+        typer.echo(f"\nTag repairs for {root}  ({len(plan.tag_edits)} files)\n")
+        for i, t in enumerate(plan.tag_edits, 1):
+            tag = typer.style("[retag]", fg="magenta")
+            typer.echo(f"{i:>3} {tag} {_rel(t.path, root)}")
+            for field, value in t.fields.items():
+                typer.echo(f"      {field} → {value!r}")
+            typer.echo(f"      reason: {t.reason}")
 
 
 @app.command()
@@ -163,6 +173,94 @@ def organize(
 
 
 @app.command()
+def retag(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
+    instruction: Annotated[Optional[str], typer.Argument(help="Optional guidance, e.g. 'set genre to Amapiano for the SA artists'")] = None,
+    spec_file: Annotated[Optional[Path], typer.Option("--spec", exists=True, dir_okay=False, help="Replay saved proposals JSON instead of calling the AI (no API key needed)")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Max files to send to the AI in one run (untagged first)")] = 60,
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox XML to keep in sync (retag doesn't move files, so paths are unaffected)")] = None,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
+    report_out: Annotated[Path, typer.Option("--report", help="Where to write the tag-repair report")] = Path("retag-report.md"),
+    save_spec: Annotated[Optional[Path], typer.Option("--save-spec", help="Save the proposals here (replay later with --spec)")] = None,
+) -> None:
+    """Repair messy/missing tags from filenames (AI). Dry-run.
+
+    Claude proposes clean artist/title/genre from each file's name + current tags;
+    the changes are shown as a reviewable plan and only written on `librarian
+    apply` (and fully reversible with `undo`). The AI never touches files, and
+    musical key/BPM are never written. Use --spec to replay saved proposals with
+    no API call.
+    """
+    root = library_root.absolute()
+    if spec_file:
+        if instruction:
+            typer.secho("--spec replays saved proposals; the instruction is ignored.", fg="yellow")
+        try:
+            raw = json.loads(spec_file.read_text(encoding="utf-8"))
+            proposals = [TagProposal.from_dict(d) for d in raw]
+        except (ValueError, KeyError, TypeError) as exc:
+            typer.secho(f"Bad spec file: {exc}", fg="red", err=True)
+            raise typer.Exit(1)
+    else:
+        if not ai.is_available():
+            typer.secho(
+                "AI retag needs the Anthropic API: set ANTHROPIC_API_KEY and "
+                "install the extra (pip install -e '.[ai]').\nOr feed proposals "
+                "with --spec for a no-API repair.",
+                fg="red", err=True,
+            )
+            raise typer.Exit(1)
+        files = audio_files(root)
+        if not files:
+            typer.echo("No audio files found.")
+            raise typer.Exit(0)
+        metas = {p: read_meta(p) for p in files}
+        # Untagged / partially-tagged files first — they benefit most from repair.
+        files.sort(key=lambda p: (metas[p].has_artist_title, p.name.lower()))
+        batch = files[:limit]
+        if len(files) > limit:
+            typer.secho(
+                f"Considering {len(batch)} of {len(files)} files (raise --limit for more).",
+                fg="yellow",
+            )
+        tracks = [
+            {"index": i, "filename": p.name, "artist": metas[p].artist,
+             "title": metas[p].title, "genre": metas[p].genre}
+            for i, p in enumerate(batch)
+        ]
+        try:
+            suggestions = ai.propose_tags(tracks, instruction=instruction)
+        except ai.AIError as exc:
+            typer.secho(f"AI request failed: {exc}", fg="red", err=True)
+            raise typer.Exit(1)
+        proposals = [
+            TagProposal(path=batch[s.index], fields=s.fields, confidence=s.confidence, reason=s.note)
+            for s in suggestions
+            if 0 <= s.index < len(batch) and s.fields
+        ]
+
+    plan, report_md = build_retag_plan(
+        root, proposals, rekordbox_xml.absolute() if rekordbox_xml else None
+    )
+    _print_plan(plan)
+    out.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+    report_out.write_text(report_md, encoding="utf-8")
+    if save_spec:
+        save_spec.write_text(
+            json.dumps(
+                [{"path": str(p.path), "fields": p.fields, "reason": p.reason,
+                  "confidence": p.confidence} for p in proposals],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        typer.echo(f"Saved proposals: {save_spec}  (replay with --spec)")
+    typer.echo(f"\nDry run — nothing changed. Plan: {out}   Report: {report_out}")
+    if plan.tag_edits:
+        typer.echo(f"Review it, then:  librarian apply {out}")
+
+
+@app.command()
 def inbox(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root — the inbox must live inside it")],
     inbox_dir: Annotated[Optional[Path], typer.Option("--inbox", file_okay=False, help="Folder to drain (default: <library-root>/Inbox)")] = None,
@@ -214,8 +312,8 @@ def apply(
 ) -> None:
     """Execute a reviewed plan, journaling every move so it can be undone."""
     p = Plan.from_dict(json.loads(plan_file.read_text(encoding="utf-8")))
-    if not p.actions:
-        typer.echo("Plan has no actions — nothing to apply.")
+    if not p.actions and not p.tag_edits:
+        typer.echo("Plan has nothing to apply.")
         raise typer.Exit(0)
     try:
         journal = apply_plan(p, runs_dir.absolute(), backup=not no_backup, full_backup=full_backup)
@@ -223,7 +321,13 @@ def apply(
         typer.secho(f"Refused to apply (nothing changed): {exc}", fg="red", err=True)
         raise typer.Exit(1)
     done = sum(1 for a in journal.actions if a.status == DONE)
-    typer.secho(f"\nApplied {done} actions.", fg="green")
+    retagged = sum(1 for t in journal.tag_edits if t.status == DONE)
+    bits = []
+    if done or not retagged:  # always name actions unless this was a tag-only run
+        bits.append(f"{done} action{'s' if done != 1 else ''}")
+    if retagged:
+        bits.append(f"{retagged} tag repair{'s' if retagged != 1 else ''}")
+    typer.secho(f"\nApplied {', '.join(bits)}.", fg="green")
     if journal.backup:
         typer.echo(f"Backup ({journal.backup['mode']}): {journal.backup['files']} files in {journal.backup['dir']}")
     if journal.rekordbox and journal.rekordbox.get("rewritten"):
@@ -244,7 +348,13 @@ def undo(
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(1)
     reverted = sum(1 for a in journal.actions if a.status == "reverted")
-    typer.secho(f"Undid run {run_id}: reversed {reverted} actions.", fg="green")
+    retags = sum(1 for t in journal.tag_edits if t.status == "reverted")
+    bits = []
+    if reverted or not retags:
+        bits.append(f"{reverted} action{'s' if reverted != 1 else ''}")
+    if retags:
+        bits.append(f"{retags} tag repair{'s' if retags != 1 else ''}")
+    typer.secho(f"Undid run {run_id}: reversed {', '.join(bits)}.", fg="green")
 
 
 @app.command()

@@ -69,7 +69,7 @@ def build_retag_plan(
         reason = prop.reason or "tag repair"
         if prop.confidence:
             reason = f"{reason} (confidence: {prop.confidence})"
-        edits.append(TagEdit(path=prop.path, fields=changed, reason=reason))
+        edits.append(TagEdit(path=prop.path.absolute(), fields=changed, reason=reason))
         rows.append((prop.path, {f: (current.get(f), v) for f, v in changed.items()}, prop.confidence))
 
     plan = Plan(library_root=root, actions=[], rekordbox_xml=rekordbox_xml, tag_edits=edits)

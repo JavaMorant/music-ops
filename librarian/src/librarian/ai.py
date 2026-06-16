@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 
+from .model import WRITABLE_TAGS
 from .organize import ACTIONS, DEFAULTS, FIELDS, OPS, OrganizeError, OrganizeSpec
 
 MODEL = "claude-sonnet-4-6"  # project spec: Sonnet for cost on ambition-tier AI
@@ -146,4 +148,127 @@ def infer_spec(
     try:
         return OrganizeSpec.from_dict(json.loads(text))
     except (json.JSONDecodeError, KeyError, TypeError, OrganizeError) as exc:
+        raise AIError(f"could not parse AI response: {exc}") from exc
+
+
+# --- tag repair (metadata) ------------------------------------------------
+
+_TAGS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tracks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "artist": {"type": "string"},
+                    "title": {"type": "string"},
+                    "genre": {"type": "string"},
+                    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "note": {"type": "string"},
+                },
+                "required": ["index", "artist", "title", "genre", "confidence", "note"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["tracks"],
+    "additionalProperties": False,
+}
+
+_TAGS_SYSTEM = (
+    "You repair music-library metadata for a DJ. For each track you get its "
+    "filename and current artist/title/genre tags. Propose clean values:\n"
+    "  - Parse 'Artist - Title (Version)' filenames; pull featured artists out of "
+    "the artist field ('ft'/'feat'); keep edit/version markers (Intro, Clean, "
+    "Extended, Remix) in the TITLE only if they're part of the release, otherwise "
+    "drop download-site junk.\n"
+    "  - Leave a field as an EMPTY STRING when the current tag is already fine or "
+    "you can't confidently improve it. Leave GENRE empty unless you're genuinely "
+    "sure — never guess a genre.\n"
+    "  - NEVER output or alter musical key or BPM; you only touch artist/title/"
+    "genre.\n"
+    "Give each track a confidence (high/medium/low) and a one-line note. Return "
+    "exactly one entry per track, keyed by the index you were given."
+)
+
+
+@dataclass(frozen=True)
+class TagSuggestion:
+    """A per-file tag proposal from Claude: ``fields`` holds only the non-empty
+    proposed values among artist/title/genre."""
+
+    index: int
+    fields: dict
+    confidence: str
+    note: str
+
+
+def _tags_user_prompt(tracks: list[dict], instruction: str | None) -> str:
+    lines = []
+    if instruction and instruction.strip():
+        lines.append(f"Extra guidance from the user: {instruction.strip()}\n")
+    lines.append("Propose clean tags for these tracks:")
+    for t in tracks:
+        lines.append(f"\nTrack {t['index']}:")
+        lines.append(f"  filename: {t.get('filename', '?')}")
+        lines.append(f"  current artist: {t.get('artist') or '(none)'}")
+        lines.append(f"  current title:  {t.get('title') or '(none)'}")
+        lines.append(f"  current genre:  {t.get('genre') or '(none)'}")
+    return "\n".join(lines)
+
+
+def propose_tags(
+    tracks: list[dict],
+    *,
+    instruction: str | None = None,
+    client=None,
+    model: str = MODEL,
+) -> list[TagSuggestion]:
+    """Ask Claude to propose clean artist/title/genre per track. ``tracks`` is a
+    list of {index, filename, artist, title, genre}. ``client`` is injectable for
+    testing. Raises AIError on any failure so the caller degrades cleanly."""
+    if client is None:
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - guarded by is_available()
+            raise AIError("anthropic package not installed") from exc
+        client = anthropic.Anthropic()
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=MAX_TOKENS,
+            system=_TAGS_SYSTEM,
+            messages=[{"role": "user", "content": _tags_user_prompt(tracks, instruction)}],
+            output_config={"format": {"type": "json_schema", "schema": _TAGS_SCHEMA}},
+        )
+    except Exception as exc:
+        raise AIError(f"AI request failed: {exc}") from exc
+
+    text = "".join(
+        b.text for b in response.content if getattr(b, "type", None) == "text"
+    )
+    if not text:
+        raise AIError("AI response had no text content")
+    try:
+        data = json.loads(text)
+        out: list[TagSuggestion] = []
+        for t in data["tracks"]:
+            fields = {
+                k: str(t[k]).strip()
+                for k in WRITABLE_TAGS
+                if t.get(k) and str(t[k]).strip()
+            }
+            out.append(
+                TagSuggestion(
+                    index=int(t["index"]),
+                    fields=fields,
+                    confidence=str(t["confidence"]),
+                    note=str(t.get("note", "")),
+                )
+            )
+        return out
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise AIError(f"could not parse AI response: {exc}") from exc

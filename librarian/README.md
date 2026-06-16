@@ -6,11 +6,11 @@ completely. It writes to the music library, so every operation is built to be
 safe and reversible first, useful second.
 
 > Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
-> the **`inbox`** forever-pipeline, the local **review web app** (`serve`), and
-> the AI **`organize`** front-door are built, tested (115 pytest tests), and
-> proven on a copy of the testbed. Not yet built: tag *writing*,
-> fuzzy/fingerprint dedupe, and rekordbox **database** analysis (BPM/key via
-> pyrekordbox).
+> the **`inbox`** forever-pipeline, the local **review web app** (`serve`), the
+> AI **`organize`** front-door, and reversible AI **`retag`** (tag repair) are
+> built, tested (139 pytest tests), and proven on a copy of the testbed. Not yet
+> built: fuzzy/fingerprint dedupe, and rekordbox **database** analysis (BPM/key
+> via pyrekordbox).
 
 ## Safety model (non-negotiable)
 
@@ -78,6 +78,7 @@ testbed until you've trialled it against your own rekordbox export (below).
 | `librarian plan <root>` | Minimal plan: strip download-junk filenames, quarantine copy-markers. Dry-run. |
 | `librarian cleanup <root>` | Full deep-clean plan: exact-dup → quarantine, rename to `Artist - Title`, refile into `Genre/`, + a report. Dry-run. |
 | `librarian organize <root> "…"` | Plan from a plain-English instruction (AI turns it into rules; the engine applies them). Dry-run. |
+| `librarian retag <root> ["…"]` | Repair messy/missing artist/title/genre tags from filenames (AI proposes; you review). Reversible. Dry-run. |
 | `librarian inbox <root>` | Drain `<root>/Inbox`: dedupe new drops against the library, file them, add them to rekordbox + a "New This Week" playlist. Dry-run. |
 | `librarian apply <plan.json>` | Execute a reviewed plan, journaled + backed up. |
 | `librarian undo <run-id>` | Reverse a run completely (files + rekordbox XML). |
@@ -116,6 +117,34 @@ says so and points you at `cleanup`, the non-AI deep-clean. In the web app the
 same box appears at the top once AI is configured; otherwise it shows a hint.
 *Privacy:* the AI step sends a sample of your filenames + the genres already in
 the library to Anthropic, using your own key; nothing else leaves the machine.
+
+### `retag` — repair tags from filenames (AI)
+
+The one feature that writes *inside* your files — so it's built to be as reversible
+as a move. Claude reads each file's name + current tags and proposes clean
+**artist / title / genre**; you review every change and it's only written on
+`apply`, with `undo` restoring the exact previous values (a tag that was absent is
+deleted again). The AI never touches files, and **musical key/BPM are never
+written** — they're not even in the writable set.
+
+```bash
+pip install -e '.[ai]' && export ANTHROPIC_API_KEY=sk-…   # same as organize
+librarian retag ~/path/to/library
+#   …or with guidance:
+librarian retag ~/path/to/library "set genre to Amapiano for the SA artists"
+# review plan.json + retag-report.md (old → new per field, with confidence), then:
+librarian apply plan.json      # writes the tags
+librarian undo  <run-id>       # restores them exactly
+```
+
+Only writable identity fields change, and only where the new value actually
+differs from the current one. `--limit N` caps how many files go to the AI per run
+(untagged first); `--save-spec props.json` saves the proposals so you can replay
+them with `--spec props.json` — no API call, fully deterministic and reviewable.
+The pre-apply backup snapshots every retagged file too, so there are two
+independent ways back (the journaled old values, and the file backup).
+*Privacy:* the AI step sends each file's filename + current artist/title/genre
+tags to Anthropic, using your own key; nothing else leaves the machine.
 
 ### `serve` — the local review web app
 
@@ -231,9 +260,10 @@ undo, origin guard, safe upload).
 
 ## What this is **not** (yet)
 
-- It does **not** write tags into files (byte-level mutation is a separate,
-  carefully-reversible slice). The report flags missing key / tags / low bitrate;
-  it never guesses or downloads.
+- Tag *writing* is limited to identity fields (artist/title/genre) via `retag`,
+  and it's fully reversible. It never writes musical **key/BPM** (those are
+  trusted, never guessed) and never downloads. The report still flags missing
+  key / tags / low bitrate for manual attention.
 - Dedupe is **exact** (byte-identical) + a copy-marker heuristic. Fuzzy metadata
   / audio-fingerprint dedupe is not built.
 - BPM/key come from existing tags only; rekordbox **database** analysis via

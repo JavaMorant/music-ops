@@ -66,8 +66,15 @@ def read_tags(path: Path, fields: Iterable[str]) -> dict[str, str | None]:
         if audio is not None:
             try:
                 got = audio.get(field)
-                if got:
-                    val = str(got[0]) if isinstance(got, list) else str(got)
+                if got is None:
+                    val = None
+                elif isinstance(got, list):
+                    # Empty list = present but valueless = treat as absent (and
+                    # never index []); otherwise take the first value verbatim,
+                    # preserving an empty string rather than dropping it.
+                    val = str(got[0]) if got else None
+                else:
+                    val = str(got)
             except Exception:
                 val = None
         out[field] = val

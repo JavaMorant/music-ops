@@ -8,9 +8,11 @@ tests are deterministic and portable; real mutagen I/O is covered in test_tags.p
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from librarian import tags
 from librarian.engine import EngineError, apply_plan, undo_run
@@ -90,6 +92,18 @@ def test_backup_includes_retagged_file(tmp_path, store):
     assert backup_copy.read_bytes() == b"original-bytes"  # snapshot before the write
 
 
+def test_journal_tag_edit_paths_are_absolute(tmp_path, store, monkeypatch):
+    """A relative tag-edit path (from a hand-edited/--spec plan) must be journaled
+    ABSOLUTE, so undo resolves the same file from any working directory."""
+    root = tmp_path / "lib"
+    _file(root, "a.mp3")
+    monkeypatch.chdir(tmp_path)  # makes "lib/a.mp3" a valid relative path
+    plan = Plan(library_root=root, actions=[],
+                tag_edits=[TagEdit(path=Path("lib/a.mp3"), fields={"title": "X"})])
+    journal = apply_plan(plan, tmp_path / "runs", backup=False)
+    assert journal.tag_edits[0].path.is_absolute()
+
+
 def test_preflight_rejects_tag_path_outside_root(tmp_path, store):
     root = tmp_path / "lib"
     root.mkdir()
@@ -161,3 +175,50 @@ def test_build_retag_apply_undo_roundtrip(tmp_path, store):
     assert store[str(f)] == {"artist": "B Jack$ ft. Zeddy Will", "title": "Get Jiggy"}
     undo_run(journal.run_id, tmp_path / "runs")
     assert store[str(f)] == {}  # back to untagged
+
+
+def test_cli_retag_spec_writes_plan(tmp_path, store):
+    """The `retag --spec` path (no AI) builds a plan.json carrying tag_edits."""
+    from librarian.cli import app
+
+    root = tmp_path / "lib"
+    f = _file(root, "a.mp3")
+    store[str(f)] = {}  # untagged → both proposed fields are real changes
+    spec = tmp_path / "props.json"
+    spec.write_text(json.dumps([
+        {"path": str(f), "fields": {"artist": "Avicii", "title": "Levels"},
+         "confidence": "high", "reason": "from filename"}
+    ]), encoding="utf-8")
+    out = tmp_path / "plan.json"
+    result = CliRunner().invoke(app, [
+        "retag", str(root), "--spec", str(spec),
+        "--out", str(out), "--report", str(tmp_path / "rep.md"),
+    ])
+    assert result.exit_code == 0, result.stdout
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert len(data["tag_edits"]) == 1
+    assert data["tag_edits"][0]["fields"] == {"artist": "Avicii", "title": "Levels"}
+
+
+def test_cli_apply_undo_tag_only_plan(tmp_path, store):
+    """`apply`/`undo` must handle a plan that has only tag_edits (no moves)."""
+    from librarian.cli import app
+
+    root = tmp_path / "lib"
+    f = _file(root, "a.mp3")
+    store[str(f)] = {"title": "old"}
+    plan, _ = build_retag_plan(root, [TagProposal(path=f, fields={"artist": "Avicii", "title": "Levels"})])
+    out = tmp_path / "plan.json"
+    out.write_text(json.dumps(plan.to_dict()), encoding="utf-8")
+    runs = tmp_path / "runs"
+    runner = CliRunner()
+
+    r = runner.invoke(app, ["apply", str(out), "--runs-dir", str(runs), "--no-backup"])
+    assert r.exit_code == 0, r.stdout
+    assert "tag repair" in r.stdout  # not the "nothing to apply" path
+    assert store[str(f)] == {"artist": "Avicii", "title": "Levels"}
+
+    run_id = next(p.name for p in runs.iterdir())
+    r2 = runner.invoke(app, ["undo", run_id, "--runs-dir", str(runs)])
+    assert r2.exit_code == 0
+    assert store[str(f)] == {"title": "old"}  # restored

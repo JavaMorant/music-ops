@@ -250,7 +250,9 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
         library_root=plan.library_root,
         actions=[JournalAction(action=a, status=PENDING) for a in plan.actions],
         tag_edits=[
-            JournalTagEdit(path=e.path, old={}, new=dict(e.fields), status=PENDING)
+            # Absolute, so undo resolves the same file from any working directory
+            # (a hand-edited plan could carry a relative path).
+            JournalTagEdit(path=e.path.absolute(), old={}, new=dict(e.fields), status=PENDING)
             for e in (plan.tag_edits or [])
         ],
         status=APPLYING,
