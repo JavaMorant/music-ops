@@ -43,6 +43,33 @@ python3.12 -m venv .venv            # or your 3.12+ interpreter
 .venv/bin/librarian --help
 ```
 
+## Try it on the testbed
+
+Exercise the whole engine safely on the disposable sample library at
+`~/dev/librarian-testbed/sample-library` — **never** the real `~/Music` library.
+`cleanup` is dry-run (no changes); `apply` backs up first and is fully reversible
+with `undo`, so nothing here is destructive.
+
+**On the command line** — dry-run → apply → undo:
+
+```bash
+LIB=~/dev/librarian-testbed/sample-library
+.venv/bin/librarian cleanup "$LIB"                              # dry-run: writes plan.json + cleanup-report.md
+.venv/bin/librarian apply plan.json --runs-dir /tmp/lib-runs    # backs up first, journals every move
+.venv/bin/librarian runs --runs-dir /tmp/lib-runs               # find the run id
+.venv/bin/librarian undo <run-id> --runs-dir /tmp/lib-runs      # reverse it completely
+```
+
+**In the browser** — the same engine with a visual review table:
+
+```bash
+.venv/bin/librarian serve "$LIB" --runs-dir /tmp/lib-runs
+# open http://127.0.0.1:8765 — pick a mode, Scan, untick rows you don't want, Apply, Undo
+```
+
+Keep `--runs-dir` outside the library (here, `/tmp`), and keep `apply` on the
+testbed until you've trialled it against your own rekordbox export (below).
+
 ## Commands
 
 | Command | What it does |
