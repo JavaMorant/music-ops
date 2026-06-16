@@ -48,6 +48,33 @@ class JournalAction:
 
 
 @dataclass
+class JournalTagEdit:
+    """A tag repair plus the OLD values it overwrote, so undo can restore them.
+
+    ``old``/``new`` map field → value, where ``None`` means the tag was absent
+    (so undo deletes it). Recorded at apply time, never inferred — the journal is
+    the single source of truth for reversing a tag write.
+    """
+
+    path: Path
+    old: dict[str, str | None]
+    new: dict[str, str | None]
+    status: str = PENDING
+
+    def to_dict(self) -> dict:
+        return {"path": str(self.path), "old": self.old, "new": self.new, "status": self.status}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> JournalTagEdit:
+        return cls(
+            path=Path(data["path"]),
+            old=data["old"],
+            new=data["new"],
+            status=data["status"],
+        )
+
+
+@dataclass
 class Journal:
     """The full record of one apply run, persisted to ``<run_dir>/journal.json``."""
 
@@ -61,6 +88,9 @@ class Journal:
     rekordbox: dict | None = None
     # Pre-apply backup bookkeeping (dir, mode, file count). None if skipped.
     backup: dict | None = None
+    # In-place tag repairs with their old values, for reversal. Empty for
+    # move-only runs (and absent from older journals — defaulted on load).
+    tag_edits: list[JournalTagEdit] = field(default_factory=list)
     run_dir: Path | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
@@ -72,6 +102,7 @@ class Journal:
             "rekordbox": self.rekordbox,
             "backup": self.backup,
             "actions": [a.to_dict() for a in self.actions],
+            "tag_edits": [t.to_dict() for t in self.tag_edits],
         }
 
     @classmethod
@@ -84,6 +115,7 @@ class Journal:
             rekordbox=data.get("rekordbox"),
             backup=data.get("backup"),
             actions=[JournalAction.from_dict(a) for a in data["actions"]],
+            tag_edits=[JournalTagEdit.from_dict(t) for t in data.get("tag_edits", [])],
         )
 
 

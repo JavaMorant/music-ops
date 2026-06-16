@@ -20,7 +20,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from . import rekordbox
+from . import rekordbox, tags
 from .journal import (
     APPLIED,
     APPLYING,
@@ -30,11 +30,12 @@ from .journal import (
     UNDONE,
     Journal,
     JournalAction,
+    JournalTagEdit,
     load_journal,
     new_run_id,
     write_journal,
 )
-from .model import Plan
+from .model import WRITABLE_TAGS, Plan
 
 
 class EngineError(RuntimeError):
@@ -183,6 +184,23 @@ def preflight(plan: Plan) -> None:
         if not _same_device(src, dest):
             raise EngineError(f"cross-volume move refused: {src} -> {dest}")
 
+    # Tag repairs: validate every one before a single byte is written, so the
+    # tag phase is all-or-nothing-safe too. (An apply input can be arbitrary
+    # reviewed JSON, so this is the boundary that keeps a hand-edited plan from
+    # writing a forbidden tag or touching a file outside the library.)
+    for edit in plan.tag_edits or []:
+        if not edit.path.exists():
+            raise EngineError(f"tag-edit source does not exist: {edit.path}")
+        if not _within(root, edit.path):
+            raise EngineError(f"tag-edit path escapes the library root {root}: {edit.path}")
+        bad = [k for k in edit.fields if k not in WRITABLE_TAGS]
+        if bad:
+            raise EngineError(f"refusing to write non-writable tag(s) {bad} on {edit.path}")
+        if any(not isinstance(v, str) for v in edit.fields.values()):
+            raise EngineError(f"tag values must be strings: {edit.path}")
+        if not tags.is_taggable(edit.path):
+            raise EngineError(f"file cannot carry tags, refusing to retag: {edit.path}")
+
 
 def _backup_sources(plan: Plan, run_dir: Path, full: bool) -> dict:
     """Copy at-risk files into ``run_dir/backup`` before any move.
@@ -197,7 +215,10 @@ def _backup_sources(plan: Plan, run_dir: Path, full: bool) -> dict:
     if full:
         sources = [p for p in root.rglob("*") if p.is_file()]
     else:
-        sources = [a.src for a in plan.actions]
+        # Both moved files and tag-repaired files are at risk; back up each once.
+        sources = [a.src for a in plan.actions] + [t.path for t in (plan.tag_edits or [])]
+        seen: set[str] = set()
+        sources = [s for s in sources if not (_norm(s) in seen or seen.add(_norm(s)))]
     copied = 0
     for src in sources:
         src = src.absolute()
@@ -228,6 +249,10 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
         run_id=run_id,
         library_root=plan.library_root,
         actions=[JournalAction(action=a, status=PENDING) for a in plan.actions],
+        tag_edits=[
+            JournalTagEdit(path=e.path, old={}, new=dict(e.fields), status=PENDING)
+            for e in (plan.tag_edits or [])
+        ],
         status=APPLYING,
         created=run_id[:15],  # YYYYmmdd-HHMMSS prefix of the run id
         run_dir=run_dir,
@@ -255,6 +280,16 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
             "backup": str(rb_backup),
             "rewritten": False,
         }
+        write_journal(journal)
+
+    # Tag repairs run first, on the files' current (pre-move) paths. For each we
+    # read the OLD values and journal them *before* writing the new ones, so a
+    # crash still leaves undo able to restore exactly what was there.
+    for tedit in journal.tag_edits:
+        tedit.old = tags.read_tags(tedit.path, tedit.new.keys())
+        write_journal(journal)
+        tags.write_tags(tedit.path, tedit.new)
+        tedit.status = DONE
         write_journal(journal)
 
     for entry in journal.actions:
@@ -331,12 +366,27 @@ def undo_run(run_id: str, runs_dir: Path, *, library_root: Path | None = None) -
                 raise EngineError(
                     f"refusing undo: action escapes library root {root}: {entry.action.src}"
                 )
+    for tedit in journal.tag_edits:
+        if tedit.status == DONE and not _within(root, tedit.path):
+            raise EngineError(
+                f"refusing undo: tag-edit path escapes library root {root}: {tedit.path}"
+            )
 
     # Reverse the done moves in the opposite order they were applied.
     for entry in reversed(journal.actions):
         if entry.status == DONE:
             _safe_move(entry.action.dest, entry.action.src)
             entry.status = REVERTED
+            write_journal(journal)
+
+    # Files are back at their original paths now, so restore their tags to the
+    # pre-run values the journal captured (a recorded None deletes a tag that was
+    # absent before the repair). Tags were applied before moves, so they're undone
+    # after — back to the exact starting state.
+    for tedit in reversed(journal.tag_edits):
+        if tedit.status == DONE:
+            tags.write_tags(tedit.path, tedit.old)
+            tedit.status = REVERTED
             write_journal(journal)
 
     # Restore the rekordbox collection from the backup — but only if this run

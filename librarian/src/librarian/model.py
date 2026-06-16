@@ -102,6 +102,38 @@ class RekordboxAddition:
         )
 
 
+# Tag fields the librarian is willing to WRITE. Deliberately small: identity
+# fields only. Musical key and BPM are never written here — they're trusted from
+# rekordbox/tags and never guessed, so they can't be clobbered by a tag repair.
+WRITABLE_TAGS = ("artist", "title", "genre")
+
+
+@dataclass
+class TagEdit:
+    """A reversible change to a file's metadata tags (the file is *not* moved).
+
+    ``fields`` maps a writable tag name to the NEW value to set. The OLD values
+    are read straight off the file and journaled at apply time — not stored here —
+    so undo restores exactly what was there, even if the plan was hand-edited.
+    """
+
+    path: Path
+    fields: dict[str, str]
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        bad = [k for k in self.fields if k not in WRITABLE_TAGS]
+        if bad:
+            raise ValueError(f"not writable tag field(s): {bad} (allowed: {', '.join(WRITABLE_TAGS)})")
+
+    def to_dict(self) -> dict:
+        return {"path": str(self.path), "fields": dict(self.fields), "reason": self.reason}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TagEdit:
+        return cls(path=Path(d["path"]), fields=dict(d["fields"]), reason=d.get("reason", ""))
+
+
 @dataclass
 class Plan:
     """A reviewable set of actions over one library root.
@@ -127,11 +159,14 @@ class Plan:
     location_redirects: dict[Path, Path] | None = None
     rekordbox_additions: list[RekordboxAddition] | None = None
     rekordbox_playlist: str | None = None
+    # In-place tag repairs (artist/title/genre). None for move-only plans.
+    tag_edits: list[TagEdit] | None = None
 
     def to_dict(self) -> dict:
         return {
             "library_root": str(self.library_root),
             "rekordbox_xml": str(self.rekordbox_xml) if self.rekordbox_xml else None,
+            "tag_edits": [t.to_dict() for t in self.tag_edits] if self.tag_edits else None,
             "location_redirects": (
                 {str(k): str(v) for k, v in self.location_redirects.items()}
                 if self.location_redirects
@@ -150,6 +185,7 @@ class Plan:
     def from_dict(cls, data: dict) -> Plan:
         redirects = data.get("location_redirects")
         additions = data.get("rekordbox_additions")
+        tag_edits = data.get("tag_edits")
         return cls(
             library_root=Path(data["library_root"]),
             actions=[Action.from_dict(a) for a in data["actions"]],
@@ -161,4 +197,5 @@ class Plan:
                 [RekordboxAddition.from_dict(a) for a in additions] if additions else None
             ),
             rekordbox_playlist=data.get("rekordbox_playlist"),
+            tag_edits=[TagEdit.from_dict(t) for t in tag_edits] if tag_edits else None,
         )
