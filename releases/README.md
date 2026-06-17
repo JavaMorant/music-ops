@@ -7,10 +7,12 @@ project's stage from the existing folder taxonomy, parses BPM/key/genre from
 filenames, ranks the ones nearest done, and plans a single-every-N-weeks
 calendar toward an EP deadline.
 
-> **Read-only on the library.** The scan never moves, renames, or writes
-> anything under `ProducerLibrary`. All state (the index, the schedule, the
-> status log) lives in a separate SQLite db — default `~/.releases/releases.db`,
-> never inside the library.
+> **The library is read-only by default.** Scanning, listing, planning, status,
+> and release curation never touch `ProducerLibrary` — all that state lives in a
+> separate SQLite db (default `~/.releases/releases.db`, refused if you point it
+> inside the library). The **one** exception is `releases organize`, the opt-in
+> on-disk folder mover: it is dry-run-first, journaled, never deletes or
+> overwrites, and is fully reversible with `undo` (see below).
 
 ## Install
 
@@ -98,6 +100,35 @@ Friday cadence **in your order** (not the closeness ranking), with the EP slot
 now referencing the real member tracks. `--together` drops all tracks on the EP
 date instead of as lead singles. Scheduling sets the release to `scheduled`;
 `ship` sets it `released` and logs each track's transition.
+
+### `organize …` — reorganize folders on disk (the one writer)
+
+The only part of `releases` that writes to the library — and it borrows the
+**librarian**'s safety engine: dry-run → review → apply → undo.
+
+```bash
+releases organize by-stage                      # propose filing each project into its stage's folder
+releases organize file "sketchy" --to-stage complete
+releases organize rename "sketchy" "Better Name"
+releases organize apply organize-plan.json      # execute the reviewed plan (journaled)
+releases organize undo <run-id>                 # reverse a run completely
+releases organize runs                          # list applied runs
+```
+
+The workflow: triage stages cheaply in the index (`status`, or set them however
+you like), then `organize by-stage` turns those decisions into a reviewable plan
+of folder moves (old → new + reason). Nothing moves until you `apply` a plan.
+
+Safety invariants (proven on a copy, never the real library during dev):
+- **Dry-run by default** — `by-stage`/`file`/`rename` only print + write a plan.
+- **Never deletes, never overwrites** — every action is an atomic same-volume
+  rename; a move onto an existing path is refused (collisions are skipped, noted).
+- **Containment** — sources and destinations must stay inside the library root.
+- **Journaled + reversible** — each move is recorded (atomic, fsync'd) before and
+  after it happens, so a crash is recoverable and `undo <run-id>` reverses the run.
+- **Index stays linked** — after a move the project, its release memberships, and
+  any scheduled slot are re-pointed to the new path; `undo` re-points them back.
+  Run `releases scan` afterward to refresh inferred stages from the new locations.
 
 ### `status <project> <stage>`
 Moves a project along the pipeline and logs the change. `<project>` is a

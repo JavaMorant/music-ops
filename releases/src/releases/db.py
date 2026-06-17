@@ -405,6 +405,28 @@ def set_release_status(
     conn.commit()
 
 
+def repath(conn: sqlite3.Connection, old_path: str, new_path: str) -> int:
+    """Point every index reference from ``old_path`` to ``new_path`` after a
+    project folder is moved/renamed on disk, so the project, its release
+    memberships, and any scheduled slot stay linked to it. Path-only — the
+    inferred ``stage`` is refreshed by the next ``scan``; this keeps repath
+    trivially reversible by swapping the arguments.
+
+    Runs in one transaction. Any stale row already sitting at ``new_path`` (a
+    dead/duplicate index entry from a prior scan of that location) is cleared
+    first so the projects PK update can't collide. Returns the number of
+    ``projects`` rows moved (0 ⇒ the index didn't know ``old_path`` — caller
+    should warn and re-scan)."""
+    with conn:
+        if old_path != new_path:
+            conn.execute("DELETE FROM projects WHERE path = ?", (new_path,))
+        cur = conn.execute("UPDATE projects SET path = ? WHERE path = ?", (new_path, old_path))
+        moved = cur.rowcount
+        conn.execute("UPDATE release_tracks SET path = ? WHERE path = ?", (new_path, old_path))
+        conn.execute("UPDATE schedule SET path = ? WHERE path = ?", (new_path, old_path))
+    return moved
+
+
 def release_track_paths(conn: sqlite3.Connection) -> set[str]:
     """Every project path that's already a track in *some* release."""
     return {r["path"] for r in conn.execute("SELECT DISTINCT path FROM release_tracks")}

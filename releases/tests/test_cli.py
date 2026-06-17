@@ -258,3 +258,76 @@ def test_full_release_flow_never_writes_library(synth_library, tmp_path):
     _run(["plan", "--release", "EP", "--target", "EP by Aug 31", "--db", str(db)])
     _run(["release", "ship", "EP", "--db", str(db)])
     assert meta(synth_library) == before  # library untouched throughout
+
+
+# --- organize (on-disk folder management) ---------------------------------
+
+def _org_lib(tmp_path):
+    """A tiny real projects tree + a scanned db, for organize CLI tests."""
+    root = tmp_path / "projects"
+    d = root / "Beats" / "Tracks" / "Mels" / "sketchy"
+    d.mkdir(parents=True)
+    (d / "sketchy.flp").write_text("x")
+    (root / "Beats" / "Tracks" / "Complete Tracks").mkdir(parents=True)
+    db = tmp_path / "index.db"
+    _run(["scan", str(root), "--db", str(db)])
+    return root, db
+
+
+def test_organize_dry_run_moves_nothing(tmp_path):
+    root, db = _org_lib(tmp_path)
+    _run(["status", "sketchy", "complete", "--db", str(db)])
+    out = tmp_path / "plan.json"
+    r = _run(["organize", "by-stage", "--root", str(root), "--out", str(out), "--db", str(db)])
+    assert r.exit_code == 0
+    assert "Dry run" in r.output
+    assert out.exists()                                    # plan written
+    assert (root / "Beats/Tracks/Mels/sketchy/sketchy.flp").exists()  # nothing moved
+
+
+def test_organize_apply_then_undo(tmp_path):
+    root, db = _org_lib(tmp_path)
+    _run(["status", "sketchy", "complete", "--db", str(db)])
+    out = tmp_path / "plan.json"
+    _run(["organize", "by-stage", "--root", str(root), "--out", str(out), "--db", str(db)])
+    r = _run(["organize", "apply", str(out), "--db", str(db)])
+    assert r.exit_code == 0 and "Applied" in r.output
+    assert (root / "Beats/Tracks/Complete Tracks/sketchy/sketchy.flp").exists()
+    assert not (root / "Beats/Tracks/Mels/sketchy").exists()
+    # index re-linked to the new location
+    conn = dbmod.connect(db)
+    assert "Complete Tracks" in conn.execute(
+        "SELECT path FROM projects WHERE name='sketchy'").fetchone()["path"]
+
+    run_id = [ln.split()[0] for ln in _run(["organize", "runs", "--db", str(db)]).output.splitlines() if "-" in ln][0]
+    r = _run(["organize", "undo", run_id, "--db", str(db)])
+    assert r.exit_code == 0
+    assert (root / "Beats/Tracks/Mels/sketchy/sketchy.flp").exists()  # back home
+
+
+def test_organize_refuses_db_inside_library(tmp_path, monkeypatch):
+    root, _ = _org_lib(tmp_path)
+    monkeypatch.setattr(climod, "PROTECTED_LIBRARY", tmp_path)  # whole tmp tree is the 'library'
+    r = _run(["organize", "by-stage", "--root", str(root), "--db", str(tmp_path / "x.db")])
+    assert r.exit_code == 1 and "Refusing" in r.output
+
+
+def test_organize_refuses_out_inside_library(tmp_path, monkeypatch):
+    root, db = _org_lib(tmp_path)
+    _run(["status", "sketchy", "complete", "--db", str(db)])
+    monkeypatch.setattr(climod, "PROTECTED_LIBRARY", root)  # the projects tree is the 'library'
+    bad_out = root / "plan.json"  # writing the plan INTO the library
+    r = _run(["organize", "by-stage", "--root", str(root), "--out", str(bad_out), "--db", str(db)])
+    assert r.exit_code == 1 and "Refusing" in r.output
+    assert not bad_out.exists()
+
+
+def test_organize_relink_repairs_index(tmp_path):
+    root, db = _org_lib(tmp_path)
+    _run(["status", "sketchy", "complete", "--db", str(db)])
+    out = tmp_path / "plan.json"
+    _run(["organize", "by-stage", "--root", str(root), "--out", str(out), "--db", str(db)])
+    _run(["organize", "apply", str(out), "--db", str(db)])
+    run_id = [ln.split()[0] for ln in _run(["organize", "runs", "--db", str(db)]).output.splitlines() if "-" in ln][0]
+    r = _run(["organize", "relink", run_id, "--db", str(db)])
+    assert r.exit_code == 0 and "Re-linked" in r.output

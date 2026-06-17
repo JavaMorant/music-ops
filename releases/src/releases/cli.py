@@ -12,6 +12,8 @@ The scan only ever READS the library. All state lives in a separate db
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Optional
@@ -19,6 +21,7 @@ from typing import Annotated, Optional
 import typer
 
 from . import db as dbmod
+from . import organize as orgmod
 from . import release as relmod
 from .model import SETTABLE_STAGES, stage_label
 from .plan import PlanError, Slot, plan_release, plan_releases
@@ -39,19 +42,27 @@ PROTECTED_LIBRARY = Path.home() / "ProducerLibrary"
 DbOpt = Annotated[Path, typer.Option("--db", help="SQLite index location (kept outside the library)")]
 
 
-def _reject_db_in_library(db_path: Path) -> None:
-    """Refuse a --db that resolves inside the music library — writing the index
-    there would violate the non-negotiable read-only invariant (applies to EVERY
-    command, not just scan)."""
-    db_r = db_path.resolve()
-    lib = PROTECTED_LIBRARY.resolve()
-    if db_r == lib or lib in db_r.parents:
+def _under(parent: Path, path: Path) -> bool:
+    """True if ``path`` is ``parent`` or sits beneath it (both resolved)."""
+    p, par = path.resolve(), parent.resolve()
+    return p == par or par in p.parents
+
+
+def _reject_path_in_library(path: Path, what: str) -> None:
+    """Refuse any write path that resolves inside the music library — writing
+    there would violate the non-negotiable read-only invariant."""
+    lib = PROTECTED_LIBRARY
+    if _under(lib, path):
         typer.secho(
-            f"Refusing --db {db_path}: it is inside the music library {lib}. "
-            "Keep the index outside it (default ~/.releases/releases.db).",
+            f"Refusing {what} {path}: it is inside the music library {lib.resolve()}. "
+            "Keep it outside the library (e.g. under ~/.releases).",
             fg="red", err=True,
         )
         raise typer.Exit(1)
+
+
+def _reject_db_in_library(db_path: Path) -> None:
+    _reject_path_in_library(db_path, "--db")
 
 
 def _open(db_path: Path):
@@ -552,6 +563,250 @@ def release_ship(
             dbmod.set_stage(conn, t["project"], "released", f"shipped with {rel['name']}")
             n += 1
     typer.secho(f"Shipped {rel['name']} — {n} track(s) marked released.", fg="green")
+
+
+# --- organize sub-app: SAFE on-disk folder management ----------------------
+# This is the ONLY part of releases that writes to the music library. Dry-run by
+# default → review the plan → apply (journaled) → undo. Mirrors the librarian.
+
+organize_app = typer.Typer(
+    no_args_is_help=True,
+    help="Reorganize project FOLDERS on disk (file/rename) — dry-run by default, "
+         "reviewed, journaled, fully reversible with undo.",
+)
+app.add_typer(organize_app, name="organize")
+
+RootOpt = Annotated[Path, typer.Option("--root", help="Library projects root (the folders to reorganize)")]
+PlanOut = Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan")]
+
+
+def _runs_dir(db: Path) -> Path:
+    # Journals live beside the index, OUTSIDE the library, so undo always works.
+    return db.parent / "runs"
+
+
+def _resolve_project_or_exit(conn, query: str):
+    matches = dbmod.find_projects(conn, query)
+    if not matches:
+        typer.secho(f"No project matches {query!r}.", fg="red", err=True)
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        typer.secho(f"{query!r} is ambiguous — {len(matches)} matches:", fg="yellow", err=True)
+        for m in matches[:12]:
+            typer.echo(f"  {m.name}  ({m.path})", err=True)
+        raise typer.Exit(1)
+    return matches[0]
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def _print_org_plan(plan: orgmod.Plan, notes: list[str]) -> None:
+    root = plan.library_root
+    for n in notes:
+        typer.secho(f"  · {n}", fg="bright_black")
+    if not plan.actions:
+        typer.secho("\nNo folder changes proposed.", fg="green")
+        return
+    typer.echo(f"\nFolder plan for {root}  ({len(plan.actions)} action(s))\n")
+    for i, a in enumerate(plan.actions, 1):
+        tag = typer.style(f"[{a.kind}]", fg="cyan")
+        typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
+        typer.echo(f"      -> {_rel(a.dest, root)}")
+        typer.echo(f"      reason: {a.reason}")
+
+
+def _emit_plan(plan: orgmod.Plan, notes: list[str], out: Path) -> None:
+    _reject_path_in_library(out, "--out")  # never write the plan into the library
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _print_org_plan(plan, notes)
+    out.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+    if plan.actions:
+        typer.echo(f"\nDry run — nothing moved. Plan written to {out}")
+        typer.echo(f"Review it, then:  releases organize apply {out}")
+
+
+def _guard_runs_outside_root(root: Path, db: Path) -> None:
+    """The run journal must live OUTSIDE the tree being reorganized, else undo
+    could move its own journal. (db-in-library is already refused by _open.)"""
+    rd = _runs_dir(db)
+    if _under(root, rd):
+        typer.secho(
+            f"Refusing: run journal {rd} is inside the tree being moved ({root}). "
+            "Use a --db whose folder is outside --root.", fg="red", err=True)
+        raise typer.Exit(1)
+
+
+def _repath_done(conn, journal, *, reverse: bool) -> int:
+    """Re-link the index for each completed action. ``reverse`` swaps the
+    direction (for undo). Returns how many moves the index didn't know about."""
+    missed = 0
+    want = orgmod.REVERTED if reverse else orgmod.DONE
+    for entry in journal.actions:
+        if entry.status != want:
+            continue
+        a, b = (entry.action.dest, entry.action.src) if reverse else (entry.action.src, entry.action.dest)
+        try:
+            if dbmod.repath(conn, str(a), str(b)) == 0:
+                missed += 1
+        except sqlite3.Error as e:
+            typer.secho(f"  index re-link failed for {b}: {e}", fg="yellow", err=True)
+            missed += 1
+    return missed
+
+
+DEFAULT_PLAN_OUT = dbmod.DEFAULT_DB.parent / "organize-plan.json"
+
+
+@organize_app.command("by-stage")
+def organize_by_stage(
+    root: RootOpt = DEFAULT_ROOT,
+    out: PlanOut = DEFAULT_PLAN_OUT,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Propose filing every project into the folder for its (index) stage — so
+    your `status` decisions become real folder moves. Makes NO changes."""
+    conn = _open(db)
+    projects = dbmod.all_projects(conn)
+    if not projects:
+        typer.echo("No projects indexed yet — run:  releases scan")
+        return
+    root = root.resolve()
+    actions, notes = orgmod.plan_by_stage(root, projects)
+    _emit_plan(orgmod.Plan(root, actions), notes, out)
+
+
+@organize_app.command("file")
+def organize_file(
+    project: Annotated[str, typer.Argument(help="Project name/path substring")],
+    to_stage: Annotated[str, typer.Option("--to-stage", help=f"Target stage: {', '.join(orgmod.STAGE_FOLDERS)}")],
+    root: RootOpt = DEFAULT_ROOT,
+    out: PlanOut = DEFAULT_PLAN_OUT,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Plan to file one project's folder into a stage's folder. Makes NO changes."""
+    if to_stage not in orgmod.STAGE_FOLDERS:
+        typer.secho(f"--to-stage must be one of: {', '.join(orgmod.STAGE_FOLDERS)}", fg="red", err=True)
+        raise typer.Exit(1)
+    conn = _open(db)
+    root = root.resolve()
+    p = _resolve_project_or_exit(conn, project)
+    action, note = orgmod.plan_file(root, Path(p.path), to_stage, f"file under {to_stage}")
+    _emit_plan(orgmod.Plan(root, [action] if action else []), [note] if note else [], out)
+
+
+@organize_app.command("rename")
+def organize_rename(
+    project: Annotated[str, typer.Argument(help="Project name/path substring")],
+    new_name: Annotated[str, typer.Argument(help="New folder name")],
+    root: RootOpt = DEFAULT_ROOT,
+    out: PlanOut = DEFAULT_PLAN_OUT,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Plan to rename a project folder. Makes NO changes."""
+    conn = _open(db)
+    root = root.resolve()
+    p = _resolve_project_or_exit(conn, project)
+    action, note = orgmod.plan_rename(root, Path(p.path), new_name)
+    _emit_plan(orgmod.Plan(root, [action] if action else []), [note] if note else [], out)
+
+
+def _post_apply_relink(conn, journal, *, partial: bool) -> None:
+    missed = _repath_done(conn, journal, reverse=False)
+    done = sum(1 for a in journal.actions if a.status == orgmod.DONE)
+    if partial:
+        typer.secho(f"Apply interrupted after {done} move(s). Run id: {journal.run_id}", fg="red", err=True)
+    else:
+        typer.secho(f"Applied {done} move(s). Run id: {journal.run_id}", fg="green")
+    typer.echo(f"Undo with:  releases organize undo {journal.run_id}")
+    if missed:
+        typer.secho(f"  ({missed} move(s) weren't in the index — run `releases scan` to resync)", fg="yellow")
+    typer.echo("Tip: run `releases scan` to refresh inferred stages from the new locations.")
+
+
+@organize_app.command("apply")
+def organize_apply(
+    plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Reviewed plan JSON")],
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Execute a reviewed folder plan (journaled, reversible). Then re-link the
+    index to the moved folders."""
+    conn = _open(db)  # guards --db-in-library BEFORE the engine writes anything
+    plan = orgmod.Plan.from_dict(json.loads(plan_file.read_text(encoding="utf-8")))
+    if not plan.actions:
+        typer.echo("Plan has no actions — nothing to do.")
+        return
+    _guard_runs_outside_root(plan.library_root, db)
+    try:
+        orgmod.preflight(plan)  # clean pre-check: a refusal creates no run
+    except orgmod.OrganizeError as e:
+        typer.secho(f"Refused: {e}", fg="red", err=True)
+        raise typer.Exit(1)
+    try:
+        journal = orgmod.apply_plan(plan, _runs_dir(db))
+    except orgmod.ApplyInterrupted as e:
+        _post_apply_relink(conn, e.journal, partial=True)
+        raise typer.Exit(1)
+    except orgmod.OrganizeError as e:
+        typer.secho(f"Refused: {e}", fg="red", err=True)
+        raise typer.Exit(1)
+    _post_apply_relink(conn, journal, partial=False)
+
+
+@organize_app.command("undo")
+def organize_undo(
+    run_id: Annotated[str, typer.Argument(help="Run id from a prior apply")],
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Reverse an applied folder run completely."""
+    conn = _open(db)  # guards --db-in-library before touching anything
+    try:
+        journal = orgmod.undo_run(run_id, _runs_dir(db))
+    except orgmod.OrganizeError as e:
+        typer.secho(f"Refused: {e}", fg="red", err=True)
+        raise typer.Exit(1)
+    _repath_done(conn, journal, reverse=True)  # swap index links back
+    typer.secho(f"Undid run {run_id} — folders back where they were.", fg="green")
+
+
+@organize_app.command("relink")
+def organize_relink(
+    run_id: Annotated[str, typer.Argument(help="Run id whose moves to re-link in the index")],
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Re-apply the index re-linking for a run's completed moves — repairs an
+    index left out of sync (e.g. a crash between the move and the re-link)."""
+    conn = _open(db)
+    runs = _runs_dir(db)
+    if not run_id or "/" in run_id or "\\" in run_id or run_id in (".", ".."):
+        typer.secho(f"invalid run id: {run_id!r}", fg="red", err=True)
+        raise typer.Exit(1)
+    rd = runs / run_id
+    if not (rd / orgmod.JOURNAL_NAME).exists():
+        typer.secho(f"no run found with id {run_id}", fg="red", err=True)
+        raise typer.Exit(1)
+    journal = orgmod.load_journal(rd)
+    missed = _repath_done(conn, journal, reverse=False)
+    typer.secho(f"Re-linked the index for run {run_id}.", fg="green")
+    if missed:
+        typer.secho(f"  ({missed} move(s) not found in the index — run `releases scan`)", fg="yellow")
+
+
+@organize_app.command("runs")
+def organize_runs(db: DbOpt = dbmod.DEFAULT_DB) -> None:
+    """List applied folder runs (newest first)."""
+    _reject_db_in_library(db)
+    runs = orgmod.list_runs(_runs_dir(db))
+    if not runs:
+        typer.echo("No folder runs yet.")
+        return
+    for j in runs:
+        done = sum(1 for a in j.actions if a.status in (orgmod.DONE, orgmod.REVERTED))
+        typer.echo(f"  {j.run_id}  {j.status:<8} {done} move(s)")
 
 
 if __name__ == "__main__":
