@@ -24,7 +24,15 @@ from .model import WRITABLE_TAGS
 from .organize import ACTIONS, DEFAULTS, FIELDS, OPS, OrganizeError, OrganizeSpec
 
 MODEL = "claude-sonnet-4-6"  # project spec: Sonnet for cost on ambition-tier AI
-MAX_TOKENS = 2048
+MAX_TOKENS = 4096  # organize rule-sets are small; tag-repair scales per batch below
+
+
+def _tags_max_tokens(n_tracks: int) -> int:
+    """Output budget for a tag-repair batch. Each track returns artist/title/genre
+    + confidence + a short note (~90 tokens worst case); too small a cap truncates
+    the JSON mid-string. Stay under ~16K so the non-streaming SDK call won't time
+    out — which bounds a safe batch to roughly 85 files."""
+    return min(16000, 2048 + 160 * max(1, n_tracks))
 
 # Strict structured-output schema: every object sets additionalProperties:false
 # and lists all properties as required (Anthropic structured-output constraint).
@@ -239,7 +247,7 @@ def propose_tags(
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=MAX_TOKENS,
+            max_tokens=_tags_max_tokens(len(tracks)),
             system=_TAGS_SYSTEM,
             messages=[{"role": "user", "content": _tags_user_prompt(tracks, instruction)}],
             output_config={"format": {"type": "json_schema", "schema": _TAGS_SCHEMA}},

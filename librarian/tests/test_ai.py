@@ -125,3 +125,18 @@ def test_propose_tags_passes_instruction():
 def test_propose_tags_bad_json_raises():
     with pytest.raises(ai.AIError):
         ai.propose_tags([{"index": 0, "filename": "x.mp3"}], client=_FakeClient("not json"))
+
+
+def test_propose_tags_scales_max_tokens_with_batch():
+    # a 50-file batch must request well above the old 2048 cap, or the JSON
+    # response truncates mid-string (the real bug found on the live library)
+    client = _FakeClient(json.dumps({"tracks": []}))
+    ai.propose_tags([{"index": i, "filename": f"t{i}.mp3"} for i in range(50)], client=client)
+    assert client.captured["max_tokens"] >= 8000
+
+
+def test_propose_tags_caps_max_tokens_for_non_streaming():
+    # huge batches cap at 16K so the non-streaming SDK call won't time out
+    client = _FakeClient(json.dumps({"tracks": []}))
+    ai.propose_tags([{"index": i, "filename": "x.mp3"} for i in range(300)], client=client)
+    assert client.captured["max_tokens"] == 16000
