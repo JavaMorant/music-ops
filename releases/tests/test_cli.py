@@ -322,6 +322,42 @@ def test_organize_refuses_out_inside_library(tmp_path, monkeypatch):
     assert not bad_out.exists()
 
 
+def _tracklist_lib(tmp_path):
+    root = tmp_path / "projects"
+    tld = root / "Beats" / "Tracks" / "Track List"
+    for rel in ("Encara (Dibs).mp3", "Beats/afro beat_116_C_Maj.mp3"):
+        p = tld / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 256)
+    db = tmp_path / "index.db"
+    _run(["scan", str(root), "--db", str(db)])
+    return root, db
+
+
+def test_mark_sets_and_validates(tmp_path):
+    root, db = _tracklist_lib(tmp_path)
+    r = _run(["mark", "Encara", "--genre", "jersey club", "--mix", "mixed", "--master", "mastered", "--db", str(db)])
+    assert r.exit_code == 0 and "genre=jersey club" in r.output and "mastered" in r.output
+    assert _run(["mark", "Encara", "--mix", "bogus", "--db", str(db)]).exit_code == 1
+    assert _run(["mark", "Encara", "--db", str(db)]).exit_code == 1  # nothing to set
+    assert _run(["mark", "Encara", "--genre", "a/b", "--db", str(db)]).exit_code == 1  # slash
+    assert _run(["mark", "Encara", "--genre", "  ", "--db", str(db)]).exit_code == 1  # empty
+
+
+def test_organize_tracklist_dry_run(tmp_path):
+    root, db = _tracklist_lib(tmp_path)
+    _run(["mark", "Encara", "--genre", "jersey club", "--mix", "mixed", "--master", "mastered", "--db", str(db)])
+    out = tmp_path / "plan.json"
+    r = _run(["organize", "tracklist", "--root", str(root), "--out", str(out), "--db", str(db)])
+    assert r.exit_code == 0
+    assert "Jersey Club/mixed/mastered" in r.output
+    assert "Tag edits" in r.output
+    assert out.exists()
+    # dry-run: nothing moved
+    assert (root / "Beats/Tracks/Track List/Encara (Dibs).mp3").exists()
+    assert not (root / "Beats/Tracks/Track List/Jersey Club").exists()
+
+
 def test_organize_relink_repairs_index(tmp_path):
     root, db = _org_lib(tmp_path)
     _run(["status", "sketchy", "complete", "--db", str(db)])

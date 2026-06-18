@@ -110,10 +110,27 @@ The only part of `releases` that writes to the library — and it borrows the
 releases organize by-stage                      # propose filing each project into its stage's folder
 releases organize file "sketchy" --to-stage complete
 releases organize rename "sketchy" "Better Name"
+releases organize tracklist                      # file Track List by genre/mix/master + tag (see below)
 releases organize apply organize-plan.json      # execute the reviewed plan (journaled)
 releases organize undo <run-id>                 # reverse a run completely
 releases organize runs                          # list applied runs
 ```
+
+**Track List by genre / mix / master.** `organize tracklist` files every audio
+file under `Track List/` into `Track List/<Genre>/<mixed|unmixed>/<mastered|unmastered>/`
+**and** writes rekordbox-readable ID3 tags (genre + a `mix / master` comment) —
+moves and tags together, in one reviewed, reversible plan (`undo` restores the
+folders *and* the previous tag values). Genre is guessed from the filename;
+mix/master default to `unmixed`/`unmastered` until you mark a track:
+
+```bash
+releases mark "Encara" --genre "jersey club" --mix mixed --master mastered
+releases organize tracklist        # dry-run plan; mark the finished ones first
+releases organize apply organize-plan.json
+```
+
+`mark` is index-only (never touches files). Tag-writing needs mutagen:
+`pip install -e '.[tags]'`.
 
 The workflow: triage stages cheaply in the index (`status`, or set them however
 you like), then `organize by-stage` turns those decisions into a reviewable plan

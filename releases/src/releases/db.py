@@ -95,6 +95,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE schedule ADD COLUMN release_id INTEGER")
     if "position" not in cols:
         conn.execute("ALTER TABLE schedule ADD COLUMN position INTEGER")
+    # Per-project marks (genre override + mix/master state) set via `mark`.
+    # Like stage_manual, these are user state preserved across re-scans.
+    pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
+    for col in ("genre_manual", "mix_state", "master_state"):
+        if col not in pcols:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT")
     conn.commit()
 
 
@@ -111,6 +117,9 @@ def _row_to_project(r: sqlite3.Row) -> Project:
         has_bounce=bool(r["has_bounce"]),
         flp_count=r["flp_count"],
         last_modified=r["last_modified"],
+        genre_manual=r["genre_manual"] if "genre_manual" in r.keys() else None,
+        mix_state=r["mix_state"] if "mix_state" in r.keys() else None,
+        master_state=r["master_state"] if "master_state" in r.keys() else None,
     )
 
 
@@ -178,6 +187,29 @@ def set_stage(
         "VALUES (?, ?, ?, ?, ?, ?)",
         (project.path, project.name, project.effective_stage, to_stage, note, time.time()),
     )
+    conn.commit()
+
+
+def set_marks(
+    conn: sqlite3.Connection,
+    path: str,
+    *,
+    genre: str | None = None,
+    mix: str | None = None,
+    master: str | None = None,
+) -> None:
+    """Set per-project marks (only the ones provided). Index-only."""
+    sets, vals = [], []
+    if genre is not None:
+        sets.append("genre_manual = ?"); vals.append(genre)
+    if mix is not None:
+        sets.append("mix_state = ?"); vals.append(mix)
+    if master is not None:
+        sets.append("master_state = ?"); vals.append(master)
+    if not sets:
+        return
+    vals.append(path)
+    conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE path = ?", vals)
     conn.commit()
 
 

@@ -240,6 +240,93 @@ class TestPartialApply:
         org.undo_run(j.run_id, tmp_path / "runs")  # the completed move reverses cleanly
 
 
+class TestTracklist:
+    @pytest.fixture
+    def tl(self, tmp_path):
+        """A Track List with a few dummy-mp3 'bounces' + a scanned db."""
+        root = tmp_path / "projects"
+        tld = root / "Beats" / "Tracks" / "Track List"
+        for rel in ("Encara (Dibs).mp3", "Beats/afro beat_116_C_Maj.mp3", "Cha Cha Slide.mp3"):
+            p = tld / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 256)
+        db = dbmod.connect(tmp_path / "index.db")
+        dbmod.upsert_projects(db, scan(root))
+        return root, db
+
+    def test_plan_places_by_genre_mix_master_and_tags(self, tl):
+        root, db = tl
+        enc = dbmod.find_projects(db, "Encara")[0]
+        dbmod.set_marks(db, enc.path, genre="jersey club", mix="mixed", master="mastered")
+        marks = {p.path: p for p in dbmod.all_projects(db)}
+        moves, tag_edits, _ = org.plan_tracklist(root, marks)
+        by_name = {Path(a.src).name: a.dest for a in moves}
+        assert by_name["Encara (Dibs).mp3"].parent == root / "Beats/Tracks/Track List/Jersey Club/mixed/mastered"
+        # inferred genre 'afro' (from the filename) with default mix/master
+        assert by_name["afro beat_116_C_Maj.mp3"].parent == root / "Beats/Tracks/Track List/Afro/unmixed/unmastered"
+        # no genre cue → Unknown bucket
+        assert by_name["Cha Cha Slide.mp3"].parent == root / "Beats/Tracks/Track List/Unknown/unmixed/unmastered"
+        # every taggable file gets a tag edit; genre tag only when known
+        tag_by_name = {Path(t.path).name: t.fields for t in tag_edits}
+        assert tag_by_name["Encara (Dibs).mp3"] == {"comment": "mixed / mastered", "genre": "Jersey Club"}
+        assert "genre" not in tag_by_name["Cha Cha Slide.mp3"]
+
+    def test_apply_and_undo_restores_folders_and_tags(self, tl, tmp_path):
+        root, db = tl
+        enc = dbmod.find_projects(db, "Encara")[0]
+        dbmod.set_marks(db, enc.path, genre="jersey club", mix="mixed", master="mastered")
+        marks = {p.path: p for p in dbmod.all_projects(db)}
+        moves, tag_edits, _ = org.plan_tracklist(root, marks)
+        plan = org.Plan(root, moves, tag_edits)
+        runs = tmp_path / "runs"
+
+        from releases import tags as tagmod
+        j = org.apply_plan(plan, runs)
+        # moved + tagged
+        moved = root / "Beats/Tracks/Track List/Jersey Club/mixed/mastered/Encara (Dibs).mp3"
+        orig = root / "Beats/Tracks/Track List/Encara (Dibs).mp3"
+        assert moved.exists() and not orig.exists()
+        assert tagmod.read_tags(moved, ["genre", "comment"]) == {"genre": ["Jersey Club"], "comment": ["mixed / mastered"]}
+
+        org.undo_run(j.run_id, runs)
+        # file is back at its original path and its tag VALUES are restored to
+        # the original (absent). (Bytes aren't asserted: an undone tag leaves an
+        # empty ID3 header, so undo restores values, not byte-for-byte content.)
+        assert orig.exists() and not moved.exists()
+        assert tagmod.read_tags(orig, ["genre", "comment"]) == {"genre": None, "comment": None}
+
+    def test_rerun_on_converged_library_is_empty(self, tl, tmp_path):
+        root, db = tl
+        enc = dbmod.find_projects(db, "Encara")[0]
+        dbmod.set_marks(db, enc.path, genre="jersey club", mix="mixed", master="mastered")
+        moves, tag_edits, _ = org.plan_tracklist(root, {p.path: p for p in dbmod.all_projects(db)})
+        org.apply_plan(org.Plan(root, moves, tag_edits), tmp_path / "runs")
+        # re-scan so the index points at the new (filed) locations, then re-plan
+        dbmod.upsert_projects(db, scan(root))
+        moves2, tags2, _ = org.plan_tracklist(root, {p.path: p for p in dbmod.all_projects(db)})
+        assert moves2 == [] and tags2 == []  # converged → nothing to do
+
+    def test_already_filed_without_mark_is_not_dragged_to_unknown(self, tmp_path):
+        # a manually-curated placement with no index mark must be left alone
+        root = tmp_path / "projects"
+        leaf = root / "Beats/Tracks/Track List/Jersey Club/mixed/mastered"
+        leaf.mkdir(parents=True)
+        (leaf / "song.mp3").write_bytes(b"\xff\xfb\x90\x00")
+        moves, tags_, _ = org.plan_tracklist(root, {})  # empty marks (none in index)
+        assert moves == [] and tags_ == []
+
+    def test_bounce_beside_flp_is_left_alone(self, tmp_path):
+        # an mp3 sharing a folder with a .flp belongs to a project — don't move it
+        root = tmp_path / "projects"
+        proj = root / "Beats/Tracks/Track List/MyProj"
+        proj.mkdir(parents=True)
+        (proj / "MyProj.flp").write_bytes(b"x")
+        (proj / "bounce.mp3").write_bytes(b"\xff\xfb\x90\x00")
+        moves, tags_, _ = org.plan_tracklist(root, {})
+        assert all("bounce.mp3" not in str(a.dest) for a in moves)
+        assert tags_ == []
+
+
 class TestRepath:
     def test_repath_updates_index_and_release_links(self, lib):
         root, db = lib

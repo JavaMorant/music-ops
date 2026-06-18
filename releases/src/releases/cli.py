@@ -274,6 +274,39 @@ def status(
 
 
 @app.command()
+def mark(
+    project: Annotated[str, typer.Argument(help="Project name/path substring")],
+    genre: Annotated[Optional[str], typer.Option("--genre", help="Override the guessed genre")] = None,
+    mix: Annotated[Optional[str], typer.Option("--mix", help="mixed | unmixed")] = None,
+    master: Annotated[Optional[str], typer.Option("--master", help="mastered | unmastered")] = None,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Mark a project's genre / mix / master state in the index (drives
+    `organize tracklist`). Index-only — never touches files."""
+    from .model import MASTER_STATES, MIX_STATES
+    if genre is not None and (not genre.strip() or "/" in genre or "\\" in genre):
+        typer.secho("--genre must be a non-empty name without slashes.", fg="red", err=True)
+        raise typer.Exit(1)
+    if mix is not None and mix not in MIX_STATES:
+        typer.secho(f"--mix must be one of {MIX_STATES}", fg="red", err=True)
+        raise typer.Exit(1)
+    if master is not None and master not in MASTER_STATES:
+        typer.secho(f"--master must be one of {MASTER_STATES}", fg="red", err=True)
+        raise typer.Exit(1)
+    if genre is None and mix is None and master is None:
+        typer.secho("Nothing to set — pass --genre, --mix and/or --master.", fg="red", err=True)
+        raise typer.Exit(1)
+    conn = _open(db)
+    p = _resolve_project_or_exit(conn, project)
+    dbmod.set_marks(conn, p.path, genre=genre, mix=mix, master=master)
+    typer.secho(
+        f"{p.name}: genre={genre or p.effective_genre}  "
+        f"mix={mix or p.effective_mix}  master={master or p.effective_master}",
+        fg="green",
+    )
+
+
+@app.command()
 def dashboard(db: DbOpt = dbmod.DEFAULT_DB) -> None:
     """Counts by stage, what's scheduled, what's overdue."""
     conn = _open(db)
@@ -609,15 +642,21 @@ def _print_org_plan(plan: orgmod.Plan, notes: list[str]) -> None:
     root = plan.library_root
     for n in notes:
         typer.secho(f"  · {n}", fg="bright_black")
-    if not plan.actions:
-        typer.secho("\nNo folder changes proposed.", fg="green")
+    if not plan.actions and not plan.tag_edits:
+        typer.secho("\nNo folder or tag changes proposed.", fg="green")
         return
-    typer.echo(f"\nFolder plan for {root}  ({len(plan.actions)} action(s))\n")
-    for i, a in enumerate(plan.actions, 1):
-        tag = typer.style(f"[{a.kind}]", fg="cyan")
-        typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
-        typer.echo(f"      -> {_rel(a.dest, root)}")
-        typer.echo(f"      reason: {a.reason}")
+    if plan.actions:
+        typer.echo(f"\nFolder moves for {root}  ({len(plan.actions)})\n")
+        for i, a in enumerate(plan.actions, 1):
+            tag = typer.style(f"[{a.kind}]", fg="cyan")
+            typer.echo(f"{i:>3} {tag} {_rel(a.src, root)}")
+            typer.echo(f"      -> {_rel(a.dest, root)}")
+    if plan.tag_edits:
+        typer.echo(f"\nTag edits  ({len(plan.tag_edits)} file(s) — genre + mix/master comment)\n")
+        for t in plan.tag_edits[:8]:
+            typer.echo(f"  {_rel(t.path, root)}  ->  {t.fields}")
+        if len(plan.tag_edits) > 8:
+            typer.echo(f"  … and {len(plan.tag_edits) - 8} more")
 
 
 def _emit_plan(plan: orgmod.Plan, notes: list[str], out: Path) -> None:
@@ -625,8 +664,8 @@ def _emit_plan(plan: orgmod.Plan, notes: list[str], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     _print_org_plan(plan, notes)
     out.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
-    if plan.actions:
-        typer.echo(f"\nDry run — nothing moved. Plan written to {out}")
+    if plan.actions or plan.tag_edits:
+        typer.echo(f"\nDry run — nothing changed. Plan written to {out}")
         typer.echo(f"Review it, then:  releases organize apply {out}")
 
 
@@ -678,6 +717,23 @@ def organize_by_stage(
     root = root.resolve()
     actions, notes = orgmod.plan_by_stage(root, projects)
     _emit_plan(orgmod.Plan(root, actions), notes, out)
+
+
+@organize_app.command("tracklist")
+def organize_tracklist(
+    root: RootOpt = DEFAULT_ROOT,
+    out: PlanOut = DEFAULT_PLAN_OUT,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Plan to file EVERY Track List audio file into <Genre>/<mix>/<master>/
+    folders AND stamp genre + a mix/master comment tag. Uses each track's marks
+    (`releases mark`); unmarked files default to Unknown/unmixed/unmastered.
+    Makes NO changes — dry-run."""
+    conn = _open(db)
+    root = root.resolve()
+    marks = {p.path: p for p in dbmod.all_projects(conn)}
+    moves, tag_edits, notes = orgmod.plan_tracklist(root, marks)
+    _emit_plan(orgmod.Plan(root, moves, tag_edits), notes, out)
 
 
 @organize_app.command("file")

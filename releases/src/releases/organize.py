@@ -31,6 +31,9 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from . import tags
+from .scan import AUDIO_EXTS
+
 MOVE = "move"      # file a project into a stage folder / relocate it
 RENAME = "rename"  # rename a project folder in place
 ACTION_KINDS = (MOVE, RENAME)
@@ -83,19 +86,40 @@ class Action:
                    reason=d["reason"], stage=d.get("stage"))
 
 
+@dataclass(frozen=True)
+class TagEdit:
+    """A reversible ID3 tag write on a file that is NOT moved by this edit. The
+    OLD values are read and journaled at apply time, never stored here, so undo
+    restores exactly what was there."""
+
+    path: Path
+    fields: dict        # writable tag name -> new value (genre/comment)
+    reason: str = ""
+
+    def to_dict(self) -> dict:
+        return {"path": str(self.path), "fields": dict(self.fields), "reason": self.reason}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TagEdit:
+        return cls(path=Path(d["path"]), fields=dict(d["fields"]), reason=d.get("reason", ""))
+
+
 @dataclass
 class Plan:
     library_root: Path
     actions: list[Action]
+    tag_edits: list[TagEdit] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"library_root": str(self.library_root),
-                "actions": [a.to_dict() for a in self.actions]}
+                "actions": [a.to_dict() for a in self.actions],
+                "tag_edits": [t.to_dict() for t in self.tag_edits]}
 
     @classmethod
     def from_dict(cls, d: dict) -> Plan:
         return cls(library_root=Path(d["library_root"]),
-                   actions=[Action.from_dict(a) for a in d["actions"]])
+                   actions=[Action.from_dict(a) for a in d["actions"]],
+                   tag_edits=[TagEdit.from_dict(t) for t in d.get("tag_edits", [])])
 
 
 @dataclass
@@ -112,24 +136,45 @@ class JournalAction:
 
 
 @dataclass
+class JournalTagEdit:
+    """A tag write plus the OLD values it overwrote, so undo can restore them.
+    A recorded ``None`` means the tag was absent (undo deletes it)."""
+
+    path: Path
+    old: dict
+    new: dict
+    status: str = PENDING
+
+    def to_dict(self) -> dict:
+        return {"path": str(self.path), "old": self.old, "new": self.new, "status": self.status}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> JournalTagEdit:
+        return cls(path=Path(d["path"]), old=d["old"], new=d["new"], status=d["status"])
+
+
+@dataclass
 class Journal:
     run_id: str
     library_root: Path
     actions: list[JournalAction]
     status: str = APPLYING
     created: str = ""
+    tag_edits: list[JournalTagEdit] = field(default_factory=list)
     run_dir: Path | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
         return {"run_id": self.run_id, "created": self.created, "status": self.status,
                 "library_root": str(self.library_root),
-                "actions": [a.to_dict() for a in self.actions]}
+                "actions": [a.to_dict() for a in self.actions],
+                "tag_edits": [t.to_dict() for t in self.tag_edits]}
 
     @classmethod
     def from_dict(cls, d: dict) -> Journal:
         return cls(run_id=d["run_id"], created=d.get("created", ""), status=d["status"],
                    library_root=Path(d["library_root"]),
-                   actions=[JournalAction.from_dict(a) for a in d["actions"]])
+                   actions=[JournalAction.from_dict(a) for a in d["actions"]],
+                   tag_edits=[JournalTagEdit.from_dict(t) for t in d.get("tag_edits", [])])
 
 
 # --- path safety helpers (mirrors librarian.engine) ------------------------
@@ -260,6 +305,22 @@ def preflight(plan: Plan) -> None:
                             f"overlapping paths refused: {a1.src}'s {l1} overlaps {a2.src}'s {l2}"
                         )
 
+    # Tag edits: validate every one before a byte is written, so the tag phase
+    # is all-or-nothing-safe and a hand-edited plan can't write a forbidden tag
+    # or touch a file outside the library.
+    for t in plan.tag_edits:
+        if not t.path.exists():
+            raise OrganizeError(f"tag-edit source does not exist: {t.path}")
+        if not (_within(root, t.path) and _contained(root_real, t.path)):
+            raise OrganizeError(f"tag-edit path escapes the library root {root}: {t.path}")
+        bad = [k for k in t.fields if k not in tags.WRITABLE_TAGS]
+        if bad:
+            raise OrganizeError(f"refusing to write non-writable tag(s) {bad} on {t.path}")
+        if any(not isinstance(v, (str, type(None))) for v in t.fields.values()):
+            raise OrganizeError(f"tag values must be strings or null: {t.path}")
+        if not tags.is_taggable(t.path):
+            raise OrganizeError(f"file cannot carry tags, refusing to retag: {t.path}")
+
 
 def new_run_id() -> str:
     return f"{datetime.now():%Y%m%d-%H%M%S}-{uuid4().hex[:6]}"
@@ -377,6 +438,79 @@ def plan_rename(root: Path, src: Path, new_name: str) -> tuple[Action | None, st
     return Action(RENAME, src, dest, f"rename to {new_name}"), None
 
 
+def _safe_component(name: str) -> str:
+    """A single, safe path component — no separators or traversal."""
+    cleaned = name.replace("/", "-").replace("\\", "-").strip()
+    if cleaned in ("", ".", ".."):
+        return "Unknown"
+    return cleaned
+
+
+def _title_genre(genre: str) -> str:
+    return _safe_component(genre.title()) if genre and genre != "unknown" else "Unknown"
+
+
+def plan_tracklist(root: Path, marks_by_path: dict) -> tuple[list[Action], list[TagEdit], list[str]]:
+    """Plan to file every Track List audio file into
+    ``Track List/<Genre>/<mix>/<master>/`` AND stamp it with a genre + a
+    'mix / master' comment tag. ``marks_by_path`` maps an absolute file path to
+    its indexed Project (for genre/mix/master marks); files not in the index get
+    the defaults (Unknown / unmixed / unmastered).
+
+    Idempotent: a file already sitting in a ``<Genre>/<mix>/<master>/`` leaf is
+    left alone unless an explicit mark says it belongs elsewhere — so re-runs on
+    a converged library produce an empty plan and a lost mark never drags a
+    curated track back to Unknown. Tag edits are emitted only for files that
+    move, so nothing is re-tagged needlessly."""
+    tl = root / "Beats" / "Tracks" / "Track List"
+    if not tl.is_dir():
+        return [], [], [f"no Track List folder at {tl}"]
+    moves: list[Action] = []
+    tag_edits: list[TagEdit] = []
+    notes: list[str] = []
+    seen_dest: set[str] = set()
+    for dirpath, _dirs, files in os.walk(tl):
+        here = Path(dirpath)
+        # A bounce that lives beside a .flp belongs to a project folder — moving
+        # it would orphan it from its project, so leave the whole folder alone.
+        if any(name.lower().endswith(".flp") for name in files):
+            continue
+        for f in sorted(files):
+            src = here / f
+            if src.suffix.lower() not in AUDIO_EXTS:
+                continue
+            rel_parts = src.relative_to(tl).parts
+            p = marks_by_path.get(str(src))
+            has_mark = bool(p and (p.genre_manual or p.mix_state or p.master_state))
+            genre = p.effective_genre if p else "unknown"
+            mix = p.effective_mix if p else "unmixed"
+            master = p.effective_master if p else "unmastered"
+            gfolder = _title_genre(genre)
+            desired = (gfolder, mix, master)
+
+            # Already inside a <genre>/<mix>/<master>/<name> leaf?
+            if len(rel_parts) == 4:
+                current = tuple(rel_parts[:3])
+                if current == desired or not has_mark:
+                    continue  # converged, or don't disturb a curated placement
+
+            dest = tl / gfolder / mix / master / src.name
+            if _norm(src) == _norm(dest):
+                continue
+            if _occupied(dest) or _norm(dest) in seen_dest:
+                notes.append(f"{src.name}: target {gfolder}/{mix}/{master} occupied — move skipped")
+                continue
+            seen_dest.add(_norm(dest))
+            moves.append(Action(MOVE, src, dest, f"file under {gfolder}/{mix}/{master}"))
+            # Tag only files we actually move, so a converged library re-tags nothing.
+            if tags.is_taggable(src):
+                fields = {"comment": f"{mix} / {master}"}
+                if genre != "unknown":
+                    fields["genre"] = gfolder
+                tag_edits.append(TagEdit(src, fields, f"{gfolder} · {mix} · {master}"))
+    return moves, tag_edits, notes
+
+
 def apply_plan(plan: Plan, runs_dir: Path) -> Journal:
     """Execute a reviewed plan, journaling every step. Returns the Journal."""
     preflight(plan)
@@ -386,12 +520,31 @@ def apply_plan(plan: Plan, runs_dir: Path) -> Journal:
         run_id=run_id,
         library_root=plan.library_root.absolute(),
         actions=[JournalAction(action=a, status=PENDING) for a in plan.actions],
+        tag_edits=[
+            JournalTagEdit(path=t.path.absolute(), old={}, new=dict(t.fields), status=PENDING)
+            for t in plan.tag_edits
+        ],
         status=APPLYING,
         created=run_id[:15],
         run_dir=run_dir,
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     write_journal(journal)  # journal-before-execute
+
+    # Tag edits run first, on the files' current (pre-move) paths. Read the OLD
+    # values and journal them BEFORE writing, so a crash still leaves undo able
+    # to restore exactly what was there.
+    for tedit in journal.tag_edits:
+        try:
+            tedit.old = tags.read_tags(tedit.path, list(tedit.new.keys()))
+            write_journal(journal)
+            tags.write_tags(tedit.path, tedit.new)
+        except Exception as e:
+            write_journal(journal)
+            raise ApplyInterrupted(f"tag write failed at {tedit.path}: {e}", journal) from e
+        tedit.status = DONE
+        write_journal(journal)
+
     for entry in journal.actions:
         try:
             _safe_move(entry.action.src, entry.action.dest)
@@ -429,6 +582,9 @@ def undo_run(run_id: str, runs_dir: Path) -> Journal:
             and _contained(root_real, entry.action.dest)
         ):
             raise OrganizeError(f"refusing undo: action escapes library root {root}: {entry.action.src}")
+    for tedit in journal.tag_edits:
+        if tedit.status == DONE and not _within(root, tedit.path):
+            raise OrganizeError(f"refusing undo: tag-edit path escapes library root {root}: {tedit.path}")
     # Mark mid-reversal before the first move back, so a crashed undo is visible.
     journal.status = UNDOING
     write_journal(journal)
@@ -436,6 +592,13 @@ def undo_run(run_id: str, runs_dir: Path) -> Journal:
         if entry.status == DONE:
             _safe_move(entry.action.dest, entry.action.src)
             entry.status = REVERTED
+            write_journal(journal)
+    # Files are back at their original paths, so restore tags to the pre-run
+    # values the journal captured (a recorded None deletes a tag that was absent).
+    for tedit in reversed(journal.tag_edits):
+        if tedit.status == DONE:
+            tags.write_tags(tedit.path, tedit.old)
+            tedit.status = REVERTED
             write_journal(journal)
     journal.status = UNDONE
     write_journal(journal)

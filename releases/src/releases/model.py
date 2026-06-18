@@ -71,8 +71,28 @@ class Project:
 
     # Populated from the db, not the scan:
     stage_manual: Optional[str] = None  # set via `releases status`; overrides stage
+    genre_manual: Optional[str] = None  # set via `releases mark`; overrides guessed genre
+    mix_state: Optional[str] = None     # 'mixed' | 'unmixed' (None ⇒ unmixed)
+    master_state: Optional[str] = None  # 'mastered' | 'unmastered' (None ⇒ unmastered)
 
     @property
     def effective_stage(self) -> str:
         """The stage that counts for ranking/display — a manual override wins."""
         return self.stage_manual or self.stage
+
+    @property
+    def effective_genre(self) -> str:
+        """Genre for filing/tagging — a manual mark wins over the guess."""
+        return self.genre_manual or self.genre
+
+    @property
+    def effective_mix(self) -> str:
+        return self.mix_state or "unmixed"
+
+    @property
+    def effective_master(self) -> str:
+        return self.master_state or "unmastered"
+
+
+MIX_STATES = ("unmixed", "mixed")
+MASTER_STATES = ("unmastered", "mastered")
