@@ -67,6 +67,9 @@
   <label class="sub">genre
     <select id="filter" onchange="render()"><option value="">all</option></select>
   </label>
+  <label class="sub">month
+    <select id="mfilter" onchange="render()"><option value="">all</option></select>
+  </label>
   <button onclick="loadTracks()">Refresh</button>
   <button onclick="preview()">Preview plan</button>
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
@@ -81,7 +84,7 @@
 <table>
   <thead><tr>
     <th></th><th>Track</th><th>BPM / Key</th><th>Genre</th>
-    <th>Mix</th><th>Master</th><th>Location</th>
+    <th>Mix</th><th>Master</th><th>Artists</th><th>Month</th><th>Location</th>
   </tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -93,9 +96,10 @@
 <div id="toast"></div>
 
 <datalist id="genres"></datalist>
+<datalist id="months"></datalist>
 
 <script>
-let TRACKS = [], GENRES = [], currentPlan = null;
+let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -110,22 +114,25 @@ function toast(msg, bad) {
 
 async function loadTracks() {
   const data = await api('/api/tracks');
-  TRACKS = data.tracks; GENRES = data.genres;
-  const dl = document.getElementById('genres');
-  dl.innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
-  const f = document.getElementById('filter');
-  const cur = f.value;
+  TRACKS = data.tracks; GENRES = data.genres; MONTHS = data.months || [];
+  document.getElementById('genres').innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
+  document.getElementById('months').innerHTML = MONTHS.map(m=>`<option value="${m}">`).join('');
+  const f = document.getElementById('filter'), cur = f.value;
   f.innerHTML = '<option value="">all</option>' + GENRES.map(g=>`<option>${g}</option>`).join('')
               + '<option value="unknown">unknown</option>';
   f.value = cur;
+  const mf = document.getElementById('mfilter'), mcur = mf.value;
+  mf.innerHTML = '<option value="">all</option>' + MONTHS.map(m=>`<option>${m}</option>`).join('');
+  mf.value = mcur;
   render();
 }
 
 function render() {
-  const filter = document.getElementById('filter').value;
-  const shown = TRACKS.filter(t => !filter || t.genre === filter);
+  const fg = document.getElementById('filter').value;
+  const fm = document.getElementById('mfilter').value;
+  const shown = TRACKS.filter(t => (!fg || t.genre === fg) && (!fm || t.month === fm));
   document.getElementById('summary').textContent =
-    `${shown.length} of ${TRACKS.length} tracks · ${GENRES.length} genres`;
+    `${shown.length} of ${TRACKS.length} tracks · ${GENRES.length} genres · ${MONTHS.length} months`;
   document.getElementById('rows').innerHTML = shown.map(rowHtml).join('');
 }
 
@@ -141,6 +148,10 @@ function rowHtml(t) {
          onchange="setGenre('${t.id}', this.value)"></td>
     <td><span class="pill ${t.mix==='mixed'?'on':'off'}" onclick="toggle('${t.id}','mix','${t.mix}')">${t.mix}</span></td>
     <td><span class="pill ${t.master==='mastered'?'on':'off'}" onclick="toggle('${t.id}','master','${t.master}')">${t.master}</span></td>
+    <td><input class="ginput" style="width:150px" value="${esc(t.artists)}" placeholder="—"
+         onchange="setText('${t.id}','artists',this.value)"></td>
+    <td><input class="ginput" list="months" style="width:88px" value="${esc(t.month)}" placeholder="—"
+         onchange="setText('${t.id}','month',this.value)"></td>
     <td>${loc}</td>
   </tr>`;
 }
@@ -149,14 +160,28 @@ function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','
 function patch(updated) {
   const i = TRACKS.findIndex(t=>t.id===updated.id);
   if (i>=0) TRACKS[i] = updated;
-  // keep genre list fresh
-  if (updated.genre!=='unknown' && !GENRES.includes(updated.genre)) { GENRES.push(updated.genre); GENRES.sort(); }
+  let listsChanged = false;
+  if (updated.genre!=='unknown' && !GENRES.includes(updated.genre)) { GENRES.push(updated.genre); GENRES.sort(); listsChanged = true; }
+  if (updated.month && !MONTHS.includes(updated.month)) { MONTHS.push(updated.month); MONTHS.sort().reverse(); listsChanged = true; }
+  if (listsChanged) refreshFilters();
   render();
+}
+function refreshFilters() {
+  const f = document.getElementById('filter'), cur = f.value;
+  f.innerHTML = '<option value="">all</option>' + GENRES.map(g=>`<option>${g}</option>`).join('') + '<option value="unknown">unknown</option>';
+  f.value = cur;
+  const mf = document.getElementById('mfilter'), mcur = mf.value;
+  mf.innerHTML = '<option value="">all</option>' + MONTHS.map(m=>`<option>${m}</option>`).join('');
+  mf.value = mcur;
+  document.getElementById('months').innerHTML = MONTHS.map(m=>`<option value="${m}">`).join('');
 }
 
 async function setGenre(id, value) {
   try { patch(await mark({id, genre: value.trim() || null})); }
   catch(e){ toast(e.message, true); }
+}
+async function setText(id, field, value) {
+  try { patch(await mark({id, [field]: value})); } catch(e){ toast(e.message, true); }
 }
 async function toggle(id, field, current) {
   const next = field==='mix' ? (current==='mixed'?'unmixed':'mixed')

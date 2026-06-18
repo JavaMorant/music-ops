@@ -74,6 +74,8 @@ class Project:
     genre_manual: Optional[str] = None  # set via `releases mark`; overrides guessed genre
     mix_state: Optional[str] = None     # 'mixed' | 'unmixed' (None ⇒ unmixed)
     master_state: Optional[str] = None  # 'mastered' | 'unmastered' (None ⇒ unmastered)
+    artists: Optional[str] = None       # collaborators / producers worked with (free text)
+    pack_month: Optional[str] = None    # month made / sent (e.g. "2026-06"), for beat-pack tracking
 
     @property
     def effective_stage(self) -> str:

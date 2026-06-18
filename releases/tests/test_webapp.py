@@ -64,6 +64,17 @@ class TestTracks:
         data = c.get("/api/tracks").json()
         assert "root" not in data  # no absolute library path sent to the page
 
+    def test_mark_artists_and_month(self, client):
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        t = c.post("/api/mark", json={"id": tid, "artists": "Jah, EJ", "month": "2026-06"}).json()
+        assert t["artists"] == "Jah, EJ" and t["month"] == "2026-06"
+        # the month now appears in the filterable months list
+        data = c.get("/api/tracks").json()
+        assert "2026-06" in data["months"]
+        # over-long artists rejected
+        assert c.post("/api/mark", json={"id": tid, "artists": "x" * 500}).status_code == 400
+
     def test_audio_streams_and_bad_id_404s(self, client):
         c, _ = client
         tid = _tracks(c)[0]["id"]

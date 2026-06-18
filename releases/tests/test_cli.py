@@ -342,6 +342,12 @@ def test_mark_sets_and_validates(tmp_path):
     assert _run(["mark", "Encara", "--db", str(db)]).exit_code == 1  # nothing to set
     assert _run(["mark", "Encara", "--genre", "a/b", "--db", str(db)]).exit_code == 1  # slash
     assert _run(["mark", "Encara", "--genre", "  ", "--db", str(db)]).exit_code == 1  # empty
+    # artists + month marks persist across a rescan
+    assert _run(["mark", "Encara", "--artists", "Jah, EJ", "--month", "2026-06", "--db", str(db)]).exit_code == 0
+    _run(["scan", str(root), "--db", str(db)])
+    conn = dbmod.connect(db)
+    r = conn.execute("SELECT artists, pack_month FROM projects WHERE name='Encara (Dibs)' OR name LIKE 'Encara%'").fetchone()
+    assert r["artists"] == "Jah, EJ" and r["pack_month"] == "2026-06"
 
 
 def test_organize_tracklist_dry_run(tmp_path):

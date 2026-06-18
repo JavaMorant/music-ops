@@ -279,10 +279,12 @@ def mark(
     genre: Annotated[Optional[str], typer.Option("--genre", help="Override the guessed genre")] = None,
     mix: Annotated[Optional[str], typer.Option("--mix", help="mixed | unmixed")] = None,
     master: Annotated[Optional[str], typer.Option("--master", help="mastered | unmastered")] = None,
+    artists: Annotated[Optional[str], typer.Option("--artists", help="Artists / producers worked with")] = None,
+    month: Annotated[Optional[str], typer.Option("--month", help="Month made / sent, e.g. 2026-06")] = None,
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
-    """Mark a project's genre / mix / master state in the index (drives
-    `organize tracklist`). Index-only — never touches files."""
+    """Mark a project's genre / mix / master / artists / month in the index
+    (drives `organize tracklist` + the web app). Index-only — never touches files."""
     from .model import MASTER_STATES, MIX_STATES
     if genre is not None and (not genre.strip() or "/" in genre or "\\" in genre):
         typer.secho("--genre must be a non-empty name without slashes.", fg="red", err=True)
@@ -293,15 +295,16 @@ def mark(
     if master is not None and master not in MASTER_STATES:
         typer.secho(f"--master must be one of {MASTER_STATES}", fg="red", err=True)
         raise typer.Exit(1)
-    if genre is None and mix is None and master is None:
-        typer.secho("Nothing to set — pass --genre, --mix and/or --master.", fg="red", err=True)
+    if all(x is None for x in (genre, mix, master, artists, month)):
+        typer.secho("Nothing to set — pass --genre, --mix, --master, --artists and/or --month.", fg="red", err=True)
         raise typer.Exit(1)
     conn = _open(db)
     p = _resolve_project_or_exit(conn, project)
-    dbmod.set_marks(conn, p.path, genre=genre, mix=mix, master=master)
+    dbmod.set_marks(conn, p.path, genre=genre, mix=mix, master=master, artists=artists, month=month)
     typer.secho(
-        f"{p.name}: genre={genre or p.effective_genre}  "
-        f"mix={mix or p.effective_mix}  master={master or p.effective_master}",
+        f"{p.name}: genre={genre or p.effective_genre}  mix={mix or p.effective_mix}  "
+        f"master={master or p.effective_master}"
+        + (f"  artists={artists}" if artists else "") + (f"  month={month}" if month else ""),
         fg="green",
     )
 

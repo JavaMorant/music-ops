@@ -30,6 +30,8 @@ class MarkBody(BaseModel):
     genre: str | None = None
     mix: str | None = None
     master: str | None = None
+    artists: str | None = None
+    month: str | None = None
 
 
 class ApplyBody(BaseModel):
@@ -67,6 +69,8 @@ def create_app(config: AppConfig) -> FastAPI:
             "genre_marked": p.genre_manual is not None,
             "mix": p.effective_mix,
             "master": p.effective_master,
+            "artists": p.artists or "",
+            "month": p.pack_month or "",
             "bpm": p.bpm,
             "key": p.key,
             "taggable": path.suffix.lower() == ".mp3",
@@ -104,7 +108,8 @@ def create_app(config: AppConfig) -> FastAPI:
         state.track_paths = mapping
         tracks.sort(key=lambda t: (t["genre"], t["name"].lower()))
         genres = sorted({t["genre"] for t in tracks if t["genre"] != "unknown"})
-        return {"tracks": tracks, "genres": genres}  # no abs library path leaked to the page
+        months = sorted({t["month"] for t in tracks if t["month"]}, reverse=True)
+        return {"tracks": tracks, "genres": genres, "months": months}
 
     @app.post("/api/mark", dependencies=[Depends(guard_origin)])
     def mark(body: MarkBody):
@@ -119,8 +124,12 @@ def create_app(config: AppConfig) -> FastAPI:
             raise HTTPException(400, f"mix must be one of {MIX_STATES}")
         if body.master is not None and body.master not in MASTER_STATES:
             raise HTTPException(400, f"master must be one of {MASTER_STATES}")
+        for field_name, val, cap in (("artists", body.artists, 200), ("month", body.month, 40)):
+            if val is not None and (len(val) > cap or any(ord(ch) < 32 for ch in val)):
+                raise HTTPException(400, f"{field_name} too long or has control characters")
         genre = body.genre.strip() if body.genre is not None else None
-        dbmod.set_marks(c, abspath, genre=genre, mix=body.mix, master=body.master)
+        dbmod.set_marks(c, abspath, genre=genre, mix=body.mix, master=body.master,
+                        artists=body.artists, month=body.month)
         rows = c.execute("SELECT * FROM projects WHERE path = ?", (abspath,)).fetchall()
         if not rows:
             raise HTTPException(404, "track not in index")

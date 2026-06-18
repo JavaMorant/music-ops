@@ -98,7 +98,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Per-project marks (genre override + mix/master state) set via `mark`.
     # Like stage_manual, these are user state preserved across re-scans.
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
-    for col in ("genre_manual", "mix_state", "master_state"):
+    for col in ("genre_manual", "mix_state", "master_state", "artists", "pack_month"):
         if col not in pcols:
             conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT")
     conn.commit()
@@ -120,6 +120,8 @@ def _row_to_project(r: sqlite3.Row) -> Project:
         genre_manual=r["genre_manual"] if "genre_manual" in r.keys() else None,
         mix_state=r["mix_state"] if "mix_state" in r.keys() else None,
         master_state=r["master_state"] if "master_state" in r.keys() else None,
+        artists=r["artists"] if "artists" in r.keys() else None,
+        pack_month=r["pack_month"] if "pack_month" in r.keys() else None,
     )
 
 
@@ -197,8 +199,11 @@ def set_marks(
     genre: str | None = None,
     mix: str | None = None,
     master: str | None = None,
+    artists: str | None = None,
+    month: str | None = None,
 ) -> None:
-    """Set per-project marks (only the ones provided). Index-only."""
+    """Set per-project marks (only the ones provided). An empty string clears a
+    free-text mark (artists/month). Index-only."""
     sets, vals = [], []
     if genre is not None:
         sets.append("genre_manual = ?"); vals.append(genre)
@@ -206,6 +211,10 @@ def set_marks(
         sets.append("mix_state = ?"); vals.append(mix)
     if master is not None:
         sets.append("master_state = ?"); vals.append(master)
+    if artists is not None:
+        sets.append("artists = ?"); vals.append(artists or None)
+    if month is not None:
+        sets.append("pack_month = ?"); vals.append(month or None)
     if not sets:
         return
     vals.append(path)
