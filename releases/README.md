@@ -132,6 +132,27 @@ releases organize apply organize-plan.json
 `mark` is index-only (never touches files). Tag-writing needs mutagen:
 `pip install -e '.[tags]'`.
 
+### `web` — Track List web app
+
+A local single-page app to manage the Track List in the browser: set genres,
+toggle mixed/mastered, **play** tracks, then preview + apply the file/tag plan —
+all through the same reviewed, reversible engine.
+
+```bash
+pip install -e '.[web]'
+releases web                 # → http://127.0.0.1:8765  (localhost only)
+```
+
+- Set a genre per track (autocomplete from genres you've used), flip
+  mixed/unmixed and mastered/unmastered — saved to the index instantly.
+- ▶ plays the track (range-streamed, so seeking works).
+- **Preview plan** shows the moves + tag edits; **Apply** files + tags everything
+  (journaled); **Undo last** reverses it.
+- Safe by construction: binds 127.0.0.1 only, mutating routes are origin-guarded,
+  the library root/db are fixed at launch (never client-supplied), tracks are
+  addressed by an opaque id mapped server-side (no client paths), and Apply runs
+  the cached plan through the engine's preflight (never deletes/overwrites).
+
 The workflow: triage stages cheaply in the index (`status`, or set them however
 you like), then `organize by-stage` turns those decisions into a reviewable plan
 of folder moves (old → new + reason). Nothing moves until you `apply` a plan.

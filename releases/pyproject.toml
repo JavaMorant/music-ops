@@ -11,9 +11,11 @@ dependencies = [
 # The scan is pure stdlib (os.walk + sqlite3). The AI 'what-it-needs-to-ship'
 # estimator (ambition tier, flagged) is the only thing that needs the API client,
 # so it stays optional and the core install stays tiny.
-dev = ["pytest>=8.0", "mutagen>=1.47"]
+dev = ["pytest>=8.0", "mutagen>=1.47", "fastapi>=0.111", "httpx>=0.27"]
 # Writing ID3 genre / mix-master tags (the Track-List organizer) needs mutagen.
 tags = ["mutagen>=1.47"]
+# The local Track List web app (releases web) is an opt-in extra.
+web = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "mutagen>=1.47"]
 ai = ["anthropic>=0.39"]
 
 [project.scripts]
@@ -25,3 +27,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+releases = ["web/index.html"]

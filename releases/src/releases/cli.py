@@ -852,6 +852,32 @@ def organize_relink(
         typer.secho(f"  ({missed} move(s) not found in the index — run `releases scan`)", fg="yellow")
 
 
+@app.command()
+def web(
+    root: RootOpt = DEFAULT_ROOT,
+    port: Annotated[int, typer.Option("--port", help="Localhost port")] = 8765,
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Launch the local Track List web app: set genres, play tracks, then file +
+    tag them (moves + ID3) through the reviewed/reversible engine. Localhost only."""
+    _reject_db_in_library(db)
+    root = root.resolve()
+    if orgmod._within(root, _runs_dir(db).resolve()):
+        typer.secho("Refusing: --db is inside --root; keep the index outside the library.", fg="red", err=True)
+        raise typer.Exit(1)
+    # Make sure every Track List file is indexed so the app can mark it.
+    if not dbmod.all_projects(_open(db)):
+        typer.echo("Indexing the library first (read-only)…")
+        dbmod.upsert_projects(_open(db), scan_library(root))
+    try:
+        from .webapp.server import serve
+    except ImportError:
+        typer.secho("The web app needs extras:  pip install -e '.[web]'", fg="red", err=True)
+        raise typer.Exit(1)
+    typer.secho(f"releases Track List app → http://127.0.0.1:{port}  (Ctrl-C to stop)", fg="green")
+    serve(root, db, _runs_dir(db), port=port)
+
+
 @organize_app.command("runs")
 def organize_runs(db: DbOpt = dbmod.DEFAULT_DB) -> None:
     """List applied folder runs (newest first)."""

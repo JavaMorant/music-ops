@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>releases · Track List</title>
+<style>
+  :root {
+    --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
+    --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding-bottom:84px; }
+  header { position:sticky; top:0; z-index:5; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:12px 18px; display:flex; gap:14px;
+    align-items:center; flex-wrap:wrap; }
+  h1 { font-size:15px; letter-spacing:.14em; text-transform:uppercase; margin:0;
+    color:var(--accent); font-weight:600; }
+  .sub { color:var(--dim); font-size:12px; }
+  .spacer { flex:1; }
+  button { background:#20202a; color:var(--txt); border:1px solid var(--line);
+    padding:7px 13px; border-radius:7px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#10100a; border-color:var(--accent); font-weight:600; }
+  select, input { background:#101016; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:5px 8px; font-size:13px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; color:var(--dim); font-weight:500; font-size:11px;
+    text-transform:uppercase; letter-spacing:.08em; padding:10px 12px;
+    border-bottom:1px solid var(--line); position:sticky; top:53px; background:var(--bg); }
+  td { padding:7px 12px; border-bottom:1px solid #1c1c24; vertical-align:middle; }
+  tr:hover td { background:#13131a; }
+  .name { font-weight:500; }
+  .meta { color:var(--dim); font-size:12px; white-space:nowrap; }
+  .play { width:30px; height:30px; border-radius:50%; padding:0; font-size:13px; }
+  .pill { padding:3px 9px; border-radius:20px; font-size:12px; cursor:pointer;
+    border:1px solid var(--line); user-select:none; white-space:nowrap; }
+  .pill.on { background:#1d2b1d; border-color:var(--good); color:#8be398; }
+  .pill.off { color:var(--dim); }
+  .ginput { width:130px; }
+  .filed { color:var(--good); font-size:11px; }
+  .loose { color:var(--dim); font-size:11px; }
+  #player { position:fixed; bottom:0; left:0; right:0; background:var(--panel);
+    border-top:1px solid var(--line); padding:10px 18px; display:flex; gap:14px;
+    align-items:center; }
+  #player .np { min-width:200px; max-width:40%; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; color:var(--dim); font-size:13px; }
+  audio { flex:1; height:34px; }
+  #panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    margin:16px 18px; padding:16px; display:none; }
+  #panel.show { display:block; }
+  #panel h2 { font-size:13px; margin:0 0 10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  .move { font-size:12px; color:var(--dim); padding:2px 0; font-family:ui-monospace,monospace; }
+  .move b { color:var(--txt); font-weight:500; }
+  #toast { position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+    background:#222; border:1px solid var(--line); padding:10px 16px; border-radius:8px;
+    display:none; z-index:10; }
+  .count { color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Track List</h1>
+  <span class="sub" id="summary"></span>
+  <span class="spacer"></span>
+  <label class="sub">genre
+    <select id="filter" onchange="render()"><option value="">all</option></select>
+  </label>
+  <button onclick="loadTracks()">Refresh</button>
+  <button onclick="preview()">Preview plan</button>
+  <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
+  <button onclick="undoLast()">Undo last</button>
+</header>
+
+<div id="panel">
+  <h2 id="panelTitle">Plan</h2>
+  <div id="planMoves"></div>
+</div>
+
+<table>
+  <thead><tr>
+    <th></th><th>Track</th><th>BPM / Key</th><th>Genre</th>
+    <th>Mix</th><th>Master</th><th>Location</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div id="player">
+  <div class="np" id="np">— nothing playing —</div>
+  <audio id="audio" controls></audio>
+</div>
+<div id="toast"></div>
+
+<datalist id="genres"></datalist>
+
+<script>
+let TRACKS = [], GENRES = [], currentPlan = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail || r.statusText); }
+  return r.json();
+}
+function toast(msg, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.borderColor = bad ? 'var(--bad)' : 'var(--good)';
+  t.style.display = 'block'; clearTimeout(t._t); t._t = setTimeout(()=>t.style.display='none', 3500);
+}
+
+async function loadTracks() {
+  const data = await api('/api/tracks');
+  TRACKS = data.tracks; GENRES = data.genres;
+  const dl = document.getElementById('genres');
+  dl.innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
+  const f = document.getElementById('filter');
+  const cur = f.value;
+  f.innerHTML = '<option value="">all</option>' + GENRES.map(g=>`<option>${g}</option>`).join('')
+              + '<option value="unknown">unknown</option>';
+  f.value = cur;
+  render();
+}
+
+function render() {
+  const filter = document.getElementById('filter').value;
+  const shown = TRACKS.filter(t => !filter || t.genre === filter);
+  document.getElementById('summary').textContent =
+    `${shown.length} of ${TRACKS.length} tracks · ${GENRES.length} genres`;
+  document.getElementById('rows').innerHTML = shown.map(rowHtml).join('');
+}
+
+function rowHtml(t) {
+  const loc = t.filed ? `<span class="filed">✓ ${t.location}</span>`
+                      : `<span class="loose">${t.location}</span>`;
+  const g = t.genre === 'unknown' ? '' : t.genre;
+  return `<tr data-id="${t.id}">
+    <td><button class="play" onclick="play('${t.id}')" ${t.taggable?'':'title="not mp3"'}>▶</button></td>
+    <td class="name">${esc(t.name)}</td>
+    <td class="meta">${t.bpm?t.bpm+' bpm':''} ${t.key||''}</td>
+    <td><input class="ginput" list="genres" value="${esc(g)}" placeholder="${t.genre}"
+         onchange="setGenre('${t.id}', this.value)"></td>
+    <td><span class="pill ${t.mix==='mixed'?'on':'off'}" onclick="toggle('${t.id}','mix','${t.mix}')">${t.mix}</span></td>
+    <td><span class="pill ${t.master==='mastered'?'on':'off'}" onclick="toggle('${t.id}','master','${t.master}')">${t.master}</span></td>
+    <td>${loc}</td>
+  </tr>`;
+}
+function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function patch(updated) {
+  const i = TRACKS.findIndex(t=>t.id===updated.id);
+  if (i>=0) TRACKS[i] = updated;
+  // keep genre list fresh
+  if (updated.genre!=='unknown' && !GENRES.includes(updated.genre)) { GENRES.push(updated.genre); GENRES.sort(); }
+  render();
+}
+
+async function setGenre(id, value) {
+  try { patch(await mark({id, genre: value.trim() || null})); }
+  catch(e){ toast(e.message, true); }
+}
+async function toggle(id, field, current) {
+  const next = field==='mix' ? (current==='mixed'?'unmixed':'mixed')
+                             : (current==='mastered'?'unmastered':'mastered');
+  try { patch(await mark({id, [field]: next})); } catch(e){ toast(e.message, true); }
+}
+function mark(body){ return api('/api/mark', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); }
+
+function play(id) {
+  const t = TRACKS.find(x=>x.id===id);
+  const a = document.getElementById('audio');
+  a.src = '/api/audio?id=' + encodeURIComponent(id);
+  document.getElementById('np').textContent = '♪ ' + (t?t.name:'');
+  a.play().catch(()=>{});
+}
+
+async function preview() {
+  try {
+    const p = await api('/api/organize/preview');
+    currentPlan = p.plan_id;
+    document.getElementById('applyBtn').disabled = !(p.moves.length || p.tag_count);
+    document.getElementById('panelTitle').textContent =
+      `Plan — ${p.moves.length} moves · ${p.tag_count} tag edits` + (p.notes.length?` · ${p.notes.length} skipped`:'');
+    document.getElementById('planMoves').innerHTML =
+      (p.moves.length ? p.moves.slice(0,200).map(m=>`<div class="move"><b>${esc(base(m.src))}</b> → ${esc(dir(m.dest))}</div>`).join('')
+                      : '<div class="move">No folder moves — marks already filed.</div>')
+      + p.notes.map(n=>`<div class="move" style="color:var(--warn)">· ${esc(n)}</div>`).join('');
+    document.getElementById('panel').classList.add('show');
+  } catch(e){ toast(e.message, true); }
+}
+function base(p){ return p.split('/').pop(); }
+function dir(p){ const a=p.split('/'); a.pop(); return a.slice(-4).join('/'); }
+
+async function applyPlan() {
+  if (!currentPlan) return;
+  if (!confirm('Apply this plan? Moves files and writes ID3 tags. Reversible with Undo.')) return;
+  try {
+    const r = await api('/api/organize/apply', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({plan_id:currentPlan})});
+    toast(`Applied — ${r.moved} moved, ${r.tagged} tagged (run ${r.run_id||'—'})`);
+    document.getElementById('panel').classList.remove('show');
+    document.getElementById('applyBtn').disabled = true; currentPlan = null;
+    loadTracks();
+  } catch(e){ toast(e.message, true); }
+}
+
+async function undoLast() {
+  try {
+    const {runs} = await api('/api/runs');
+    const last = runs.find(r=>r.status==='applied');
+    if (!last) { toast('No applied run to undo', true); return; }
+    if (!confirm(`Undo run ${last.run_id} (${last.moves} moves)?`)) return;
+    await api('/api/organize/undo', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:last.run_id})});
+    toast('Undone — folders and tags restored');
+    loadTracks();
+  } catch(e){ toast(e.message, true); }
+}
+
+loadTracks();
+</script>
+</body>
+</html>
