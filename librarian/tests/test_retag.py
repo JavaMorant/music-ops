@@ -200,6 +200,48 @@ def test_cli_retag_spec_writes_plan(tmp_path, store):
     assert data["tag_edits"][0]["fields"] == {"artist": "Avicii", "title": "Levels"}
 
 
+def test_propose_in_batches_maps_indices_and_skips_failures(tmp_path, monkeypatch):
+    """Chunked proposing: each chunk's per-index suggestions map back to the right
+    file, and a failed batch is skipped without losing the others."""
+    from librarian import ai as ai_mod, cli
+    from librarian.ai import TagSuggestion
+    from librarian.metadata import TrackMeta
+
+    files = [tmp_path / f"f{i}.mp3" for i in range(5)]
+    metas = {p: TrackMeta(path=p) for p in files}
+    calls = []
+
+    def fake_propose(tracks, *, instruction=None, **kw):
+        calls.append([t["filename"] for t in tracks])
+        if len(calls) == 2:  # second chunk (f2,f3) fails
+            raise ai_mod.AIError("boom")
+        return [TagSuggestion(index=t["index"], fields={"title": t["filename"]},
+                              confidence="high", note="x") for t in tracks]
+
+    monkeypatch.setattr(cli.ai, "propose_tags", fake_propose)
+    props = cli._propose_in_batches(files, metas, None, batch_size=2)
+
+    assert len(calls) == 3  # 5 files / 2 = three chunks attempted
+    # middle chunk failed → only f0,f1 (chunk1) and f4 (chunk3) survive
+    assert sorted(p.path.name for p in props) == ["f0.mp3", "f1.mp3", "f4.mp3"]
+    # each proposal maps to the correct file (title was set to the filename)
+    assert all(p.fields["title"] == p.path.name for p in props)
+
+
+def test_propose_in_batches_clamps_batch_size(tmp_path, monkeypatch):
+    from librarian import cli
+    from librarian.ai import TagSuggestion
+    from librarian.metadata import TrackMeta
+
+    files = [tmp_path / f"f{i}.mp3" for i in range(90)]
+    metas = {p: TrackMeta(path=p) for p in files}
+    sizes = []
+    monkeypatch.setattr(cli.ai, "propose_tags",
+                        lambda tracks, **kw: (sizes.append(len(tracks)) or []))
+    cli._propose_in_batches(files, metas, None, batch_size=500)  # absurd → clamped
+    assert max(sizes) <= 85  # never sends more than 85 per call
+
+
 def test_cli_apply_undo_tag_only_plan(tmp_path, store):
     """`apply`/`undo` must handle a plan that has only tag_edits (no moves)."""
     from librarian.cli import app

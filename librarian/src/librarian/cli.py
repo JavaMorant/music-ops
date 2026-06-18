@@ -172,12 +172,42 @@ def organize(
         typer.echo(f"Review it, then:  librarian apply {out}")
 
 
+def _propose_in_batches(candidates, metas, instruction, batch_size):
+    """Run ai.propose_tags over ``candidates`` in chunks (one AI call each), mapping
+    each chunk's per-index suggestions back to the right file. Resilient: a failed
+    batch is skipped with a warning so a long run never loses prior work."""
+    batch_size = max(1, min(batch_size, 85))  # >85 risks truncating the JSON reply
+    proposals: list[TagProposal] = []
+    total = -(-len(candidates) // batch_size)
+    for b, start in enumerate(range(0, len(candidates), batch_size), 1):
+        chunk = candidates[start:start + batch_size]
+        tracks = [
+            {"index": i, "filename": p.name, "artist": metas[p].artist,
+             "title": metas[p].title, "genre": metas[p].genre}
+            for i, p in enumerate(chunk)
+        ]
+        typer.echo(f"  AI batch {b}/{total} ({len(chunk)} files)…")
+        try:
+            suggestions = ai.propose_tags(tracks, instruction=instruction)
+        except ai.AIError as exc:
+            typer.secho(f"    batch {b} failed: {exc} — skipped", fg="yellow", err=True)
+            continue
+        for s in suggestions:
+            if 0 <= s.index < len(chunk) and s.fields:
+                proposals.append(TagProposal(
+                    path=chunk[s.index], fields=s.fields,
+                    confidence=s.confidence, reason=s.note))
+    return proposals
+
+
 @app.command()
 def retag(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
     instruction: Annotated[Optional[str], typer.Argument(help="Optional guidance, e.g. 'set genre to Amapiano for the SA artists'")] = None,
     spec_file: Annotated[Optional[Path], typer.Option("--spec", exists=True, dir_okay=False, help="Replay saved proposals JSON instead of calling the AI (no API key needed)")] = None,
-    limit: Annotated[int, typer.Option("--limit", help="Max files to send to the AI in one run (untagged first)")] = 60,
+    limit: Annotated[int, typer.Option("--limit", help="Max files to process, untagged-first (0 = all that need tags)")] = 0,
+    batch_size: Annotated[int, typer.Option("--batch-size", help="Files per AI call (max 85)")] = 60,
+    all_files: Annotated[bool, typer.Option("--all-files", help="Also re-tag files that already have artist+title (normalise everything)")] = False,
     rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox XML to keep in sync (retag doesn't move files, so paths are unaffected)")] = None,
     out: Annotated[Path, typer.Option("--out", help="Where to write the reviewable plan JSON")] = Path("plan.json"),
     report_out: Annotated[Path, typer.Option("--report", help="Where to write the tag-repair report")] = Path("retag-report.md"),
@@ -214,30 +244,26 @@ def retag(
         if not files:
             typer.echo("No audio files found.")
             raise typer.Exit(0)
+        typer.echo(f"Scanning {len(files)} files…")
         metas = {p: read_meta(p) for p in files}
-        # Untagged / partially-tagged files first — they benefit most from repair.
-        files.sort(key=lambda p: (metas[p].has_artist_title, p.name.lower()))
-        batch = files[:limit]
-        if len(files) > limit:
-            typer.secho(
-                f"Considering {len(batch)} of {len(files)} files (raise --limit for more).",
-                fg="yellow",
+        # Default: only files actually missing artist/title (the real mess, and the
+        # cheap high-value pass). --all-files also normalises already-tagged ones.
+        if all_files:
+            candidates = sorted(files, key=lambda p: p.name.lower())
+        else:
+            candidates = sorted(
+                (p for p in files if not metas[p].has_artist_title),
+                key=lambda p: p.name.lower(),
             )
-        tracks = [
-            {"index": i, "filename": p.name, "artist": metas[p].artist,
-             "title": metas[p].title, "genre": metas[p].genre}
-            for i, p in enumerate(batch)
-        ]
-        try:
-            suggestions = ai.propose_tags(tracks, instruction=instruction)
-        except ai.AIError as exc:
-            typer.secho(f"AI request failed: {exc}", fg="red", err=True)
-            raise typer.Exit(1)
-        proposals = [
-            TagProposal(path=batch[s.index], fields=s.fields, confidence=s.confidence, reason=s.note)
-            for s in suggestions
-            if 0 <= s.index < len(batch) and s.fields
-        ]
+        if limit > 0:
+            candidates = candidates[:limit]
+        if not candidates:
+            typer.echo("Nothing to retag — every file already has artist + title "
+                       "(use --all-files to normalise everything).")
+            raise typer.Exit(0)
+        typer.echo(f"Proposing tags for {len(candidates)} file(s) "
+                   f"in batches of {min(batch_size, 85)}…")
+        proposals = _propose_in_batches(candidates, metas, instruction, batch_size)
 
     plan, report_md = build_retag_plan(
         root, proposals, rekordbox_xml.absolute() if rekordbox_xml else None
