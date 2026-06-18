@@ -59,6 +59,8 @@ def build_retag_plan(
         }
         if not fields:
             continue
+        if not tags.is_taggable(prop.path):
+            continue  # e.g. WAV/AIFF — readable but can't be tag-written; skip it
         try:
             current = tags.read_tags(prop.path, fields.keys())
         except tags.TagError:

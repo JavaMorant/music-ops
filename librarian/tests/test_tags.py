@@ -26,6 +26,25 @@ def test_is_taggable_false_for_non_audio(tmp_path):
     assert tags.is_taggable(txt) is False
 
 
+def test_is_taggable_false_for_wav_true_for_mp3():
+    # WAV/AIFF can't be easy-tag-written; the check is extension-gated
+    assert tags.is_taggable(Path("x.wav")) is False
+    assert tags.is_taggable(Path("x.aiff")) is False
+    assert ".mp3" in tags.WRITABLE_EXTS and ".m4a" in tags.WRITABLE_EXTS
+
+
+def test_write_tags_raises_clean_tagerror_on_set_failure(tmp_path, monkeypatch):
+    # a format whose mapping rejects the key (like WAV) must surface as TagError,
+    # never a raw exception that crashes apply
+    class Rejecting(dict):
+        def __setitem__(self, k, v):
+            raise ValueError("this format can't set that key")
+
+    monkeypatch.setattr(tags, "_open", lambda p, create=False: Rejecting())
+    with pytest.raises(tags.TagError):
+        tags.write_tags(tmp_path / "x.mp3", {"title": "X"})
+
+
 def test_read_tags_preserves_empty_and_handles_missing(monkeypatch):
     # artist set to empty string, title present-but-valueless, genre set, album absent
     stub = {"artist": [""], "title": [], "genre": ["House"]}

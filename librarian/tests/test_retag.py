@@ -157,6 +157,44 @@ def test_build_retag_filters_to_actual_changes(tmp_path, store):
     assert "The Nights" in report
 
 
+def test_build_retag_skips_non_taggable_files(tmp_path, store, monkeypatch):
+    # a WAV is readable but not tag-writable → must never enter the plan
+    root = tmp_path / "lib"
+    wav = _file(root, "track.wav")
+    monkeypatch.setattr(tags, "is_taggable", lambda p: p.suffix.lower() != ".wav")
+    plan, _ = build_retag_plan(root, [TagProposal(path=wav, fields={"artist": "A", "title": "B"})])
+    assert plan.tag_edits == []
+
+
+def test_apply_skips_a_failing_tag_write(tmp_path, store, monkeypatch):
+    """One unwritable file must not abort the batch — it's left PENDING (never
+    written, so undo skips it) and the rest still apply."""
+    from librarian.journal import DONE, PENDING
+
+    root = tmp_path / "lib"
+    good = _file(root, "good.mp3")
+    bad = _file(root, "bad.mp3")
+    fake_write = tags.write_tags  # the in-memory store writer from the fixture
+
+    def flaky(path, fields):
+        if path.name == "bad.mp3":
+            raise tags.TagError("this file can't be written")
+        fake_write(path, fields)
+
+    monkeypatch.setattr(tags, "write_tags", flaky)
+    plan = Plan(library_root=root, actions=[], tag_edits=[
+        TagEdit(path=good, fields={"title": "G"}),
+        TagEdit(path=bad, fields={"title": "B"}),
+    ])
+    journal = apply_plan(plan, tmp_path / "runs", backup=False)
+
+    st = {t.path.name: t.status for t in journal.tag_edits}
+    assert st["good.mp3"] == DONE
+    assert st["bad.mp3"] == PENDING        # failed write left un-applied
+    assert store[str(good)] == {"title": "G"}
+    assert "title" not in store.get(str(bad), {})
+
+
 def test_build_retag_skips_empty_proposals(tmp_path, store):
     root = tmp_path / "lib"
     a = _file(root, "a.mp3")

@@ -288,9 +288,15 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
     # read the OLD values and journal them *before* writing the new ones, so a
     # crash still leaves undo able to restore exactly what was there.
     for tedit in journal.tag_edits:
-        tedit.old = tags.read_tags(tedit.path, tedit.new.keys())
-        write_journal(journal)
-        tags.write_tags(tedit.path, tedit.new)
+        try:
+            tedit.old = tags.read_tags(tedit.path, tedit.new.keys())
+            write_journal(journal)
+            tags.write_tags(tedit.path, tedit.new)
+        except tags.TagError:
+            # One unwritable file must not abort the whole batch — leave this edit
+            # PENDING (never written, so undo skips it) and move on. preflight
+            # already rejects formats it knows can't carry tags.
+            continue
         tedit.status = DONE
         write_journal(journal)
 

@@ -24,6 +24,13 @@ class TagError(RuntimeError):
     """A tag could not be read or written for a file."""
 
 
+# Extensions whose mutagen "easy" interface reliably supports writing
+# artist/title/genre. WAV/AIFF store ID3 in a RIFF chunk and do NOT expose the
+# easy dict mapping, so a write raises — exclude them from tag repair (reading
+# still works for any format).
+WRITABLE_EXTS = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".opus"}
+
+
 def _open(path: Path, *, create: bool = False):
     """Open ``path`` for easy (artist/title/genre) tag access.
 
@@ -47,7 +54,11 @@ def _open(path: Path, *, create: bool = False):
 
 
 def is_taggable(path: Path) -> bool:
-    """True if mutagen can open ``path`` to write identity tags."""
+    """True only if we can reliably *write* identity tags to ``path`` — the
+    extension must be one the easy interface supports AND mutagen must open it.
+    (WAV/AIFF can be read but not easy-written, so they return False here.)"""
+    if path.suffix.lower() not in WRITABLE_EXTS:
+        return False
     try:
         return _open(path) is not None
     except Exception:
@@ -93,12 +104,16 @@ def write_tags(path: Path, fields: dict[str, str | None]) -> None:
         raise TagError(f"cannot open {path} for tag write: {exc}") from exc
     if audio is None:
         raise TagError(f"file cannot carry tags: {path}")
-    for field, value in fields.items():
-        if value is None:
-            audio.pop(field, None)
-        else:
-            audio[field] = value
+    # Setting a field can itself raise on formats whose easy mapping rejects the
+    # key (e.g. WAV) — wrap the whole set+save so it's always a clean TagError.
     try:
+        for field, value in fields.items():
+            if value is None:
+                audio.pop(field, None)
+            else:
+                audio[field] = value
         audio.save()
+    except TagError:
+        raise
     except Exception as exc:
-        raise TagError(f"cannot save tags to {path}: {exc}") from exc
+        raise TagError(f"cannot write tags to {path}: {exc}") from exc

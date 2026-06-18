@@ -27,6 +27,7 @@ from .organize import OrganizeError, OrganizeSpec, build_organize_plan
 from .paths import audio_files
 from .planner import build_plan
 from .retag import TagProposal, build_retag_plan
+from .tags import WRITABLE_EXTS
 
 app = typer.Typer(
     help="Reversible DJ-library organiser: plan, apply, undo. Dry-run by default.",
@@ -255,6 +256,14 @@ def retag(
                 (p for p in files if not metas[p].has_artist_title),
                 key=lambda p: p.name.lower(),
             )
+        # Skip formats we can't tag-write (WAV/AIFF) before spending AI on them.
+        taggable = [p for p in candidates if p.suffix.lower() in WRITABLE_EXTS]
+        if len(taggable) < len(candidates):
+            typer.secho(
+                f"Skipping {len(candidates) - len(taggable)} file(s) whose format "
+                f"can't be tag-written (e.g. WAV).", fg="yellow",
+            )
+        candidates = taggable
         if limit > 0:
             candidates = candidates[:limit]
         if not candidates:
@@ -348,12 +357,18 @@ def apply(
         raise typer.Exit(1)
     done = sum(1 for a in journal.actions if a.status == DONE)
     retagged = sum(1 for t in journal.tag_edits if t.status == DONE)
+    failed = sum(1 for t in journal.tag_edits if t.status != DONE)
     bits = []
     if done or not retagged:  # always name actions unless this was a tag-only run
         bits.append(f"{done} action{'s' if done != 1 else ''}")
     if retagged:
         bits.append(f"{retagged} tag repair{'s' if retagged != 1 else ''}")
     typer.secho(f"\nApplied {', '.join(bits)}.", fg="green")
+    if failed:
+        typer.secho(
+            f"{failed} tag repair(s) could not be written (unsupported file?) — left unchanged.",
+            fg="yellow",
+        )
     if journal.backup:
         typer.echo(f"Backup ({journal.backup['mode']}): {journal.backup['files']} files in {journal.backup['dir']}")
     if journal.rekordbox and journal.rekordbox.get("rewritten"):
