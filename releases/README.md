@@ -146,6 +146,10 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
 - Set a genre per track (autocomplete from genres you've used), flip
   mixed/unmixed and mastered/unmastered — saved to the index instantly.
 - ▶ plays the track (range-streamed, so seeking works).
+- Record **artists/producers** and a **month** per track; filter by month to pull
+  up a beat pack.
+- **Download N** zips the currently-filtered tracks (e.g. genre `trap`) into one
+  file (`trap.zip`) to email out — read-only, entry names sanitized.
 - **Preview plan** shows the moves + tag edits; **Apply** files + tags everything
   (journaled); **Undo last** reverses it.
 - Safe by construction: binds 127.0.0.1 only, mutating routes are origin-guarded,

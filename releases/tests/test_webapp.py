@@ -113,6 +113,72 @@ class TestOrganize:
         assert c.post("/api/organize/apply", json={"plan_id": "nope"}).status_code == 400
 
 
+class TestDownload:
+    def test_download_filtered_zip(self, client):
+        import io, zipfile
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        c.post("/api/mark", json={"id": tid, "genre": "trap", "month": "2026-06"})
+        r = c.get("/api/download?genre=trap")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/zip"
+        assert "trap.zip" in r.headers.get("content-disposition", "")
+        names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+        assert names == ["Encara (Dibs).mp3"]  # only the trap-tagged track, by basename
+
+    def test_download_by_month(self, client):
+        import io, zipfile
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        c.post("/api/mark", json={"id": tid, "month": "2026-06"})
+        r = c.get("/api/download?month=2026-06")
+        assert r.status_code == 200
+        assert "2026-06" in r.headers.get("content-disposition", "")
+        assert len(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == 1
+
+    def test_download_no_match_404(self, client):
+        c, _ = client
+        assert c.get("/api/download?genre=nonexistent-genre").status_code == 404
+
+    def test_download_all(self, client):
+        import io, zipfile
+        c, _ = client
+        r = c.get("/api/download")
+        assert r.status_code == 200
+        assert len(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == len(_tracks(c))
+
+    def test_download_excludes_symlink_escaping_track_list(self, tmp_path):
+        import io, os, zipfile
+        root = tmp_path / "projects"
+        tld = root / "Beats" / "Tracks" / "Track List"
+        tld.mkdir(parents=True)
+        (tld / "real.mp3").write_bytes(b"\xff\xfb\x90\x00" + b"x" * 80)
+        secret = tmp_path / "outside" / "secret.mp3"
+        secret.parent.mkdir()
+        secret.write_bytes(b"TOP-SECRET-OUTSIDE-LIBRARY")
+        os.symlink(secret, tld / "sneaky.mp3")  # symlink in Track List → outside
+        db = tmp_path / "index.db"
+        dbmod.upsert_projects(dbmod.connect(db), scan(root))
+        cfg = AppConfig(library_root=root, db_path=db, runs_dir=tmp_path / "runs")
+        c = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
+        names = zipfile.ZipFile(io.BytesIO(c.get("/api/download").content)).namelist()
+        assert "real.mp3" in names
+        assert "sneaky.mp3" not in names  # the escaping symlink is excluded
+
+    def test_download_sanitizes_separator_arcnames(self, tmp_path):
+        import io, zipfile
+        root = tmp_path / "projects"
+        tld = root / "Beats" / "Tracks" / "Track List"
+        tld.mkdir(parents=True)
+        (tld / "evil\\..\\x.mp3").write_bytes(b"\xff\xfb\x90\x00")  # backslashes legal on posix
+        db = tmp_path / "index.db"
+        dbmod.upsert_projects(dbmod.connect(db), scan(root))
+        cfg = AppConfig(library_root=root, db_path=db, runs_dir=tmp_path / "runs")
+        c = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
+        names = zipfile.ZipFile(io.BytesIO(c.get("/api/download").content)).namelist()
+        assert names and all("\\" not in n and "/" not in n for n in names)  # no separators survive
+
+
 class TestSecurity:
     def test_cross_origin_post_blocked(self, client):
         c, _ = client

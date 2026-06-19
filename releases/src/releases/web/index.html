@@ -71,6 +71,7 @@
     <select id="mfilter" onchange="render()"><option value="">all</option></select>
   </label>
   <button onclick="loadTracks()">Refresh</button>
+  <button id="dlBtn" onclick="downloadZip()">Download</button>
   <button onclick="preview()">Preview plan</button>
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
   <button onclick="undoLast()">Undo last</button>
@@ -133,7 +134,28 @@ function render() {
   const shown = TRACKS.filter(t => (!fg || t.genre === fg) && (!fm || t.month === fm));
   document.getElementById('summary').textContent =
     `${shown.length} of ${TRACKS.length} tracks · ${GENRES.length} genres · ${MONTHS.length} months`;
+  document.getElementById('dlBtn').textContent = `Download ${shown.length}`;
   document.getElementById('rows').innerHTML = shown.map(rowHtml).join('');
+}
+
+async function downloadZip() {
+  const fg = document.getElementById('filter').value;
+  const fm = document.getElementById('mfilter').value;
+  const params = new URLSearchParams();
+  if (fg) params.set('genre', fg);
+  if (fm) params.set('month', fm);
+  try {
+    const r = await fetch('/api/download?' + params.toString());
+    if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const name = m ? m[1] : 'track-list.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+    toast('Downloaded ' + name);
+  } catch(e){ toast(e.message, true); }
 }
 
 function rowHtml(t) {

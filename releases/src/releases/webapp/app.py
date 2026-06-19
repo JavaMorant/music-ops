@@ -9,12 +9,17 @@ aren't shared across threads). The only writes go through ``db.set_marks``
 from __future__ import annotations
 
 import hashlib
+import os
+import re
+import tempfile
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from .. import db as dbmod
 from .. import organize as orgmod
@@ -46,12 +51,27 @@ def _tid(abspath: str) -> str:
     return hashlib.sha1(abspath.encode("utf-8")).hexdigest()[:16]
 
 
+def _zip_name(genre: str | None, month: str | None) -> str:
+    base = genre or "track-list"
+    if month:
+        base += "_" + month
+    base = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-") or "tracklist"
+    return base + ".zip"
+
+
 def create_app(config: AppConfig) -> FastAPI:
     app = FastAPI(title="releases — Track List")
     state = AppState(config=config)
 
     def conn():
         return dbmod.connect(config.db_path)
+
+    tl_real = orgmod._real(config.track_list_dir)
+
+    def _in_tl(path: Path) -> bool:
+        """Track List containment, lexical AND through symlinks (realpath) — so a
+        symlink planted in Track List can't read/zip a file outside it."""
+        return orgmod._within(config.track_list_dir, path) and orgmod._contained(tl_real, path)
 
     def _track_dict(p) -> dict:
         path = Path(p.path)
@@ -83,7 +103,7 @@ def create_app(config: AppConfig) -> FastAPI:
         if not abspath:
             raise HTTPException(404, "unknown track id (refresh the list)")
         p = Path(abspath)
-        if not orgmod._within(config.track_list_dir, p) or not p.is_file():
+        if not _in_tl(p) or not p.is_file():
             raise HTTPException(404, "track not found")
         return abspath
 
@@ -99,7 +119,7 @@ def create_app(config: AppConfig) -> FastAPI:
         mapping: dict[str, str] = {}
         for p in dbmod.all_projects(c):
             path = Path(p.path)
-            if not orgmod._within(tl, path) or not path.is_file():
+            if not _in_tl(path) or not path.is_file():
                 continue
             if path.suffix.lower() not in orgmod.AUDIO_EXTS:
                 continue
@@ -195,6 +215,57 @@ def create_app(config: AppConfig) -> FastAPI:
             if entry.status == orgmod.REVERTED:
                 dbmod.repath(c, str(entry.action.dest), str(entry.action.src))
         return {"run_id": journal.run_id, "status": journal.status}
+
+    def _matching_files(c, genre: str | None, month: str | None) -> list[Path]:
+        tl = config.track_list_dir
+        out = []
+        for p in dbmod.all_projects(c):
+            path = Path(p.path)
+            if not _in_tl(path) or not path.is_file():
+                continue
+            if path.suffix.lower() not in orgmod.AUDIO_EXTS:
+                continue
+            if genre and p.effective_genre != genre:
+                continue
+            if month and (p.pack_month or "") != month:
+                continue
+            out.append(path)
+        return out
+
+    @app.get("/api/download", dependencies=[Depends(guard_origin)])
+    def download(genre: str | None = None, month: str | None = None):
+        """Zip the audio files matching the genre/month filter (read-only) and
+        send them as one download — for emailing a pack."""
+        c = conn()
+        files = _matching_files(c, genre, month)
+        if not files:
+            raise HTTPException(404, "no matching tracks to download")
+        fd, tmp = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        try:
+            used: dict[str, int] = {}
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as z:  # mp3s already compressed
+                for path in files:
+                    # Strip BOTH separators + control chars: a POSIX filename may
+                    # legally contain '\\' or newlines, which become path
+                    # separators when the RECIPIENT extracts on Windows (zip-slip).
+                    arc = re.sub(r"[\\/\r\n\x00-\x1f]+", "_", path.name) or "track"
+                    if arc in used:
+                        used[arc] += 1
+                        s = Path(arc)
+                        arc = f"{s.stem} ({used[arc]}){s.suffix}"
+                    else:
+                        used[arc] = 0
+                    z.write(path, arcname=arc)
+        except Exception:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+        name = _zip_name(genre, month)
+        return FileResponse(
+            tmp, media_type="application/zip", filename=name,
+            background=BackgroundTask(lambda: os.path.exists(tmp) and os.unlink(tmp)),
+        )
 
     @app.get("/api/runs")
     def runs():
