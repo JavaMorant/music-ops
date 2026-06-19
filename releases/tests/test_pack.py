@@ -65,4 +65,15 @@ def test_index_html_escapes_titles(tmp_path):
     t = _track(tmp_path, "x.mp3", "<script>alert(1)</script>", bpm=120, key="C")
     packmod.build_pack([t], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
-    assert "<script>alert(1)</script>" not in idx and "&lt;script&gt;" in idx
+    # the title is injected as JSON in a <script>; < > & are escaped so it can't break out
+    assert "<script>alert(1)</script>" not in idx
+    assert "\\u003cscript\\u003e" in idx
+
+
+def test_index_html_is_a_turntable_player(tmp_path):
+    t = _track(tmp_path, "x.mp3", "Beat One", bpm=140, key="Fm", genre="trap")
+    packmod.build_pack([t], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert 'class="vinyl"' in idx and "@keyframes spin" in idx  # the spinning record
+    assert 'id="viz"' in idx and "createAnalyser" in idx        # the audio-reactive visualizer
+    assert '"f": "01 - Beat One [140 Fm].mp3"' in idx           # the track wired into the player
