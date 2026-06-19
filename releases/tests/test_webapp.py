@@ -179,6 +179,26 @@ class TestDownload:
         assert names and all("\\" not in n and "/" not in n for n in names)  # no separators survive
 
 
+class TestPack:
+    def test_pack_zip_has_player_tracklist_and_clean_audio(self, client):
+        import io, zipfile
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        c.post("/api/mark", json={"id": tid, "genre": "trap"})
+        r = c.get("/api/pack?genre=trap&name=Trap Pack June")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/zip"
+        names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+        assert any(n.endswith("/index.html") for n in names)
+        assert any(n.endswith("/tracklist.txt") for n in names)
+        assert any(n.endswith(".mp3") and " - " in n for n in names)  # clean-named audio
+        assert all(n.startswith("Trap Pack June/") for n in names)  # one top folder
+
+    def test_pack_no_match_404(self, client):
+        c, _ = client
+        assert c.get("/api/pack?genre=nope").status_code == 404
+
+
 class TestSecurity:
     def test_cross_origin_post_blocked(self, client):
         c, _ = client

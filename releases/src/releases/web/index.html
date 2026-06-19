@@ -72,6 +72,7 @@
   </label>
   <button onclick="loadTracks()">Refresh</button>
   <button id="dlBtn" onclick="downloadZip()">Download</button>
+  <button class="primary" onclick="buildPack()">Build pack</button>
   <button onclick="preview()">Preview plan</button>
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
   <button onclick="undoLast()">Undo last</button>
@@ -155,6 +156,30 @@ async function downloadZip() {
     const a = document.createElement('a'); a.href = url; a.download = name; a.click();
     URL.revokeObjectURL(url);
     toast('Downloaded ' + name);
+  } catch(e){ toast(e.message, true); }
+}
+
+async function buildPack() {
+  const fg = document.getElementById('filter').value;
+  const fm = document.getElementById('mfilter').value;
+  const suggested = fg ? (fg[0].toUpperCase()+fg.slice(1)+' Pack') : (fm ? 'Pack '+fm : 'Beat Pack');
+  const name = prompt('Pack name (clean-named audio + a player page + tracklist):', suggested);
+  if (name === null) return;
+  const params = new URLSearchParams();
+  if (fg) params.set('genre', fg);
+  if (fm) params.set('month', fm);
+  if (name.trim()) params.set('name', name.trim());
+  try {
+    const r = await fetch('/api/pack?' + params.toString());
+    if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const fn = m ? m[1] : 'pack.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = fn; a.click();
+    URL.revokeObjectURL(url);
+    toast('Built ' + fn + ' — unzip → open index.html, or drop the folder on Netlify Drop for a link');
   } catch(e){ toast(e.message, true); }
 }
 

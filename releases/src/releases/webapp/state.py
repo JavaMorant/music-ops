@@ -27,6 +27,8 @@ class AppConfig:
     db_path: Path
     runs_dir: Path
     port: int = 8765
+    producer: str = "Dibs"   # stamped on exported packs
+    contact: str = ""
 
     def __post_init__(self) -> None:
         # .resolve() to match scan(), which stores resolved absolute paths in the

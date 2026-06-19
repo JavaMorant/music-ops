@@ -859,10 +859,12 @@ def organize_relink(
 def web(
     root: RootOpt = DEFAULT_ROOT,
     port: Annotated[int, typer.Option("--port", help="Localhost port")] = 8765,
+    artist: Annotated[str, typer.Option("--artist", help="Your name/alias, stamped on exported packs")] = "Dibs",
+    contact: Annotated[str, typer.Option("--contact", help="Contact line on exported packs")] = "",
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
-    """Launch the local Track List web app: set genres, play tracks, then file +
-    tag them (moves + ID3) through the reviewed/reversible engine. Localhost only."""
+    """Launch the local Track List web app: set genres, play tracks, build/send
+    packs, then file + tag through the reviewed/reversible engine. Localhost only."""
     _reject_db_in_library(db)
     root = root.resolve()
     if orgmod._within(root, _runs_dir(db).resolve()):
@@ -878,7 +880,46 @@ def web(
         typer.secho("The web app needs extras:  pip install -e '.[web]'", fg="red", err=True)
         raise typer.Exit(1)
     typer.secho(f"releases Track List app → http://127.0.0.1:{port}  (Ctrl-C to stop)", fg="green")
-    serve(root, db, _runs_dir(db), port=port)
+    serve(root, db, _runs_dir(db), port=port, producer=artist, contact=contact)
+
+
+@app.command("pack")
+def pack_cmd(
+    name: Annotated[str, typer.Argument(help="Pack name, e.g. \"Trap Pack June\"")],
+    genre: Annotated[Optional[str], typer.Option("--genre", help="Only this genre")] = None,
+    month: Annotated[Optional[str], typer.Option("--month", help="Only this month")] = None,
+    out: Annotated[Path, typer.Option("--out", help="Where to write the pack folder")] = Path.home() / "releases-packs",
+    artist: Annotated[str, typer.Option("--artist", help="Your name/alias")] = "Dibs",
+    contact: Annotated[str, typer.Option("--contact", help="Contact line")] = "",
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Export a polished beat pack (clean-named audio + player page + tracklist)
+    from the Track List filter. Read-only on the library — exports copies."""
+    from . import pack as packmod
+    conn = _open(db)
+    tl = DEFAULT_ROOT / "Beats" / "Tracks" / "Track List"
+    tracks = []
+    for p in dbmod.all_projects(conn):
+        path = Path(p.path)
+        if not orgmod._within(tl, path) or not path.is_file():
+            continue
+        if path.suffix.lower() not in orgmod.AUDIO_EXTS:
+            continue
+        if genre and p.effective_genre != genre:
+            continue
+        if month and (p.pack_month or "") != month:
+            continue
+        tracks.append(packmod.PackTrack(src=path, title=p.name, bpm=p.bpm, key=p.key,
+                                        genre=p.effective_genre, artists=p.artists or ""))
+    if not tracks:
+        typer.secho("No matching tracks for the pack.", fg="red", err=True)
+        raise typer.Exit(1)
+    from datetime import date as _date
+    meta = packmod.PackMeta(name=name, producer=artist, made_on=_date.today().isoformat(), contact=contact)
+    dest = out.resolve() / packmod.safe_filename(name)
+    packmod.build_pack(tracks, dest, meta)
+    typer.secho(f"Built pack: {dest}  ({len(tracks)} beats)", fg="green")
+    typer.echo("Send it: zip + WeTransfer/Drive, or drag the folder to Netlify Drop for a player link.")
 
 
 @organize_app.command("runs")

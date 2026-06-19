@@ -11,8 +11,10 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import tempfile
 import zipfile
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,6 +25,7 @@ from starlette.background import BackgroundTask
 
 from .. import db as dbmod
 from .. import organize as orgmod
+from .. import pack as packmod
 from ..model import MASTER_STATES, MIX_STATES
 from .security import guard_origin
 from .state import AppConfig, AppState
@@ -216,8 +219,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 dbmod.repath(c, str(entry.action.dest), str(entry.action.src))
         return {"run_id": journal.run_id, "status": journal.status}
 
-    def _matching_files(c, genre: str | None, month: str | None) -> list[Path]:
-        tl = config.track_list_dir
+    def _matching_projects(c, genre: str | None, month: str | None) -> list:
         out = []
         for p in dbmod.all_projects(c):
             path = Path(p.path)
@@ -229,8 +231,11 @@ def create_app(config: AppConfig) -> FastAPI:
                 continue
             if month and (p.pack_month or "") != month:
                 continue
-            out.append(path)
+            out.append(p)
         return out
+
+    def _matching_files(c, genre: str | None, month: str | None) -> list[Path]:
+        return [Path(p.path) for p in _matching_projects(c, genre, month)]
 
     @app.get("/api/download", dependencies=[Depends(guard_origin)])
     def download(genre: str | None = None, month: str | None = None):
@@ -265,6 +270,44 @@ def create_app(config: AppConfig) -> FastAPI:
         return FileResponse(
             tmp, media_type="application/zip", filename=name,
             background=BackgroundTask(lambda: os.path.exists(tmp) and os.unlink(tmp)),
+        )
+
+    @app.get("/api/pack", dependencies=[Depends(guard_origin)])
+    def pack(genre: str | None = None, month: str | None = None, name: str | None = None):
+        """Build a polished pack (clean-named audio + player + tracklist) from the
+        filter and return it zipped. Read-only on the library."""
+        c = conn()
+        projs = _matching_projects(c, genre, month)
+        if not projs:
+            raise HTTPException(404, "no matching tracks for the pack")
+        pack_name = (name or genre or "Beat Pack").strip()[:80] or "Beat Pack"
+        tracks = [
+            packmod.PackTrack(src=Path(p.path), title=p.name, bpm=p.bpm, key=p.key,
+                              genre=p.effective_genre, artists=p.artists or "")
+            for p in projs
+        ]
+        meta = packmod.PackMeta(name=pack_name, producer=config.producer,
+                                made_on=date.today().isoformat(), contact=config.contact)
+        folder = packmod.safe_filename(pack_name)
+        workdir = tempfile.mkdtemp()
+        fd, zpath = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        try:
+            root = Path(workdir) / folder
+            packmod.build_pack(tracks, root, meta)
+            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
+                for f in sorted(root.rglob("*")):
+                    if f.is_file():
+                        z.write(f, arcname=f"{folder}/{f.relative_to(root).as_posix()}")
+        except Exception:
+            if os.path.exists(zpath):
+                os.unlink(zpath)
+            raise
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+        return FileResponse(
+            zpath, media_type="application/zip", filename=f"{folder}.zip",
+            background=BackgroundTask(lambda: os.path.exists(zpath) and os.unlink(zpath)),
         )
 
     @app.get("/api/runs")
