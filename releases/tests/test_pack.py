@@ -98,6 +98,28 @@ def test_reactive_effects_present(tmp_path):
     assert ".arm.on{transform:rotate(-32deg)" in idx    # playing = needle DOWN on the record
 
 
+def test_dopamine_effects_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140, genre="trap")],
+                       tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert "function onDrop" in idx and "lastDrop" in idx        # drop detection + payoff
+    assert "hsl('+(" in idx or "hsla('+hue" in idx               # living colour from a drifting hue
+    assert "embers" in idx                                       # ambient particle field
+    assert 'class="flash"' in idx and "fillText('\U0001f525'" in idx  # flash + 🔥 burst
+    assert 'id="hook"' in idx and "hookpop" in idx              # bold hook text
+    assert '"g": "trap"' in idx                                  # genre wired for the hook
+
+
+def test_cover_seeds_visualizer_colour(tmp_path):
+    cover = tmp_path / "art.png"
+    cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 40)
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)],
+                       tmp_path / "out" / "p", _meta(), cover_src=cover)
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert 'const PACK_COVER = "cover.png"' in idx               # cover feeds the colour seed
+    assert "getCover" in idx
+
+
 def test_default_label_is_producer_text(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B")], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()

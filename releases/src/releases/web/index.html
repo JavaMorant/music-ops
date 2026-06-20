@@ -118,6 +118,12 @@
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   #ov .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  #ov .flash{position:absolute;inset:0;pointer-events:none;z-index:7;opacity:0;}
+  #ov .hook{font-weight:800;font-size:19px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
+    min-height:1.3em;margin:0 0 6px;text-shadow:0 0 14px rgba(201,162,39,.4);position:relative;z-index:2;}
+  @keyframes hookpop{0%{opacity:0;transform:scale(.7) translateY(8px);}60%{opacity:1;transform:scale(1.06);}100%{opacity:1;transform:none;}}
+  #ov .hook.pop{animation:hookpop .5s cubic-bezier(.2,.9,.3,1.2);}
+  #ov.reel .hook{font-size:23px;}
   #ov.reel{justify-content:center;}
   #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
   #ov.reel .deck{width:min(88vw,60vh);height:min(88vw,60vh);margin:0 auto 24px;}
@@ -165,12 +171,14 @@
 
 <div id="ov">
   <div class="fx"></div>
+  <div class="flash"></div>
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
     <button onclick="closeDeck()">✕ Close</button>
   </div>
+  <div class="hook" id="ovhook"></div>
   <div class="deck">
     <canvas id="oviz"></canvas>
     <div class="vinyl" id="ovinyl"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
@@ -372,6 +380,9 @@ function deckSelect(i){
   const nfo=document.querySelector('#ov .ovinfo'); nfo.classList.remove('nfin'); void nfo.offsetWidth; nfo.classList.add('nfin');
   const dot=document.getElementById('ovbpmdot');
   if(t.bpm){ dot.style.display='inline-block'; dot.style.animationDuration=(60/t.bpm).toFixed(3)+'s'; } else { dot.style.display='none'; }
+  const hook=document.getElementById('ovhook');
+  hook.textContent=[(t.genre&&t.genre!=='unknown')?t.genre.toUpperCase():'', t.bpm?t.bpm+' BPM':''].filter(Boolean).join(' · ');
+  hook.classList.remove('pop'); void hook.offsetWidth; hook.classList.add('pop');
   [...document.getElementById('ovlist').children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audioEl.play().catch(()=>{});
 }
@@ -397,6 +408,7 @@ function deckInitViz(){
 // shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
 if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
   scene:document.getElementById('ov'), label:document.getElementById('ovlabel'),
+  flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
