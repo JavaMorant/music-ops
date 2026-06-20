@@ -8,6 +8,7 @@ aren't shared across threads). The only writes go through ``db.set_marks``
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import re
@@ -48,6 +49,11 @@ class ApplyBody(BaseModel):
 
 class UndoBody(BaseModel):
     run_id: str
+
+
+class CoverBody(BaseModel):
+    name: str
+    data: str  # base64 (optionally a data: URL)
 
 
 def _tid(abspath: str) -> str:
@@ -142,9 +148,36 @@ def create_app(config: AppConfig) -> FastAPI:
         from fastapi.responses import Response
         return Response(packmod.TURNTABLE_JS, media_type="application/javascript")
 
+    @app.post("/api/cover", dependencies=[Depends(guard_origin)])
+    def set_cover(body: CoverBody):
+        """Upload a cover image from the browser. Saved beside the db (outside
+        the library) and used as the pack/turntable label art."""
+        ext = Path(body.name).suffix.lower()
+        if ext not in packmod.IMAGE_EXTS:
+            raise HTTPException(400, "cover must be an image (jpg/png/webp/gif)")
+        raw = body.data
+        if raw.startswith("data:") and "," in raw:
+            raw = raw.split(",", 1)[1]
+        try:
+            blob = base64.b64decode(raw)
+        except Exception:
+            raise HTTPException(400, "invalid image data")
+        if len(blob) > 8 * 1024 * 1024:
+            raise HTTPException(400, "cover too large (max 8 MB)")
+        dest = config.db_path.parent / ("cover" + ext)  # fixed name → no traversal
+        for old in config.db_path.parent.glob("cover.*"):
+            if old != dest:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+        dest.write_bytes(blob)
+        config.cover_src = dest
+        return {"cover": "/api/cover"}
+
     @app.get("/api/cover")
     def cover():
-        src = config.cover_src  # launch-time path, not client-supplied
+        src = config.cover_src  # launch-time path or uploaded via POST
         if not src or not src.is_file() or not packmod.is_image(src):
             raise HTTPException(404, "no cover set")
         media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",

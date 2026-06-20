@@ -105,7 +105,8 @@ def test_dopamine_effects_present(tmp_path):
     assert "function onDrop" in idx and "lastDrop" in idx        # drop detection + payoff
     assert "hsl('+(" in idx or "hsla('+hue" in idx               # living colour from a drifting hue
     assert "embers" in idx                                       # ambient particle field
-    assert 'class="flash"' in idx and "fillText('\U0001f525'" in idx  # flash + 🔥 burst
+    assert 'class="flash"' in idx and "shocks" in idx            # flash + expanding shockwave (no emoji)
+    assert "\U0001f525" not in idx                               # the fire emoji is gone
     assert 'id="hook"' in idx and "hookpop" in idx              # bold hook text
     assert '"g": "trap"' in idx                                  # genre wired for the hook
 

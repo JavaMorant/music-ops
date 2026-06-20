@@ -90,7 +90,7 @@ TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d');
   var bassAvg=0, eLong=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null;
-  var sparks=[], embers=[], emojis=[];
+  var sparks=[], embers=[], shocks=[];
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
     if(d){if(mx===r)h=((g-b)/d+6)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}return h;}
@@ -102,7 +102,7 @@ function ttRun(opts){
   function onDrop(energy){flash=1;punch=1;shake=12;var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36;
     for(var i=0;i<70;i++){var a=Math.random()*6.2832,sp=W*0.01*(1+Math.random()*4.5);
       sparks.push({x:cx+Math.cos(a)*R0*0.5,y:cy+Math.sin(a)*R0*0.5,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-W*0.004,life:1,h:(hue+Math.random()*80)%360,big:true});}
-    for(var e=0;e<6;e++){emojis.push({x:cx+(Math.random()*2-1)*R0,y:cy+(Math.random()*2-1)*R0*0.6,vy:-W*0.006*(1+Math.random()),life:1,sz:W*(0.045+Math.random()*0.03)});}}
+    shocks.push({r:R0*0.5,life:1}); shocks.push({r:R0*0.22,life:0.8});}
   function frame(){
     requestAnimationFrame(frame);
     if(!seeded){var cu=opts.getCover&&opts.getCover();if(cu){seeded=true;seed(cu);}else if(!opts.getCover){seeded=true;}}
@@ -157,10 +157,10 @@ function ttRun(opts){
       if(sp.life<=0){sparks.splice(k,1);continue;}
       ctx.globalAlpha=Math.max(0,sp.life);ctx.fillStyle=(sp.h!==undefined)?'hsl('+sp.h.toFixed(0)+',95%,66%)':'#ffe79a';
       ctx.beginPath();ctx.arc(sp.x,sp.y,W*(sp.big?0.008:0.006),0,6.2832);ctx.fill();}
-    ctx.globalAlpha=1;ctx.textAlign='center';
-    for(var m=emojis.length-1;m>=0;m--){var em=emojis[m];em.y+=em.vy;em.vy*=0.98;em.life-=0.02;
-      if(em.life<=0){emojis.splice(m,1);continue;}
-      ctx.globalAlpha=Math.max(0,em.life);ctx.font=em.sz.toFixed(0)+'px serif';ctx.fillText('🔥',em.x,em.y);}
+    for(var m=shocks.length-1;m>=0;m--){var sh=shocks[m];sh.r+=W*0.014;sh.life-=0.02;
+      if(sh.life<=0){shocks.splice(m,1);continue;}
+      ctx.save();ctx.globalAlpha=Math.max(0,sh.life*0.7);ctx.strokeStyle='hsl('+hue.toFixed(0)+',95%,72%)';
+      ctx.lineWidth=W*0.006*sh.life;ctx.beginPath();ctx.arc(cx,cy,sh.r,0,6.2832);ctx.stroke();ctx.restore();}
     ctx.globalAlpha=1;
   }
   function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,n=Math.min(10,Math.floor(k*40));
@@ -213,9 +213,11 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .deck{position:relative;width:330px;height:330px;margin:8px auto 14px;}
   #viz{position:absolute;inset:0;width:100%;height:100%;}
   .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
-    background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 0.85%,#191920 0.85% 1.7%),
+    background:
+      conic-gradient(from 0deg,rgba(255,255,255,0) 0deg,rgba(255,255,255,.07) 30deg,rgba(255,255,255,0) 72deg,rgba(255,255,255,0) 205deg,rgba(255,255,255,.05) 235deg,rgba(255,255,255,0) 280deg),
+      repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 0.85%,#191920 0.85% 1.7%),
       radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000;
+    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000,inset 0 0 16px 3px rgba(255,255,255,.05);
     animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
   .vinyl.spin{animation-play-state:running;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -223,7 +225,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
     align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
     font-size:clamp(11px,3.5vmin,18px);padding:6%;overflow:hidden;text-align:center;
-    box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);background-size:cover;background-position:center;}
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.25),0 0 0 3px rgba(255,255,255,.1);background-size:cover;background-position:center;}
   .vinyl .label.cover{background-color:#000;}
   .vinyl .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
     background:#000;z-index:2;box-shadow:0 0 0 0.6vmin #b6911f;}
@@ -338,7 +340,7 @@ function initViz(){
   if(actx){if(actx.state==='suspended')actx.resume();return;}
   try{actx=new (window.AudioContext||window.webkitAudioContext)();
     const src=actx.createMediaElementSource(audio);
-    analyser=actx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.8;
+    analyser=actx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.6;
     src.connect(analyser);analyser.connect(actx.destination);
   }catch(e){/* file:// or unsupported — vinyl still spins, audio still plays */}
 }

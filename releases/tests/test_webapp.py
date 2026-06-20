@@ -213,6 +213,31 @@ class TestDeck:
         assert "javascript" in r.headers["content-type"]
         assert "function ttRun" in r.text  # the shared visualizer module
 
+    def test_upload_cover_in_app(self, client):
+        import base64
+        c, _ = client
+        png = b"\x89PNG\r\n\x1a\n" + b"x" * 60
+        data = "data:image/png;base64," + base64.b64encode(png).decode()
+        r = c.post("/api/cover", json={"name": "art.png", "data": data})
+        assert r.status_code == 200 and r.json()["cover"] == "/api/cover"
+        # now it's served + advertised
+        assert c.get("/api/cover").status_code == 200
+        assert c.get("/api/tracks").json()["cover"] == "/api/cover"
+
+    def test_upload_cover_rejects_non_image(self, client):
+        import base64
+        c, _ = client
+        data = base64.b64encode(b"nope").decode()
+        assert c.post("/api/cover", json={"name": "x.txt", "data": data}).status_code == 400
+
+    def test_upload_cover_cross_origin_blocked(self, client):
+        import base64
+        c, _ = client
+        data = base64.b64encode(b"\x89PNG").decode()
+        r = c.post("/api/cover", json={"name": "a.png", "data": data},
+                   headers={"origin": "http://evil.example"})
+        assert r.status_code == 403
+
     def test_cover_served_when_configured(self, tmp_path):
         root = tmp_path / "projects"
         tld = root / "Beats" / "Tracks" / "Track List"

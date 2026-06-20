@@ -70,9 +70,11 @@
   #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
   #ov canvas{position:absolute;inset:0;width:100%;height:100%;}
   #ov .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
-    background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 .85%,#191920 .85% 1.7%),
+    background:
+      conic-gradient(from 0deg,rgba(255,255,255,0) 0deg,rgba(255,255,255,.07) 30deg,rgba(255,255,255,0) 72deg,rgba(255,255,255,0) 205deg,rgba(255,255,255,.05) 235deg,rgba(255,255,255,0) 280deg),
+      repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 .85%,#191920 .85% 1.7%),
       radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000;
+    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000,inset 0 0 16px 3px rgba(255,255,255,.05);
     animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
   #ov .vinyl.spin{animation-play-state:running;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -80,7 +82,7 @@
     background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
     align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
     font-size:clamp(11px,3.4vmin,18px);padding:6%;overflow:hidden;text-align:center;
-    background-size:cover;background-position:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);}
+    background-size:cover;background-position:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25),0 0 0 3px rgba(255,255,255,.1);}
   #ov .label.cover{background-color:#000;color:transparent;}
   #ov .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
     background:#000;z-index:2;box-shadow:0 0 0 .6vmin #b6911f;}
@@ -143,6 +145,8 @@
   </label>
   <button onclick="loadTracks()">Refresh</button>
   <button class="primary" id="deckBtn" onclick="openDeck()">▶ Play pack</button>
+  <button onclick="pickCover()">Cover</button>
+  <input type="file" id="coverInput" accept="image/*" style="display:none">
   <button id="dlBtn" onclick="downloadZip()">Download</button>
   <button onclick="buildPack()">Build pack</button>
   <button onclick="preview()">Preview plan</button>
@@ -354,6 +358,23 @@ function deckLabel(){
   if (COVER) { lbl.className='label cover'; lbl.style.backgroundImage="url('"+COVER+"')"; lbl.textContent=''; }
   else { lbl.className='label'; lbl.style.backgroundImage=''; lbl.textContent = PRODUCER; }
 }
+
+function pickCover(){ document.getElementById('coverInput').click(); }
+document.getElementById('coverInput').addEventListener('change', function(e){
+  const f = e.target.files[0]; e.target.value=''; if(!f) return;
+  if(f.size > 8*1024*1024){ toast('Image too large (max 8 MB)', true); return; }
+  const reader = new FileReader();
+  reader.onload = async function(){
+    try{
+      await api('/api/cover', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name:f.name, data:reader.result})});
+      COVER = '/api/cover?t=' + Date.now();   // cache-bust so the new art shows
+      deckLabel();
+      toast('Cover set — it\'s now the vinyl label + pack art');
+    }catch(err){ toast(err.message, true); }
+  };
+  reader.readAsDataURL(f);
+});
 function openDeck(){
   const fg=document.getElementById('filter').value, fm=document.getElementById('mfilter').value;
   DECK = TRACKS.filter(t=>(!fg||t.genre===fg)&&(!fm||t.month===fm));
@@ -401,7 +422,7 @@ function deckInitViz(){
   if(dactx){ if(dactx.state==='suspended')dactx.resume(); return; }
   try{ dactx=new (window.AudioContext||window.webkitAudioContext)();
     const src=dactx.createMediaElementSource(audioEl);
-    danalyser=dactx.createAnalyser(); danalyser.fftSize=256; danalyser.smoothingTimeConstant=.8;
+    danalyser=dactx.createAnalyser(); danalyser.fftSize=256; danalyser.smoothingTimeConstant=.6;
     src.connect(danalyser); danalyser.connect(dactx.destination);
   }catch(e){/* unsupported — vinyl still spins, audio still plays */}
 }
