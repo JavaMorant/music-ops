@@ -93,28 +93,35 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   h1{font-size:24px;letter-spacing:.02em;margin:0 0 4px;}
   .by{color:var(--dim);margin:0 0 18px;letter-spacing:.03em;}
   .by b{color:var(--accent);font-weight:600;}
+  .reelbtn{position:fixed;top:12px;right:12px;z-index:9;background:#20202a;color:var(--txt);
+    border:1px solid var(--line);border-radius:20px;padding:7px 14px;font-size:13px;cursor:pointer;}
+  .reelbtn:hover{border-color:var(--accent);}
+  /* deck + record are sized in % of .deck, so reel mode just scales .deck */
   .deck{position:relative;width:330px;height:330px;margin:8px auto 14px;}
   #viz{position:absolute;inset:0;width:100%;height:100%;}
-  .vinyl{position:absolute;left:50%;top:50%;width:236px;height:236px;margin:-118px 0 0 -118px;border-radius:50%;
-    background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 2px,#191920 2px 4px),
+  .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
+    background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 0.85%,#191920 0.85% 1.7%),
       radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
     box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000;
     animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
   .vinyl.spin{animation-play-state:running;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  .vinyl .label{position:absolute;left:50%;top:50%;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;
+  .vinyl .label{position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;
     background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
     align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
-    font-size:13px;padding:8px;overflow:hidden;text-align:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);}
-  .vinyl .hole{position:absolute;left:50%;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
-    background:#000;z-index:2;box-shadow:0 0 0 3px #b6911f;}
-  .arm{position:absolute;right:2px;top:0;width:128px;height:20px;transform-origin:100% 50%;
+    font-size:clamp(11px,3.5vmin,18px);padding:6%;overflow:hidden;text-align:center;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);background-size:cover;background-position:center;}
+  .vinyl .label.cover{background-color:#000;}
+  .vinyl .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
+    background:#000;z-index:2;box-shadow:0 0 0 0.6vmin #b6911f;}
+  .arm{position:absolute;right:1%;top:1%;width:42%;height:6%;border-radius:3px;
+    background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;
     transform:rotate(-34deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);z-index:3;}
   .arm.on{transform:rotate(-7deg);}
-  .arm:before{content:"";position:absolute;right:-4px;top:-8px;width:34px;height:34px;border-radius:50%;
+  .arm:before{content:"";position:absolute;right:-10%;top:-110%;width:26%;aspect-ratio:1;border-radius:50%;
     background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
-  .arm:after{content:"";position:absolute;left:8px;top:7px;width:84%;height:5px;border-radius:3px;
-    background:linear-gradient(#43434f,#23232b);}
+  .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
+    background:#2a2a32;border:1px solid var(--line);}
   .now{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:22px;}
   .play{width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#10100a;
     font-size:19px;cursor:pointer;flex:none;box-shadow:0 6px 18px rgba(201,162,39,.3);}
@@ -131,13 +138,21 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   ol.list .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
   .contact{color:var(--dim);margin-top:24px;}
   footer{color:var(--dim);font-size:12px;margin-top:30px;}
+  /* 9:16 reel mode — fill the frame for a vertical screen-record */
+  body.reel .wrap{max-width:none;min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:16px;}
+  body.reel h1,body.reel .by,body.reel ol.list,body.reel footer,body.reel .contact{display:none;}
+  body.reel .deck{width:min(88vw,64vh);height:min(88vw,64vh);margin:0 auto 26px;}
+  body.reel .now{transform:scale(1.15);margin-bottom:0;}
 </style></head>
-<body><div class="wrap">
+<body>
+<button class="reelbtn" id="reelbtn">⤢ Reel</button>
+<div class="wrap">
   <h1>__PACK_NAME__</h1>
   <p class="by">Produced by <b>__PRODUCER__</b> · __MADE__ · __NBEATS__ beats</p>
   <div class="deck" id="deck">
     <canvas id="viz"></canvas>
-    <div class="vinyl" id="vinyl"><div class="label">__LABEL__</div><div class="hole"></div></div>
+    <div class="vinyl" id="vinyl">__LABEL_HTML__<div class="hole"></div></div>
     <div class="arm" id="arm"></div>
   </div>
   <div class="now">
@@ -168,6 +183,9 @@ audio.addEventListener('play',()=>{initViz();setPlaying(true);});
 audio.addEventListener('pause',()=>setPlaying(false));
 audio.addEventListener('ended',()=>{cur<TRACKS.length-1?select(cur+1):setPlaying(false);});
 playBtn.onclick=vinyl.onclick=()=>{if(cur<0){select(0);return;}audio.paused?audio.play():audio.pause();};
+const reelbtn=document.getElementById('reelbtn');
+reelbtn.onclick=()=>{const on=document.body.classList.toggle('reel');
+  reelbtn.textContent=on?'✕ Exit':'⤢ Reel';size();};
 const canvas=document.getElementById('viz'),ctx=canvas.getContext('2d');
 function size(){const s=document.getElementById('deck').clientWidth;canvas.width=s*2;canvas.height=s*2;}
 size();addEventListener('resize',size);
@@ -182,33 +200,41 @@ function initViz(){
 }
 function draw(){requestAnimationFrame(draw);if(!analyser)return;
   analyser.getByteFrequencyData(data);
-  const W=canvas.width,H=canvas.height,cx=W/2,cy=H/2,R0=W*0.375,bars=88;
-  ctx.clearRect(0,0,W,H);
-  for(let i=0;i<bars;i++){const v=data[Math.floor(i/bars*data.length)]/255,len=12+v*120,
+  const W=canvas.width,cx=W/2,cy=W/2,R0=W*0.375,bars=88;
+  ctx.clearRect(0,0,W,W);
+  for(let i=0;i<bars;i++){const v=data[Math.floor(i/bars*data.length)]/255,len=W*0.02+v*W*0.17,
     a=i/bars*Math.PI*2-Math.PI/2,c=Math.cos(a),s=Math.sin(a);
     ctx.strokeStyle='hsl('+(44+v*16)+','+(55+v*35)+'%,'+(48+v*24)+'%)';
-    ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(cx+c*R0,cy+s*R0);ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len));ctx.stroke();}
+    ctx.lineWidth=W*0.011;ctx.beginPath();ctx.moveTo(cx+c*R0,cy+s*R0);ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len));ctx.stroke();}
 }
 </script>
 </body></html>
 """
 
 
-def render_index_html(tracks: list[PackTrack], meta: PackMeta, filenames: list[str]) -> str:
+def render_index_html(
+    tracks: list[PackTrack], meta: PackMeta, filenames: list[str], cover: str | None = None
+) -> str:
     items = [{"t": t.title, "m": _meta_str(t), "f": fn} for t, fn in zip(tracks, filenames)]
     # JSON for the <script> context: escape <, >, & so a title can't break out of it.
     tracks_json = (
         json.dumps(items, ensure_ascii=False)
         .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     )
-    label = (meta.producer or "").strip()[:16] or "Beats"
+    if cover:
+        # cover is a pack-relative filename we control (e.g. "cover.jpg"); show it
+        # as the vinyl label (picture-disc style) instead of the producer text.
+        label_html = f'<div class="label cover" style="background-image:url(\'{html.escape(cover, quote=True)}\')"></div>'
+    else:
+        text = (meta.producer or "").strip()[:16] or "Beats"
+        label_html = f'<div class="label">{html.escape(text)}</div>'
     contact = f'<p class="contact">{html.escape(meta.contact)}</p>' if meta.contact else ""
     subs = {
         "__PACK_NAME__": html.escape(meta.name),
         "__PRODUCER__": html.escape(meta.producer),
         "__MADE__": html.escape(meta.made_on),
         "__NBEATS__": str(len(tracks)),
-        "__LABEL__": html.escape(label),
+        "__LABEL_HTML__": label_html,
         "__CONTACT__": contact,
         "__TRACKS__": tracks_json,
     }
@@ -218,10 +244,20 @@ def render_index_html(tracks: list[PackTrack], meta: PackMeta, filenames: list[s
     return out
 
 
-def build_pack(tracks: list[PackTrack], out_dir: Path, meta: PackMeta) -> list[str]:
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
+
+
+def is_image(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_EXTS
+
+
+def build_pack(
+    tracks: list[PackTrack], out_dir: Path, meta: PackMeta, cover_src: Path | None = None
+) -> list[str]:
     """Write the pack into ``out_dir`` (created): clean-named audio copies +
-    index.html + tracklist.txt. Returns the list of audio filenames written.
-    Read-only on the sources (copy only)."""
+    index.html + tracklist.txt. ``cover_src``, if an image, is copied in as the
+    vinyl-label cover art. Returns the list of audio filenames written. Read-only
+    on the sources (copy only)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     filenames: list[str] = []
     used: dict[str, int] = {}
@@ -235,6 +271,12 @@ def build_pack(tracks: list[PackTrack], out_dir: Path, meta: PackMeta) -> list[s
             used[fn] = 0
         shutil.copy2(t.src, out_dir / fn)
         filenames.append(fn)
-    (out_dir / "index.html").write_text(render_index_html(tracks, meta, filenames), encoding="utf-8")
+    cover_name = None
+    if cover_src is not None and cover_src.is_file() and is_image(cover_src):
+        cover_name = "cover" + cover_src.suffix.lower()
+        shutil.copy2(cover_src, out_dir / cover_name)
+    (out_dir / "index.html").write_text(
+        render_index_html(tracks, meta, filenames, cover=cover_name), encoding="utf-8"
+    )
     (out_dir / "tracklist.txt").write_text(render_tracklist_txt(tracks, meta), encoding="utf-8")
     return filenames

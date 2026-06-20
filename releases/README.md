@@ -152,12 +152,14 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
   file (`trap.zip`) to email out — read-only, entry names sanitized.
 - **Build pack** exports a polished, self-contained pack from the filter:
   clean-named audio + a **turntable player page** (`index.html`) + a `tracklist.txt`.
-  The player is a spinning vinyl (with your name on the label), a drop-down
-  tonearm, and a circular audio-reactive spectrum — screen-record-friendly for
-  TikTok / Reels. Zip it for WeTransfer/Drive, or drop the folder on a free
-  static host (Netlify Drop) for an instant shareable **player link**. Also
-  `releases pack "Name" --genre trap`. Read-only — exports copies, never moves
-  your files.
+  The player is a spinning vinyl, a drop-down tonearm, and a circular
+  audio-reactive spectrum. It has a **⤢ Reel** toggle that switches to a 9:16
+  full-frame layout to screen-record straight to TikTok / Reels, and you can put
+  **cover art on the vinyl label** with `--cover art.jpg` (on `releases web` or
+  `releases pack`) — otherwise the label shows your name. Zip it for
+  WeTransfer/Drive, or drop the folder on a free static host (Netlify Drop) for
+  an instant shareable **player link**. Also `releases pack "Name" --genre trap
+  --cover art.jpg`. Read-only — exports copies, never moves your files.
 - **Preview plan** shows the moves + tag edits; **Apply** files + tags everything
   (journaled); **Undo last** reverses it.
 - Safe by construction: binds 127.0.0.1 only, mutating routes are origin-guarded,

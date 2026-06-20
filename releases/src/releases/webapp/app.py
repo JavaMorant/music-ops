@@ -294,7 +294,7 @@ def create_app(config: AppConfig) -> FastAPI:
         os.close(fd)
         try:
             root = Path(workdir) / folder
-            packmod.build_pack(tracks, root, meta)
+            packmod.build_pack(tracks, root, meta, cover_src=config.cover_src)
             with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
                 for f in sorted(root.rglob("*")):
                     if f.is_file():

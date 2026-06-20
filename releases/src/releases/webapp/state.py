@@ -29,6 +29,7 @@ class AppConfig:
     port: int = 8765
     producer: str = "Dibs"   # stamped on exported packs
     contact: str = ""
+    cover_src: Path | None = None  # default cover art for exported pack labels
 
     def __post_init__(self) -> None:
         # .resolve() to match scan(), which stores resolved absolute paths in the

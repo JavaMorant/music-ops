@@ -77,3 +77,38 @@ def test_index_html_is_a_turntable_player(tmp_path):
     assert 'class="vinyl"' in idx and "@keyframes spin" in idx  # the spinning record
     assert 'id="viz"' in idx and "createAnalyser" in idx        # the audio-reactive visualizer
     assert '"f": "01 - Beat One [140 Fm].mp3"' in idx           # the track wired into the player
+
+
+def test_reel_mode_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert 'id="reelbtn"' in idx                       # the Reel toggle button
+    assert "body.reel" in idx                           # the 9:16 reel layout rules
+    assert "classList.toggle('reel')" in idx
+
+
+def test_default_label_is_producer_text(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B")], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert '<div class="label">Dibs</div>' in idx and "label cover" not in idx
+
+
+def test_cover_art_becomes_the_vinyl_label(tmp_path):
+    cover = tmp_path / "art.png"
+    cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 40)  # png-ish bytes
+    t = _track(tmp_path, "x.mp3", "B", bpm=140)
+    packmod.build_pack([t], tmp_path / "out" / "p", _meta(), cover_src=cover)
+    out = tmp_path / "out" / "p"
+    assert (out / "cover.png").exists()                # cover copied into the pack
+    idx = (out / "index.html").read_text()
+    assert "label cover" in idx and "url('cover.png')" in idx
+    assert ">Dibs</div>" not in idx                    # text label replaced by the art
+
+
+def test_non_image_cover_is_ignored(tmp_path):
+    notimg = tmp_path / "notes.txt"
+    notimg.write_text("nope")
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B")], tmp_path / "out" / "p", _meta(), cover_src=notimg)
+    out = tmp_path / "out" / "p"
+    assert not (out / "cover.txt").exists()
+    assert "label cover" not in (out / "index.html").read_text()  # falls back to text label

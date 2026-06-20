@@ -861,6 +861,7 @@ def web(
     port: Annotated[int, typer.Option("--port", help="Localhost port")] = 8765,
     artist: Annotated[str, typer.Option("--artist", help="Your name/alias, stamped on exported packs")] = "Dibs",
     contact: Annotated[str, typer.Option("--contact", help="Contact line on exported packs")] = "",
+    cover: Annotated[Optional[Path], typer.Option("--cover", exists=True, dir_okay=False, help="Cover image for pack vinyl labels")] = None,
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
     """Launch the local Track List web app: set genres, play tracks, build/send
@@ -880,7 +881,8 @@ def web(
         typer.secho("The web app needs extras:  pip install -e '.[web]'", fg="red", err=True)
         raise typer.Exit(1)
     typer.secho(f"releases Track List app → http://127.0.0.1:{port}  (Ctrl-C to stop)", fg="green")
-    serve(root, db, _runs_dir(db), port=port, producer=artist, contact=contact)
+    serve(root, db, _runs_dir(db), port=port, producer=artist, contact=contact,
+          cover_src=cover.resolve() if cover else None)
 
 
 @app.command("pack")
@@ -891,6 +893,7 @@ def pack_cmd(
     out: Annotated[Path, typer.Option("--out", help="Where to write the pack folder")] = Path.home() / "releases-packs",
     artist: Annotated[str, typer.Option("--artist", help="Your name/alias")] = "Dibs",
     contact: Annotated[str, typer.Option("--contact", help="Contact line")] = "",
+    cover: Annotated[Optional[Path], typer.Option("--cover", exists=True, dir_okay=False, help="Cover image for the vinyl label")] = None,
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
     """Export a polished beat pack (clean-named audio + player page + tracklist)
@@ -917,7 +920,7 @@ def pack_cmd(
     from datetime import date as _date
     meta = packmod.PackMeta(name=name, producer=artist, made_on=_date.today().isoformat(), contact=contact)
     dest = out.resolve() / packmod.safe_filename(name)
-    packmod.build_pack(tracks, dest, meta)
+    packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None)
     typer.secho(f"Built pack: {dest}  ({len(tracks)} beats)", fg="green")
     typer.echo("Send it: zip + WeTransfer/Drive, or drag the folder to Netlify Drop for a player link.")
 

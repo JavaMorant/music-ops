@@ -9,11 +9,11 @@ from .state import AppConfig
 
 
 def serve(library_root: Path, db_path: Path, runs_dir: Path, port: int = 8765,
-          producer: str = "Dibs", contact: str = "") -> None:
+          producer: str = "Dibs", contact: str = "", cover_src: Path | None = None) -> None:
     import uvicorn
 
     config = AppConfig(library_root=library_root, db_path=db_path, runs_dir=runs_dir,
-                       port=port, producer=producer, contact=contact)
+                       port=port, producer=producer, contact=contact, cover_src=cover_src)
     app = create_app(config)
     # 127.0.0.1 only — never 0.0.0.0. The app can write to the library; it must
     # not be reachable from the network.
