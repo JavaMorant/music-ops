@@ -57,6 +57,58 @@
     background:#222; border:1px solid var(--line); padding:10px 16px; border-radius:8px;
     display:none; z-index:10; }
   .count { color:var(--dim); font-size:12px; }
+
+  /* in-app turntable (plays the filtered tracks live; no files created) */
+  #ov{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;
+    overflow:auto;padding:16px 16px 40px;text-align:center;
+    background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,#0b0b0e);}
+  #ov.show{display:flex;}
+  .ovhead{width:100%;max-width:560px;display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .ovtitle{font-weight:600;font-size:15px;letter-spacing:.02em;}
+  .ovhead .sp{flex:1;}
+  #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;}
+  #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;}
+  #ov canvas{position:absolute;inset:0;width:100%;height:100%;}
+  #ov .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
+    background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 .85%,#191920 .85% 1.7%),
+      radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
+    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000;
+    animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
+  #ov .vinyl.spin{animation-play-state:running;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #ov .label{position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;
+    background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
+    align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    font-size:clamp(11px,3.4vmin,18px);padding:6%;overflow:hidden;text-align:center;
+    background-size:cover;background-position:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);}
+  #ov .label.cover{background-color:#000;color:transparent;}
+  #ov .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
+    background:#000;z-index:2;box-shadow:0 0 0 .6vmin #b6911f;}
+  #ov .arm{position:absolute;right:1%;top:1%;width:42%;height:6%;border-radius:3px;z-index:3;
+    background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;transform:rotate(-34deg);
+    transition:transform .6s cubic-bezier(.4,1.3,.5,1);}
+  #ov .arm.on{transform:rotate(-7deg);}
+  #ov .arm:before{content:"";position:absolute;right:-10%;top:-110%;width:26%;aspect-ratio:1;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
+  #ov .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
+    background:#2a2a32;border:1px solid var(--line);}
+  .ovnow{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:18px;}
+  .ovplay{width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#10100a;
+    font-size:19px;cursor:pointer;flex:none;box-shadow:0 6px 18px rgba(201,162,39,.3);}
+  .ovinfo{text-align:left;min-width:150px;max-width:320px;}
+  .ovinfo .nt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ovinfo .nm{color:var(--dim);font-size:13px;}
+  ol.ovlist{list-style:none;margin:0;padding:0;width:100%;max-width:560px;text-align:left;}
+  ol.ovlist li{display:flex;gap:11px;align-items:baseline;padding:11px 13px;border:1px solid var(--line);
+    border-radius:9px;margin-bottom:9px;cursor:pointer;background:var(--panel);}
+  ol.ovlist li:hover{border-color:#4a4a55;}
+  ol.ovlist li.active{border-color:var(--accent);background:#1d1d12;}
+  ol.ovlist .num{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;}
+  ol.ovlist .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
+  #ov.reel{justify-content:center;}
+  #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
+  #ov.reel .deck{width:min(88vw,60vh);height:min(88vw,60vh);margin:0 auto 24px;}
+  #ov.reel .ovnow{transform:scale(1.15);}
 </style>
 </head>
 <body>
@@ -71,8 +123,9 @@
     <select id="mfilter" onchange="render()"><option value="">all</option></select>
   </label>
   <button onclick="loadTracks()">Refresh</button>
+  <button class="primary" id="deckBtn" onclick="openDeck()">▶ Play pack</button>
   <button id="dlBtn" onclick="downloadZip()">Download</button>
-  <button class="primary" onclick="buildPack()">Build pack</button>
+  <button onclick="buildPack()">Build pack</button>
   <button onclick="preview()">Preview plan</button>
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
   <button onclick="undoLast()">Undo last</button>
@@ -97,11 +150,32 @@
 </div>
 <div id="toast"></div>
 
+<div id="ov">
+  <div class="ovhead">
+    <div class="ovtitle" id="ovtitle"></div>
+    <div class="sp"></div>
+    <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
+    <button onclick="closeDeck()">✕ Close</button>
+  </div>
+  <div class="deck">
+    <canvas id="oviz"></canvas>
+    <div class="vinyl" id="ovinyl" onclick="deckTogglePlay()"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
+    <div class="arm" id="ovarm"></div>
+  </div>
+  <div class="ovnow">
+    <button class="ovplay" id="ovplay" onclick="deckTogglePlay()">&#9654;</button>
+    <div class="ovinfo"><div class="nt" id="ovnt">—</div><div class="nm" id="ovnm"></div></div>
+  </div>
+  <ol class="ovlist" id="ovlist"></ol>
+</div>
+
 <datalist id="genres"></datalist>
 <datalist id="months"></datalist>
 
 <script>
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
+let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label
+let DECK = [], deckCur = -1, dactx, danalyser, ddata;
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -117,6 +191,7 @@ function toast(msg, bad) {
 async function loadTracks() {
   const data = await api('/api/tracks');
   TRACKS = data.tracks; GENRES = data.genres; MONTHS = data.months || [];
+  PRODUCER = data.producer || 'Beats'; COVER = data.cover || null;
   document.getElementById('genres').innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
   document.getElementById('months').innerHTML = MONTHS.map(m=>`<option value="${m}">`).join('');
   const f = document.getElementById('filter'), cur = f.value;
@@ -245,6 +320,77 @@ function play(id) {
   a.play().catch(()=>{});
 }
 
+// ---- in-app turntable: plays the FILTERED set live (numbering/copy is for download only) ----
+const audioEl = document.getElementById('audio');
+function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+function deckMeta(t){ return [t.bpm?t.bpm+' bpm':'', t.key||'', t.genre!=='unknown'?t.genre:''].filter(Boolean).join(' · '); }
+function deckLabel(){
+  const lbl = document.getElementById('ovlabel');
+  if (COVER) { lbl.className='label cover'; lbl.style.backgroundImage="url('"+COVER+"')"; lbl.textContent=''; }
+  else { lbl.className='label'; lbl.style.backgroundImage=''; lbl.textContent = PRODUCER; }
+}
+function openDeck(){
+  const fg=document.getElementById('filter').value, fm=document.getElementById('mfilter').value;
+  DECK = TRACKS.filter(t=>(!fg||t.genre===fg)&&(!fm||t.month===fm));
+  if(!DECK.length){ toast('No tracks in this filter', true); return; }
+  document.getElementById('ovtitle').textContent =
+    (fg?cap(fg):'All beats') + (fm?' · '+fm:'') + ' · ' + DECK.length + ' beats';
+  deckLabel();
+  const ul=document.getElementById('ovlist'); ul.innerHTML='';
+  DECK.forEach((t,i)=>{ const li=document.createElement('li');
+    li.innerHTML='<span class="num"></span><span class="ti"></span><span class="me"></span>';
+    li.querySelector('.num').textContent=String(i+1).padStart(2,'0');
+    li.querySelector('.ti').textContent=t.name;
+    li.querySelector('.me').textContent=deckMeta(t);
+    li.onclick=()=>deckSelect(i); ul.appendChild(li); });
+  document.getElementById('ov').classList.add('show');
+  deckSize(); deckSelect(0);
+}
+function deckSelect(i){
+  deckCur=i; const t=DECK[i];
+  audioEl.src='/api/audio?id='+encodeURIComponent(t.id);
+  document.getElementById('ovnt').textContent=t.name;
+  document.getElementById('ovnm').textContent=deckMeta(t);
+  document.getElementById('np').textContent='♪ '+t.name;
+  [...document.getElementById('ovlist').children].forEach((li,j)=>li.classList.toggle('active',j===i));
+  audioEl.play().catch(()=>{});
+}
+function deckTogglePlay(){ if(deckCur<0){ deckSelect(0); return; } audioEl.paused?audioEl.play():audioEl.pause(); }
+function deckSetPlaying(p){
+  document.getElementById('ovinyl').classList.toggle('spin',p);
+  document.getElementById('ovarm').classList.toggle('on',p);
+  document.getElementById('ovplay').innerHTML=p?'&#10074;&#10074;':'&#9654;';
+}
+function closeDeck(){ document.getElementById('ov').classList.remove('show'); }
+function deckReel(){ const on=document.getElementById('ov').classList.toggle('reel');
+  document.getElementById('reeltgl').textContent=on?'✕ Exit':'⤢ Reel'; deckSize(); }
+const ocanvas=document.getElementById('oviz'), octx=ocanvas.getContext('2d');
+function deckSize(){ const d=document.querySelector('#ov .deck'); if(!d)return; const s=d.clientWidth||320; ocanvas.width=s*2; ocanvas.height=s*2; }
+function deckInitViz(){
+  if(dactx){ if(dactx.state==='suspended')dactx.resume(); return; }
+  try{ dactx=new (window.AudioContext||window.webkitAudioContext)();
+    const src=dactx.createMediaElementSource(audioEl);
+    danalyser=dactx.createAnalyser(); danalyser.fftSize=256; danalyser.smoothingTimeConstant=.8;
+    src.connect(danalyser); danalyser.connect(dactx.destination);
+    ddata=new Uint8Array(danalyser.frequencyBinCount); deckDraw();
+  }catch(e){/* unsupported — vinyl still spins, audio still plays */}
+}
+function deckDraw(){ requestAnimationFrame(deckDraw); if(!danalyser)return;
+  danalyser.getByteFrequencyData(ddata);
+  const W=ocanvas.width,cx=W/2,cy=W/2,R0=W*0.375,bars=88; octx.clearRect(0,0,W,W);
+  for(let i=0;i<bars;i++){ const v=ddata[Math.floor(i/bars*ddata.length)]/255,len=W*0.02+v*W*0.17,
+    a=i/bars*Math.PI*2-Math.PI/2,c=Math.cos(a),s=Math.sin(a);
+    octx.strokeStyle='hsl('+(44+v*16)+','+(55+v*35)+'%,'+(48+v*24)+'%)';
+    octx.lineWidth=W*0.011; octx.beginPath(); octx.moveTo(cx+c*R0,cy+s*R0); octx.lineTo(cx+c*(R0+len),cy+s*(R0+len)); octx.stroke(); }
+}
+audioEl.addEventListener('play',()=>{ deckInitViz(); deckSetPlaying(true); });
+audioEl.addEventListener('pause',()=>deckSetPlaying(false));
+audioEl.addEventListener('ended',()=>{
+  if(document.getElementById('ov').classList.contains('show') && deckCur>=0 && deckCur<DECK.length-1) deckSelect(deckCur+1);
+  else deckSetPlaying(false);
+});
+addEventListener('resize',deckSize);
+
 async function preview() {
   try {
     const p = await api('/api/organize/preview');
@@ -286,7 +432,10 @@ async function undoLast() {
   } catch(e){ toast(e.message, true); }
 }
 
-loadTracks();
+loadTracks().then(()=>{
+  const q = new URLSearchParams(location.search);
+  if (q.has('deck')) { openDeck(); if (q.has('reel')) deckReel(); }
+});
 </script>
 </body>
 </html>

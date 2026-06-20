@@ -132,7 +132,19 @@ def create_app(config: AppConfig) -> FastAPI:
         tracks.sort(key=lambda t: (t["genre"], t["name"].lower()))
         genres = sorted({t["genre"] for t in tracks if t["genre"] != "unknown"})
         months = sorted({t["month"] for t in tracks if t["month"]}, reverse=True)
-        return {"tracks": tracks, "genres": genres, "months": months}
+        has_cover = bool(config.cover_src and config.cover_src.is_file()
+                         and packmod.is_image(config.cover_src))
+        return {"tracks": tracks, "genres": genres, "months": months,
+                "producer": config.producer, "cover": "/api/cover" if has_cover else None}
+
+    @app.get("/api/cover")
+    def cover():
+        src = config.cover_src  # launch-time path, not client-supplied
+        if not src or not src.is_file() or not packmod.is_image(src):
+            raise HTTPException(404, "no cover set")
+        media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                 ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif"}
+        return FileResponse(src, media_type=media.get(src.suffix.lower(), "application/octet-stream"))
 
     @app.post("/api/mark", dependencies=[Depends(guard_origin)])
     def mark(body: MarkBody):

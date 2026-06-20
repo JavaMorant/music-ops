@@ -146,6 +146,11 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
 - Set a genre per track (autocomplete from genres you've used), flip
   mixed/unmixed and mastered/unmastered — saved to the index instantly.
 - ▶ plays the track (range-streamed, so seeking works).
+- **Play pack** opens the spinning-vinyl turntable *inside the app* for the
+  currently-filtered tracks — plays them live (streamed, nothing exported), with
+  the cover-art/name label, audio-reactive spectrum, and a ⤢ Reel toggle for a
+  9:16 screen-record. The clean numbering + file copy is reserved for **Download
+  / Build pack**. (Deep-link `?deck` / `?deck&reel` auto-opens it.)
 - Record **artists/producers** and a **month** per track; filter by month to pull
   up a beat pack.
 - **Download N** zips the currently-filtered tracks (e.g. genre `trap`) into one

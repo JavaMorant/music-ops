@@ -199,6 +199,29 @@ class TestPack:
         assert c.get("/api/pack?genre=nope").status_code == 404
 
 
+class TestDeck:
+    def test_tracks_expose_producer_and_no_cover_by_default(self, client):
+        c, _ = client
+        d = c.get("/api/tracks").json()
+        assert d["producer"] == "Dibs" and d["cover"] is None
+        assert c.get("/api/cover").status_code == 404  # none configured
+
+    def test_cover_served_when_configured(self, tmp_path):
+        root = tmp_path / "projects"
+        tld = root / "Beats" / "Tracks" / "Track List"
+        tld.mkdir(parents=True)
+        (tld / "a.mp3").write_bytes(b"\xff\xfb\x90\x00")
+        cov = tmp_path / "art.png"
+        cov.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 40)
+        db = tmp_path / "index.db"
+        dbmod.upsert_projects(dbmod.connect(db), scan(root))
+        cfg = AppConfig(library_root=root, db_path=db, runs_dir=tmp_path / "runs", cover_src=cov)
+        c = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
+        assert c.get("/api/tracks").json()["cover"] == "/api/cover"
+        r = c.get("/api/cover")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+
+
 class TestSecurity:
     def test_cross_origin_post_blocked(self, client):
         c, _ = client
