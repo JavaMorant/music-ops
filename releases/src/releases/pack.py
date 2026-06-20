@@ -195,6 +195,11 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .nowinfo{text-align:left;min-width:160px;max-width:320px;}
   .nt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .nm{color:var(--dim);font-size:13px;}
+  @keyframes nfin{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+  .nfin{animation:nfin .38s cubic-bezier(.2,.8,.2,1);}
+  .bpmdot{display:none;width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;
+    box-shadow:0 0 8px var(--accent);animation:blink 1s ease-in-out infinite;}
+  @keyframes blink{0%,100%{opacity:.2;transform:scale(.8);}45%{opacity:1;transform:scale(1.15);}}
   ol.list{list-style:none;margin:0;padding:0;text-align:left;}
   ol.list li{display:flex;gap:11px;align-items:baseline;padding:11px 13px;border:1px solid var(--line);
     border-radius:9px;margin-bottom:9px;cursor:pointer;background:var(--panel);}
@@ -225,6 +230,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   </div>
   <div class="now">
     <button class="play" id="play">&#9654;</button>
+    <span class="bpmdot" id="bpmdot"></span>
     <div class="nowinfo"><div class="nt" id="nt">Tap a beat ↓</div><div class="nm" id="nm"></div></div>
   </div>
   <ol class="list" id="list"></ol>
@@ -246,6 +252,8 @@ TRACKS.forEach((t,i)=>{const li=document.createElement('li');
   li.onclick=()=>select(i); list.appendChild(li);});
 function select(i){cur=i;const t=TRACKS[i];audio.src=encodeURI(t.f);
   nt.textContent=t.t;nm.textContent=t.m;
+  const nfo=document.querySelector('.nowinfo');nfo.classList.remove('nfin');void nfo.offsetWidth;nfo.classList.add('nfin');
+  const dot=document.getElementById('bpmdot');if(t.b){dot.style.display='inline-block';dot.style.animationDuration=(60/t.b).toFixed(3)+'s';}else{dot.style.display='none';}
   [...list.children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audio.play().catch(()=>{});}
 function setPlaying(p){vinyl.classList.toggle('spin',p);arm.classList.toggle('on',p);playBtn.innerHTML=p?'&#10074;&#10074;':'&#9654;';}
@@ -278,7 +286,8 @@ ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
 def render_index_html(
     tracks: list[PackTrack], meta: PackMeta, filenames: list[str], cover: str | None = None
 ) -> str:
-    items = [{"t": t.title, "m": _meta_str(t), "f": fn} for t, fn in zip(tracks, filenames)]
+    items = [{"t": t.title, "m": _meta_str(t), "f": fn, "b": t.bpm or 0}
+             for t, fn in zip(tracks, filenames)]
     # JSON for the <script> context: escape <, >, & so a title can't break out of it.
     tracks_json = (
         json.dumps(items, ensure_ascii=False)

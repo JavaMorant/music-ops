@@ -98,6 +98,11 @@
   .ovinfo{text-align:left;min-width:150px;max-width:320px;}
   .ovinfo .nt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ovinfo .nm{color:var(--dim);font-size:13px;}
+  @keyframes nfin{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+  #ov .nfin{animation:nfin .38s cubic-bezier(.2,.8,.2,1);}
+  #ov .bpmdot{display:none;width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;
+    box-shadow:0 0 8px var(--accent);animation:blink 1s ease-in-out infinite;}
+  @keyframes blink{0%,100%{opacity:.2;transform:scale(.8);}45%{opacity:1;transform:scale(1.15);}}
   ol.ovlist{list-style:none;margin:0;padding:0;width:100%;max-width:560px;text-align:left;}
   ol.ovlist li{display:flex;gap:11px;align-items:baseline;padding:11px 13px;border:1px solid var(--line);
     border-radius:9px;margin-bottom:9px;cursor:pointer;background:var(--panel);}
@@ -174,6 +179,7 @@
   </div>
   <div class="ovnow">
     <button class="ovplay" id="ovplay" onclick="deckTogglePlay()">&#9654;</button>
+    <span class="bpmdot" id="ovbpmdot"></span>
     <div class="ovinfo"><div class="nt" id="ovnt">—</div><div class="nm" id="ovnm"></div></div>
   </div>
   <ol class="ovlist" id="ovlist"></ol>
@@ -363,6 +369,9 @@ function deckSelect(i){
   document.getElementById('ovnt').textContent=t.name;
   document.getElementById('ovnm').textContent=deckMeta(t);
   document.getElementById('np').textContent='♪ '+t.name;
+  const nfo=document.querySelector('#ov .ovinfo'); nfo.classList.remove('nfin'); void nfo.offsetWidth; nfo.classList.add('nfin');
+  const dot=document.getElementById('ovbpmdot');
+  if(t.bpm){ dot.style.display='inline-block'; dot.style.animationDuration=(60/t.bpm).toFixed(3)+'s'; } else { dot.style.display='none'; }
   [...document.getElementById('ovlist').children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audioEl.play().catch(()=>{});
 }
