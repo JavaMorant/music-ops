@@ -111,6 +111,14 @@ def test_dopamine_effects_present(tmp_path):
     assert '"g": "trap"' in idx                                  # genre wired for the hook
 
 
+def test_cassette_skin_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert 'class="cassette"' in idx and 'class="reel"' in idx   # the cassette + spinning reels
+    assert "cassette-mode" in idx and 'id="skinbtn"' in idx      # toggle to switch skins
+    assert "getSkin" in idx                                       # visualizer is skin-aware
+
+
 def test_cover_seeds_visualizer_colour(tmp_path):
     cover = tmp_path / "art.png"
     cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 40)

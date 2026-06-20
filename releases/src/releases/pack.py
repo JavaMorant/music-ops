@@ -89,7 +89,7 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
 TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d');
-  var bassAvg=0, eLong=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null;
+  var bassAvg=0, eLong=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[];
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
@@ -99,10 +99,10 @@ function ttRun(opts){
       c2.drawImage(img,0,0,14,14);var px=c2.getImageData(0,0,14,14).data,r=0,g=0,b=0,n=0;
       for(var i=0;i<px.length;i+=4){if(px[i+3]>10){r+=px[i];g+=px[i+1];b+=px[i+2];n++;}}
       if(n)hue=rgbHue(r/n,g/n,b/n);}catch(e){}};img.src=url;}
-  function onDrop(energy){flash=1;punch=1;shake=12;var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36;
-    for(var i=0;i<70;i++){var a=Math.random()*6.2832,sp=W*0.01*(1+Math.random()*4.5);
-      sparks.push({x:cx+Math.cos(a)*R0*0.5,y:cy+Math.sin(a)*R0*0.5,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-W*0.004,life:1,h:(hue+Math.random()*80)%360,big:true});}
-    shocks.push({r:R0*0.5,life:1}); shocks.push({r:R0*0.22,life:0.8});}
+  function onDrop(energy){flash=1;punch=1;shake=13;var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36;
+    for(var i=0;i<130;i++){var a=Math.random()*6.2832,sp=W*0.01*(1+Math.random()*5);
+      sparks.push({x:cx+Math.cos(a)*R0*0.5,y:cy+Math.sin(a)*R0*0.5,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-W*0.004,life:1,h:(hue+Math.random()*90)%360,big:true});}
+    shocks.push({r:R0*0.5,life:1}); shocks.push({r:R0*0.3,life:0.85}); shocks.push({r:R0*0.12,life:0.7});}
   function frame(){
     requestAnimationFrame(frame);
     if(!seeded){var cu=opts.getCover&&opts.getCover();if(cu){seeded=true;seed(cu);}else if(!opts.getCover){seeded=true;}}
@@ -112,13 +112,15 @@ function ttRun(opts){
       an.getByteFrequencyData(dataArr);
       for(var i=0;i<5;i++){bass+=dataArr[i];}bass/=1275;
       for(var j=0;j<dataArr.length;j++){energy+=dataArr[j];}energy/=dataArr.length*255;}
+    curEnergy=energy;
     bassAvg=bassAvg*0.9+bass*0.1; eLong=eLong*0.985+energy*0.015;
     var kick=Math.max(0,bass-bassAvg-0.05);
     if(energy>eLong*1.45+0.12 && energy>0.30 && nowMs()-lastDrop>1400){lastDrop=nowMs();onDrop(energy);}
     hue=(hue+0.06+energy*0.5)%360;
     flash*=0.86; punch*=0.9; shake*=0.8;
     if(kick>0.05){shake=Math.max(shake,Math.min(9,kick*32)); if(opts.sparksOn)spawn(kick);}
-    if(opts.label){opts.label.style.transform='scale('+(1+Math.min(0.22,kick*1.5)+punch*0.07).toFixed(3)+')';}
+    var lbl=opts.getLabel?opts.getLabel():opts.label;
+    if(lbl){lbl.style.transform='scale('+(1+Math.min(0.22,kick*1.5)+punch*0.07).toFixed(3)+')';}
     if(opts.scene){
       if(opts.reelGet&&opts.reelGet()){var sx=(Math.random()*2-1)*shake,sy=(Math.random()*2-1)*shake;
         opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.05+Math.min(0.05,energy*0.06)+punch*0.13).toFixed(3)+')';}
@@ -127,9 +129,9 @@ function ttRun(opts){
       if(flash>0.02)opts.flash.style.background='radial-gradient(circle at 50% 45%,hsla('+hue.toFixed(0)+',90%,75%,.9),transparent 70%)';}
     ambient(energy); draw(energy,kick);
   }
-  function ambient(energy){var W=opts.canvas.width;
-    if(embers.length<(16+Math.floor(energy*44)) && Math.random()<0.5){
-      embers.push({x:Math.random()*W,y:W+8,vx:(Math.random()*2-1)*W*0.0006,vy:-(W*0.0012)*(0.5+Math.random()*1.4)*(0.6+energy),life:1,sz:W*(0.002+Math.random()*0.004)});}}
+  function ambient(energy){var W=opts.canvas.width, cap=18+Math.floor(energy*110), n=1+Math.floor(energy*4);
+    for(var q=0;q<n;q++){ if(embers.length<cap && Math.random()<0.55){
+      embers.push({x:Math.random()*W,y:W+8,vx:(Math.random()*2-1)*W*0.0007,vy:-(W*0.0013)*(0.5+Math.random()*1.6)*(0.6+energy*1.4),life:1,sz:W*(0.002+Math.random()*0.005)});}}}
   function draw(energy,kick){
     var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,maxOuter=W*0.475,e;
     ctx.clearRect(0,0,W,W);
@@ -141,18 +143,26 @@ function ttRun(opts){
     if(energy>0.01){var g=ctx.createRadialGradient(cx,cy,R0*0.55,cx,cy,R0*(1.1+energy*0.45));
       g.addColorStop(0,'hsla('+hue.toFixed(0)+',90%,55%,'+(0.08+energy*0.25).toFixed(3)+')');g.addColorStop(1,'hsla('+hue.toFixed(0)+',90%,55%,0)');
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,R0*1.35,0,6.2832);ctx.fill();}
-    if(kick>0.02){ctx.save();ctx.globalAlpha=Math.min(0.9,kick*3.5);ctx.strokeStyle='hsl('+hue.toFixed(0)+',95%,72%)';
+    var cassette=opts.getSkin&&opts.getSkin()==='cassette';
+    if(!cassette && kick>0.02){ctx.save();ctx.globalAlpha=Math.min(0.9,kick*3.5);ctx.strokeStyle='hsl('+hue.toFixed(0)+',95%,72%)';
       ctx.lineWidth=W*0.006;ctx.beginPath();ctx.arc(cx,cy,R0*1.03,0,6.2832);ctx.stroke();ctx.restore();}
-    if(dataArr){var bars=96;ctx.save();ctx.shadowBlur=W*0.011;ctx.lineCap='round';ctx.lineWidth=W*0.013;
-      for(var i=0;i<bars;i++){var idx=i<bars/2?i:bars-1-i;var v=dataArr[Math.floor(idx/(bars/2)*dataArr.length*0.7)]/255;
-        var len=Math.min(W*0.012+v*v*W*0.11,maxOuter-R0),a=i/bars*6.2832-1.5708,c=Math.cos(a),s=Math.sin(a);
-        var col='hsl('+((hue+idx/(bars/2)*40)%360).toFixed(0)+','+(72+v*25).toFixed(0)+'%,'+(52+v*20).toFixed(0)+'%)';
-        ctx.strokeStyle=col;ctx.shadowColor=col;
-        ctx.beginPath();ctx.moveTo(cx+c*R0,cy+s*R0);ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len));ctx.stroke();}
+    if(dataArr){ctx.save();ctx.shadowBlur=W*0.011;ctx.lineCap='round';
+      if(cassette){var bars=80,baseY=W*0.84,half=bars/2;ctx.lineWidth=W*0.011;
+        for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;var v=dataArr[Math.floor(idx/half*dataArr.length*0.7)]/255;
+          var x=W*0.08+(i/(bars-1))*W*0.84,len=W*0.01+v*v*W*0.2;
+          var col='hsl('+((hue+idx/half*40)%360).toFixed(0)+','+(72+v*25).toFixed(0)+'%,'+(52+v*20).toFixed(0)+'%)';
+          ctx.strokeStyle=col;ctx.shadowColor=col;ctx.beginPath();ctx.moveTo(x,baseY);ctx.lineTo(x,baseY-len);ctx.stroke();}}
+      else{var b2=96;ctx.lineWidth=W*0.013;
+        for(var b=0;b<b2;b++){var j2=b<b2/2?b:b2-1-b;var w2=dataArr[Math.floor(j2/(b2/2)*dataArr.length*0.7)]/255;
+          var l2=Math.min(W*0.012+w2*w2*W*0.11,maxOuter-R0),a2=b/b2*6.2832-1.5708,c2=Math.cos(a2),s2=Math.sin(a2);
+          var k2='hsl('+((hue+j2/(b2/2)*40)%360).toFixed(0)+','+(72+w2*25).toFixed(0)+'%,'+(52+w2*20).toFixed(0)+'%)';
+          ctx.strokeStyle=k2;ctx.shadowColor=k2;ctx.beginPath();ctx.moveTo(cx+c2*R0,cy+s2*R0);ctx.lineTo(cx+c2*(R0+l2),cy+s2*(R0+l2));ctx.stroke();}}
       ctx.restore();}
     if(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration)){var pr=opts.audio.currentTime/opts.audio.duration;
-      ctx.save();ctx.strokeStyle='hsla('+hue.toFixed(0)+',90%,66%,.9)';ctx.lineWidth=W*0.009;ctx.lineCap='round';
-      ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();ctx.restore();}
+      ctx.save();ctx.strokeStyle='hsla('+hue.toFixed(0)+',90%,66%,.9)';ctx.lineCap='round';
+      if(cassette){ctx.lineWidth=W*0.008;ctx.beginPath();ctx.moveTo(W*0.08,W*0.88);ctx.lineTo(W*0.08+pr*W*0.84,W*0.88);ctx.stroke();}
+      else{ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();}
+      ctx.restore();}
     for(var k=sparks.length-1;k>=0;k--){var sp=sparks[k];sp.x+=sp.vx;sp.y+=sp.vy;if(sp.big)sp.vy+=W*0.0005;sp.vx*=0.97;sp.vy*=0.97;sp.life-=0.025;
       if(sp.life<=0){sparks.splice(k,1);continue;}
       ctx.globalAlpha=Math.max(0,sp.life);ctx.fillStyle=(sp.h!==undefined)?'hsl('+sp.h.toFixed(0)+',95%,66%)':'#ffe79a';
@@ -163,7 +173,7 @@ function ttRun(opts){
       ctx.lineWidth=W*0.006*sh.life;ctx.beginPath();ctx.arc(cx,cy,sh.r,0,6.2832);ctx.stroke();ctx.restore();}
     ctx.globalAlpha=1;
   }
-  function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,n=Math.min(10,Math.floor(k*40));
+  function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,n=Math.min(22,Math.floor(k*40)+Math.floor(curEnergy*12));
     for(var j=0;j<n;j++){var a=Math.random()*6.2832,sp=W*0.012*(1+Math.random()*2.5);
       sparks.push({x:cx+Math.cos(a)*R0,y:cy+Math.sin(a)*R0,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,h:(hue+Math.random()*50)%360});}}
   frame();
@@ -219,7 +229,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
       radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
     box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000,inset 0 0 16px 3px rgba(255,255,255,.05);
     animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
-  .vinyl.spin{animation-play-state:running;}
+  body.playing .vinyl{animation-play-state:running;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .vinyl .label{position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;
     background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
@@ -229,14 +239,34 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .vinyl .label.cover{background-color:#000;}
   .vinyl .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
     background:#000;z-index:2;box-shadow:0 0 0 0.6vmin #b6911f;}
-  .arm{position:absolute;right:2%;top:0;width:47%;height:6%;border-radius:3px;
-    background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;
-    transform:rotate(8deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);z-index:3;}
+  .arm{position:absolute;right:4%;top:2%;width:46%;height:3.2%;border-radius:4px;z-index:3;
+    background:linear-gradient(180deg,#60606c,#2a2a32);transform-origin:100% 50%;
+    transform:rotate(8deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);box-shadow:0 2px 7px rgba(0,0,0,.5);}
   .arm.on{transform:rotate(-32deg);}  /* playing: needle swings DOWN onto the grooves */
-  .arm:before{content:"";position:absolute;right:-10%;top:-110%;width:26%;aspect-ratio:1;border-radius:50%;
-    background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
-  .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
-    background:#2a2a32;border:1px solid var(--line);}
+  .arm:before{content:"";position:absolute;right:-12%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translateY(-50%);
+    background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
+  .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);
+    background:linear-gradient(#3a3a44,#191920);border:1px solid #000;}
+  /* cassette skin (toggled with .cassette-mode) */
+  .cassette{position:absolute;left:6%;top:24%;width:88%;height:52%;border-radius:14px;display:none;z-index:1;
+    background:linear-gradient(165deg,#34343f,#16161c);border:1px solid #000;
+    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px rgba(255,255,255,.05);}
+  body.cassette-mode .cassette{display:block;}
+  body.cassette-mode .vinyl,body.cassette-mode .arm,body.cassette-mode .gloss{display:none;}
+  .cassette .clabel{position:absolute;left:9%;right:9%;top:8%;height:26%;border-radius:6px;overflow:hidden;
+    background:radial-gradient(circle at 50% 30%,var(--accent),#8a6f17);background-size:cover;background-position:center;
+    display:flex;align-items:center;justify-content:center;color:#1a1405;font-weight:800;text-transform:uppercase;
+    letter-spacing:.05em;font-size:clamp(10px,3vmin,15px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.2);}
+  .cassette .clabel.cover{color:transparent;}
+  .cassette .win{position:absolute;left:11%;right:11%;bottom:15%;height:48%;border-radius:10px;background:#0b0b0f;
+    box-shadow:inset 0 0 0 2px #000,inset 0 5px 14px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:space-between;padding:0 9%;}
+  .cassette .reel{width:31%;aspect-ratio:1;border-radius:50%;position:relative;
+    background:repeating-conic-gradient(#34343e 0 18deg,#14141a 18deg 36deg);
+    box-shadow:inset 0 0 0 3px #000;animation:spin 1.7s linear infinite;animation-play-state:paused;}
+  .cassette .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);box-shadow:inset 0 0 0 2px #000;}
+  .cassette .reel:after{content:"";position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#000;z-index:2;}
+  .cassette .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;background:#42424c;}
+  body.playing .cassette .reel{animation-play-state:running;}
   .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
     background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
     animation:sheen 3.6s ease-in-out infinite;}
@@ -280,6 +310,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   body.reel .now{transform:scale(1.15);margin-bottom:0;}
 </style></head>
 <body>
+<button class="reelbtn" id="skinbtn" style="right:96px">Cassette</button>
 <button class="reelbtn" id="reelbtn">⤢ Reel</button>
 <div class="wrap">
   <h1>__PACK_NAME__</h1>
@@ -290,6 +321,10 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     <div class="vinyl" id="vinyl">__LABEL_HTML__<div class="hole"></div></div>
     <div class="gloss"></div>
     <div class="arm" id="arm"></div>
+    <div class="cassette" id="cassette">
+      __CLABEL_HTML__
+      <div class="win"><div class="reel"></div><div class="tape"></div><div class="reel"></div></div>
+    </div>
   </div>
   <div class="now">
     <button class="play" id="play">&#9654;</button>
@@ -323,7 +358,10 @@ function select(i){cur=i;const t=TRACKS[i];audio.src=encodeURI(t.f);
   hook.classList.remove('pop');void hook.offsetWidth;hook.classList.add('pop');
   [...list.children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audio.play().catch(()=>{});}
-function setPlaying(p){vinyl.classList.toggle('spin',p);arm.classList.toggle('on',p);playBtn.innerHTML=p?'&#10074;&#10074;':'&#9654;';}
+function setPlaying(p){document.body.classList.toggle('playing',p);arm.classList.toggle('on',p);playBtn.innerHTML=p?'&#10074;&#10074;':'&#9654;';}
+function isCassette(){return document.body.classList.contains('cassette-mode');}
+document.getElementById('skinbtn').onclick=function(){var on=document.body.classList.toggle('cassette-mode');
+  this.textContent=on?'Vinyl':'Cassette';size();};
 audio.addEventListener('play',()=>{initViz();setPlaying(true);});
 audio.addEventListener('pause',()=>setPlaying(false));
 audio.addEventListener('ended',()=>{cur<TRACKS.length-1?select(cur+1):setPlaying(false);});
@@ -345,8 +383,10 @@ function initViz(){
   }catch(e){/* file:// or unsupported — vinyl still spins, audio still plays */}
 }
 ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
-  scene:document.querySelector('.wrap'),label:document.querySelector('#vinyl .label'),
+  scene:document.querySelector('.wrap'),
+  getLabel:function(){return isCassette()?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
   flash:document.querySelector('.flash'),getCover:function(){return PACK_COVER;},
+  getSkin:function(){return isCassette()?'cassette':'vinyl';},
   reelGet:function(){return document.body.classList.contains('reel');},sparksOn:true});
 </script>
 </body></html>
@@ -365,11 +405,14 @@ def render_index_html(
     )
     if cover:
         # cover is a pack-relative filename we control (e.g. "cover.jpg"); show it
-        # as the vinyl label (picture-disc style) instead of the producer text.
-        label_html = f'<div class="label cover" style="background-image:url(\'{html.escape(cover, quote=True)}\')"></div>'
+        # as the vinyl/cassette label (picture-disc style) instead of producer text.
+        c = html.escape(cover, quote=True)
+        label_html = f'<div class="label cover" style="background-image:url(\'{c}\')"></div>'
+        clabel_html = f'<div class="clabel cover" style="background-image:url(\'{c}\')"></div>'
     else:
-        text = (meta.producer or "").strip()[:16] or "Beats"
-        label_html = f'<div class="label">{html.escape(text)}</div>'
+        text = html.escape((meta.producer or "").strip()[:16] or "Beats")
+        label_html = f'<div class="label">{text}</div>'
+        clabel_html = f'<div class="clabel">{text}</div>'
     contact = f'<p class="contact">{html.escape(meta.contact)}</p>' if meta.contact else ""
     subs = {
         "__PACK_NAME__": html.escape(meta.name),
@@ -377,6 +420,7 @@ def render_index_html(
         "__MADE__": html.escape(meta.made_on),
         "__NBEATS__": str(len(tracks)),
         "__LABEL_HTML__": label_html,
+        "__CLABEL_HTML__": clabel_html,
         "__CONTACT__": contact,
         "__VIZ_JS__": TURNTABLE_JS,
         "__COVER_URL__": json.dumps(cover),
