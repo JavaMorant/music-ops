@@ -94,6 +94,8 @@ def test_reactive_effects_present(tmp_path):
     assert 'class="gloss"' in idx and 'class="fx"' in idx  # sheen + vignette/grain
     assert "createRadialGradient" in idx                # the bass halo
     assert "opts.scene.style.transform" in idx          # the beat-synced screen shake
+    assert "function ttScrub" in idx and "secPerRev" in idx  # drag-the-record scrubbing
+    assert ".arm.on{transform:rotate(-32deg)" in idx    # playing = needle DOWN on the record
 
 
 def test_default_label_is_producer_text(tmp_path):

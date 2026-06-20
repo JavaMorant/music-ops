@@ -84,10 +84,10 @@
   #ov .label.cover{background-color:#000;color:transparent;}
   #ov .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
     background:#000;z-index:2;box-shadow:0 0 0 .6vmin #b6911f;}
-  #ov .arm{position:absolute;right:1%;top:1%;width:42%;height:6%;border-radius:3px;z-index:3;
-    background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;transform:rotate(-34deg);
+  #ov .arm{position:absolute;right:2%;top:0;width:47%;height:6%;border-radius:3px;z-index:3;
+    background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;transform:rotate(8deg);
     transition:transform .6s cubic-bezier(.4,1.3,.5,1);}
-  #ov .arm.on{transform:rotate(-7deg);}
+  #ov .arm.on{transform:rotate(-32deg);}  /* playing: needle down on the grooves */
   #ov .arm:before{content:"";position:absolute;right:-10%;top:-110%;width:26%;aspect-ratio:1;border-radius:50%;
     background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
   #ov .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
@@ -173,7 +173,7 @@
   </div>
   <div class="deck">
     <canvas id="oviz"></canvas>
-    <div class="vinyl" id="ovinyl" onclick="deckTogglePlay()"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
+    <div class="vinyl" id="ovinyl"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
     <div class="gloss"></div>
     <div class="arm" id="ovarm"></div>
   </div>
@@ -398,6 +398,8 @@ function deckInitViz(){
 if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
   scene:document.getElementById('ov'), label:document.getElementById('ovlabel'),
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
+// drag the record to scrub the track; a tap toggles play
+if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
 audioEl.addEventListener('play',()=>{ deckInitViz(); deckSetPlaying(true); });
 audioEl.addEventListener('pause',()=>deckSetPlaying(false));
 audioEl.addEventListener('ended',()=>{

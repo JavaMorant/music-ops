@@ -112,14 +112,14 @@ function ttRun(opts){
     draw(energy);
   }
   function draw(energy){
-    var W=opts.canvas.width, cx=W/2, cy=W/2, R0=W*0.375;
+    var W=opts.canvas.width, cx=W/2, cy=W/2, R0=W*0.36, maxOuter=W*0.475;
     ctx.clearRect(0,0,W,W);
-    if(energy>0.01){var g=ctx.createRadialGradient(cx,cy,R0*0.55,cx,cy,R0*(1.15+energy*0.5));
+    if(energy>0.01){var g=ctx.createRadialGradient(cx,cy,R0*0.55,cx,cy,R0*(1.1+energy*0.45));
       g.addColorStop(0,'rgba(201,162,39,'+(0.08+energy*0.25).toFixed(3)+')'); g.addColorStop(1,'rgba(201,162,39,0)');
-      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,R0*1.7,0,6.2832); ctx.fill();}
-    if(dataArr){var bars=96; ctx.save(); ctx.shadowBlur=W*0.018; ctx.lineCap='round'; ctx.lineWidth=W*0.013;
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,R0*1.35,0,6.2832); ctx.fill();}
+    if(dataArr){var bars=96; ctx.save(); ctx.shadowBlur=W*0.011; ctx.lineCap='round'; ctx.lineWidth=W*0.013;
       for(var i=0;i<bars;i++){var idx=i<bars/2?i:bars-1-i; var v=dataArr[Math.floor(idx/(bars/2)*dataArr.length*0.7)]/255;
-        var len=W*0.014+v*v*W*0.2, a=i/bars*6.2832-1.5708, c=Math.cos(a), s=Math.sin(a);
+        var len=Math.min(W*0.012+v*v*W*0.11, maxOuter-R0), a=i/bars*6.2832-1.5708, c=Math.cos(a), s=Math.sin(a);
         var col='hsl('+(32+idx/(bars/2)*26).toFixed(0)+','+(62+v*30).toFixed(0)+'%,'+(50+v*22).toFixed(0)+'%)';
         ctx.strokeStyle=col; ctx.shadowColor=col;
         ctx.beginPath(); ctx.moveTo(cx+c*R0,cy+s*R0); ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len)); ctx.stroke();}
@@ -131,10 +131,32 @@ function ttRun(opts){
       ctx.globalAlpha=Math.max(0,sp.life); ctx.fillStyle='#ffe79a'; ctx.beginPath(); ctx.arc(sp.x,sp.y,W*0.006,0,6.2832); ctx.fill();}
     ctx.globalAlpha=1; sparks=sparks.filter(function(s){return s.life>0;});
   }
-  function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.375,n=Math.min(10,Math.floor(k*40));
+  function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,n=Math.min(10,Math.floor(k*40));
     for(var j=0;j<n;j++){var a=Math.random()*6.2832, sp=W*0.012*(1+Math.random()*2.5);
       sparks.push({x:cx+Math.cos(a)*R0,y:cy+Math.sin(a)*R0,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1});}}
   frame();
+}
+
+// Scrub the track by dragging the record (DJ-style). A tap (no real drag) calls
+// onTap instead, so the disk still works as a play/pause button.
+function ttScrub(opts){
+  var v=opts.vinyl, a=opts.audio, secPerRev=opts.secPerRev||4, drag=false, started=false, last=0, moved=0, rot=0;
+  function pt(e){return (e.touches&&e.touches[0])?e.touches[0]:e;}
+  function ang(e){var p=pt(e), r=v.getBoundingClientRect();
+    return Math.atan2(p.clientY-(r.top+r.height/2), p.clientX-(r.left+r.width/2));}
+  function curRot(){var m=getComputedStyle(v).transform;
+    if(m&&m.indexOf('matrix')===0){var n=m.slice(7,-1).split(','); return Math.atan2(parseFloat(n[1]),parseFloat(n[0]))*180/Math.PI;} return 0;}
+  function down(e){drag=true; started=false; moved=0; last=ang(e); if(e.cancelable)e.preventDefault();}
+  function move(e){if(!drag)return; var na=ang(e), d=na-last;
+    if(d>Math.PI)d-=6.2832; else if(d<-Math.PI)d+=6.2832; last=na; moved+=Math.abs(d);
+    if(!started){ if(moved<0.04)return; started=true; rot=curRot(); v.style.animation='none'; }  // only grab the disk on a real drag
+    rot+=d*57.2958; v.style.transform='rotate('+rot+'deg)';
+    if(a.duration&&isFinite(a.duration)){a.currentTime=Math.max(0,Math.min(a.duration-0.05, a.currentTime+d/6.2832*secPerRev));}
+    if(e.cancelable)e.preventDefault();}
+  function up(){if(!drag)return; drag=false; if(started){v.style.animation=''; v.style.transform='';}
+    else if(opts.onTap)opts.onTap();}
+  v.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  v.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
 }
 """
 
@@ -173,10 +195,10 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .vinyl .label.cover{background-color:#000;}
   .vinyl .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
     background:#000;z-index:2;box-shadow:0 0 0 0.6vmin #b6911f;}
-  .arm{position:absolute;right:1%;top:1%;width:42%;height:6%;border-radius:3px;
+  .arm{position:absolute;right:2%;top:0;width:47%;height:6%;border-radius:3px;
     background:linear-gradient(#43434f,#23232b);transform-origin:100% 50%;
-    transform:rotate(-34deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);z-index:3;}
-  .arm.on{transform:rotate(-7deg);}
+    transform:rotate(8deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);z-index:3;}
+  .arm.on{transform:rotate(-32deg);}  /* playing: needle swings DOWN onto the grooves */
   .arm:before{content:"";position:absolute;right:-10%;top:-110%;width:26%;aspect-ratio:1;border-radius:50%;
     background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
   .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
@@ -260,7 +282,9 @@ function setPlaying(p){vinyl.classList.toggle('spin',p);arm.classList.toggle('on
 audio.addEventListener('play',()=>{initViz();setPlaying(true);});
 audio.addEventListener('pause',()=>setPlaying(false));
 audio.addEventListener('ended',()=>{cur<TRACKS.length-1?select(cur+1):setPlaying(false);});
-playBtn.onclick=vinyl.onclick=()=>{if(cur<0){select(0);return;}audio.paused?audio.play():audio.pause();};
+function togglePlay(){if(cur<0){select(0);return;}audio.paused?audio.play():audio.pause();}
+playBtn.onclick=togglePlay;
+ttScrub({vinyl:vinyl,audio:audio,secPerRev:4,onTap:togglePlay});
 const reelbtn=document.getElementById('reelbtn');
 reelbtn.onclick=()=>{const on=document.body.classList.toggle('reel');
   reelbtn.textContent=on?'✕ Exit':'⤢ Reel';size();};
