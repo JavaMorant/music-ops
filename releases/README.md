@@ -148,9 +148,13 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
 - ▶ plays the track (range-streamed, so seeking works).
 - **Play pack** opens the spinning-vinyl turntable *inside the app* for the
   currently-filtered tracks — plays them live (streamed, nothing exported), with
-  the cover-art/name label, audio-reactive spectrum, and a ⤢ Reel toggle for a
-  9:16 screen-record. The clean numbering + file copy is reserved for **Download
-  / Build pack**. (Deep-link `?deck` / `?deck&reel` auto-opens it.)
+  the cover-art/name label and a ⤢ Reel toggle for a 9:16 screen-record. The
+  clean numbering + file copy is reserved for **Download / Build pack**.
+  (Deep-link `?deck` / `?deck&reel` auto-opens it.)
+- The turntable is **beat-reactive**: a glowing, frequency-coloured spectrum, a
+  bass-driven halo + sparks, a progress ring, the label pulsing on the kick, and
+  (in reel) the scene shaking to the bass. The same effects run in the exported
+  pack page (one shared module, `/api/turntable.js`).
 - Record **artists/producers** and a **month** per track; filter by month to pull
   up a beat pack.
 - **Download N** zips the currently-filtered tracks (e.g. genre `trap`) into one

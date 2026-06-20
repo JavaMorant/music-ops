@@ -206,6 +206,13 @@ class TestDeck:
         assert d["producer"] == "Dibs" and d["cover"] is None
         assert c.get("/api/cover").status_code == 404  # none configured
 
+    def test_turntable_js_served(self, client):
+        c, _ = client
+        r = c.get("/api/turntable.js")
+        assert r.status_code == 200
+        assert "javascript" in r.headers["content-type"]
+        assert "function ttRun" in r.text  # the shared visualizer module
+
     def test_cover_served_when_configured(self, tmp_path):
         root = tmp_path / "projects"
         tld = root / "Beats" / "Tracks" / "Track List"

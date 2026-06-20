@@ -80,6 +80,65 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Shared turntable visualizer + beat-reactive effects. Lives here as the single
+# source of truth: the exported pack inlines it; the web app serves it at
+# /api/turntable.js. ``ttRun(opts)`` runs one rAF loop that draws a glowing,
+# frequency-coloured mirrored spectrum + a progress ring + a bass-driven halo and
+# sparks, and (in reel mode) pulses the label, breathes, and shakes the scene to
+# the kick. opts = {canvas, audio, getAnalyser, scene, label, reelGet, sparksOn}.
+TURNTABLE_JS = r"""
+function ttRun(opts){
+  var ctx=opts.canvas.getContext('2d'), bassAvg=0, shake=0, sparks=[], dataArr=null;
+  function frame(){
+    requestAnimationFrame(frame);
+    var W=opts.canvas.width; if(!W){return;}
+    var an=opts.getAnalyser(), bass=0, energy=0;
+    if(an){ if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}
+      an.getByteFrequencyData(dataArr);
+      for(var i=0;i<5;i++){bass+=dataArr[i];} bass/=1275;
+      for(var j=0;j<dataArr.length;j++){energy+=dataArr[j];} energy/=dataArr.length*255;
+    }
+    bassAvg=bassAvg*0.9+bass*0.1;
+    var kick=Math.max(0,bass-bassAvg-0.05);
+    if(opts.label){opts.label.style.transform='scale('+(1+Math.min(0.22,kick*1.5)).toFixed(3)+')';}
+    if(kick>0.05){shake=Math.min(9,kick*32); if(opts.sparksOn){spawn(kick);}}
+    shake*=0.8;
+    if(opts.scene){
+      if(opts.reelGet&&opts.reelGet()){
+        var sx=(Math.random()*2-1)*shake, sy=(Math.random()*2-1)*shake;
+        opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.05+Math.min(0.05,energy*0.06)).toFixed(3)+')';
+      } else { opts.scene.style.transform=''; }
+    }
+    draw(energy);
+  }
+  function draw(energy){
+    var W=opts.canvas.width, cx=W/2, cy=W/2, R0=W*0.375;
+    ctx.clearRect(0,0,W,W);
+    if(energy>0.01){var g=ctx.createRadialGradient(cx,cy,R0*0.55,cx,cy,R0*(1.15+energy*0.5));
+      g.addColorStop(0,'rgba(201,162,39,'+(0.08+energy*0.25).toFixed(3)+')'); g.addColorStop(1,'rgba(201,162,39,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,R0*1.7,0,6.2832); ctx.fill();}
+    if(dataArr){var bars=96; ctx.save(); ctx.shadowBlur=W*0.018; ctx.lineCap='round'; ctx.lineWidth=W*0.013;
+      for(var i=0;i<bars;i++){var idx=i<bars/2?i:bars-1-i; var v=dataArr[Math.floor(idx/(bars/2)*dataArr.length*0.7)]/255;
+        var len=W*0.014+v*v*W*0.2, a=i/bars*6.2832-1.5708, c=Math.cos(a), s=Math.sin(a);
+        var col='hsl('+(32+idx/(bars/2)*26).toFixed(0)+','+(62+v*30).toFixed(0)+'%,'+(50+v*22).toFixed(0)+'%)';
+        ctx.strokeStyle=col; ctx.shadowColor=col;
+        ctx.beginPath(); ctx.moveTo(cx+c*R0,cy+s*R0); ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len)); ctx.stroke();}
+      ctx.restore();}
+    if(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration)){var p=opts.audio.currentTime/opts.audio.duration;
+      ctx.save(); ctx.strokeStyle='rgba(201,162,39,.85)'; ctx.lineWidth=W*0.009; ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+p*6.2832); ctx.stroke(); ctx.restore();}
+    for(var k=0;k<sparks.length;k++){var sp=sparks[k]; sp.x+=sp.vx; sp.y+=sp.vy; sp.vx*=0.96; sp.vy*=0.96; sp.life-=0.035;
+      ctx.globalAlpha=Math.max(0,sp.life); ctx.fillStyle='#ffe79a'; ctx.beginPath(); ctx.arc(sp.x,sp.y,W*0.006,0,6.2832); ctx.fill();}
+    ctx.globalAlpha=1; sparks=sparks.filter(function(s){return s.life>0;});
+  }
+  function spawn(k){var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.375,n=Math.min(10,Math.floor(k*40));
+    for(var j=0;j<n;j++){var a=Math.random()*6.2832, sp=W*0.012*(1+Math.random()*2.5);
+      sparks.push({x:cx+Math.cos(a)*R0,y:cy+Math.sin(a)*R0,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1});}}
+  frame();
+}
+"""
+
+
 _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -122,6 +181,14 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     background:radial-gradient(circle at 40% 35%,#3a3a44,#1f1f26);border:1px solid var(--line);}
   .arm:after{content:"";position:absolute;left:-4%;top:-40%;width:14%;aspect-ratio:1;border-radius:2px;
     background:#2a2a32;border:1px solid var(--line);}
+  .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
+    animation:sheen 3.6s ease-in-out infinite;}
+  @keyframes sheen{0%,100%{opacity:.35;}50%{opacity:.85;}}
+  .fx{position:fixed;inset:0;pointer-events:none;z-index:8;
+    background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
+  .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
   .now{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:22px;}
   .play{width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#10100a;
     font-size:19px;cursor:pointer;flex:none;box-shadow:0 6px 18px rgba(201,162,39,.3);}
@@ -153,6 +220,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   <div class="deck" id="deck">
     <canvas id="viz"></canvas>
     <div class="vinyl" id="vinyl">__LABEL_HTML__<div class="hole"></div></div>
+    <div class="gloss"></div>
     <div class="arm" id="arm"></div>
   </div>
   <div class="now">
@@ -163,8 +231,10 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   __CONTACT__
   <footer>Made with releases · serve this folder or drop it on a static host to share</footer>
 </div>
+<div class="fx"></div>
 <audio id="audio"></audio>
 <script>
+__VIZ_JS__
 const TRACKS = __TRACKS__;
 const audio=document.getElementById('audio'),vinyl=document.getElementById('vinyl'),arm=document.getElementById('arm');
 const playBtn=document.getElementById('play'),nt=document.getElementById('nt'),nm=document.getElementById('nm'),list=document.getElementById('list');
@@ -186,7 +256,7 @@ playBtn.onclick=vinyl.onclick=()=>{if(cur<0){select(0);return;}audio.paused?audi
 const reelbtn=document.getElementById('reelbtn');
 reelbtn.onclick=()=>{const on=document.body.classList.toggle('reel');
   reelbtn.textContent=on?'✕ Exit':'⤢ Reel';size();};
-const canvas=document.getElementById('viz'),ctx=canvas.getContext('2d');
+const canvas=document.getElementById('viz');
 function size(){const s=document.getElementById('deck').clientWidth;canvas.width=s*2;canvas.height=s*2;}
 size();addEventListener('resize',size);
 function initViz(){
@@ -195,18 +265,11 @@ function initViz(){
     const src=actx.createMediaElementSource(audio);
     analyser=actx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.8;
     src.connect(analyser);analyser.connect(actx.destination);
-    data=new Uint8Array(analyser.frequencyBinCount);draw();
   }catch(e){/* file:// or unsupported — vinyl still spins, audio still plays */}
 }
-function draw(){requestAnimationFrame(draw);if(!analyser)return;
-  analyser.getByteFrequencyData(data);
-  const W=canvas.width,cx=W/2,cy=W/2,R0=W*0.375,bars=88;
-  ctx.clearRect(0,0,W,W);
-  for(let i=0;i<bars;i++){const v=data[Math.floor(i/bars*data.length)]/255,len=W*0.02+v*W*0.17,
-    a=i/bars*Math.PI*2-Math.PI/2,c=Math.cos(a),s=Math.sin(a);
-    ctx.strokeStyle='hsl('+(44+v*16)+','+(55+v*35)+'%,'+(48+v*24)+'%)';
-    ctx.lineWidth=W*0.011;ctx.beginPath();ctx.moveTo(cx+c*R0,cy+s*R0);ctx.lineTo(cx+c*(R0+len),cy+s*(R0+len));ctx.stroke();}
-}
+ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
+  scene:document.querySelector('.wrap'),label:document.querySelector('#vinyl .label'),
+  reelGet:function(){return document.body.classList.contains('reel');},sparksOn:true});
 </script>
 </body></html>
 """
@@ -236,6 +299,7 @@ def render_index_html(
         "__NBEATS__": str(len(tracks)),
         "__LABEL_HTML__": label_html,
         "__CONTACT__": contact,
+        "__VIZ_JS__": TURNTABLE_JS,
         "__TRACKS__": tracks_json,
     }
     out = _PLAYER_TEMPLATE

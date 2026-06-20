@@ -87,6 +87,15 @@ def test_reel_mode_present(tmp_path):
     assert "classList.toggle('reel')" in idx
 
 
+def test_reactive_effects_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert "function ttRun" in idx                      # shared visualizer inlined
+    assert 'class="gloss"' in idx and 'class="fx"' in idx  # sheen + vignette/grain
+    assert "createRadialGradient" in idx                # the bass halo
+    assert "opts.scene.style.transform" in idx          # the beat-synced screen shake
+
+
 def test_default_label_is_producer_text(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B")], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()

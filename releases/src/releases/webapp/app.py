@@ -137,6 +137,11 @@ def create_app(config: AppConfig) -> FastAPI:
         return {"tracks": tracks, "genres": genres, "months": months,
                 "producer": config.producer, "cover": "/api/cover" if has_cover else None}
 
+    @app.get("/api/turntable.js")
+    def turntable_js():
+        from fastapi.responses import Response
+        return Response(packmod.TURNTABLE_JS, media_type="application/javascript")
+
     @app.get("/api/cover")
     def cover():
         src = config.cover_src  # launch-time path, not client-supplied

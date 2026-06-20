@@ -66,8 +66,8 @@
   .ovhead{width:100%;max-width:560px;display:flex;align-items:center;gap:10px;margin-bottom:8px;}
   .ovtitle{font-weight:600;font-size:15px;letter-spacing:.02em;}
   .ovhead .sp{flex:1;}
-  #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;}
-  #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;}
+  #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;}
+  #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
   #ov canvas{position:absolute;inset:0;width:100%;height:100%;}
   #ov .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
     background:repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 .85%,#191920 .85% 1.7%),
@@ -105,6 +105,14 @@
   ol.ovlist li.active{border-color:var(--accent);background:#1d1d12;}
   ol.ovlist .num{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;}
   ol.ovlist .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
+  #ov .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
+    animation:sheen 3.6s ease-in-out infinite;}
+  @keyframes sheen{0%,100%{opacity:.35;}50%{opacity:.85;}}
+  #ov .fx{position:absolute;inset:0;pointer-events:none;z-index:1;
+    background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
+  #ov .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
   #ov.reel{justify-content:center;}
   #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
   #ov.reel .deck{width:min(88vw,60vh);height:min(88vw,60vh);margin:0 auto 24px;}
@@ -151,6 +159,7 @@
 <div id="toast"></div>
 
 <div id="ov">
+  <div class="fx"></div>
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
@@ -160,6 +169,7 @@
   <div class="deck">
     <canvas id="oviz"></canvas>
     <div class="vinyl" id="ovinyl" onclick="deckTogglePlay()"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
+    <div class="gloss"></div>
     <div class="arm" id="ovarm"></div>
   </div>
   <div class="ovnow">
@@ -172,6 +182,7 @@
 <datalist id="genres"></datalist>
 <datalist id="months"></datalist>
 
+<script src="/api/turntable.js"></script>
 <script>
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label
@@ -364,7 +375,7 @@ function deckSetPlaying(p){
 function closeDeck(){ document.getElementById('ov').classList.remove('show'); }
 function deckReel(){ const on=document.getElementById('ov').classList.toggle('reel');
   document.getElementById('reeltgl').textContent=on?'✕ Exit':'⤢ Reel'; deckSize(); }
-const ocanvas=document.getElementById('oviz'), octx=ocanvas.getContext('2d');
+const ocanvas=document.getElementById('oviz');
 function deckSize(){ const d=document.querySelector('#ov .deck'); if(!d)return; const s=d.clientWidth||320; ocanvas.width=s*2; ocanvas.height=s*2; }
 function deckInitViz(){
   if(dactx){ if(dactx.state==='suspended')dactx.resume(); return; }
@@ -372,17 +383,12 @@ function deckInitViz(){
     const src=dactx.createMediaElementSource(audioEl);
     danalyser=dactx.createAnalyser(); danalyser.fftSize=256; danalyser.smoothingTimeConstant=.8;
     src.connect(danalyser); danalyser.connect(dactx.destination);
-    ddata=new Uint8Array(danalyser.frequencyBinCount); deckDraw();
   }catch(e){/* unsupported — vinyl still spins, audio still plays */}
 }
-function deckDraw(){ requestAnimationFrame(deckDraw); if(!danalyser)return;
-  danalyser.getByteFrequencyData(ddata);
-  const W=ocanvas.width,cx=W/2,cy=W/2,R0=W*0.375,bars=88; octx.clearRect(0,0,W,W);
-  for(let i=0;i<bars;i++){ const v=ddata[Math.floor(i/bars*ddata.length)]/255,len=W*0.02+v*W*0.17,
-    a=i/bars*Math.PI*2-Math.PI/2,c=Math.cos(a),s=Math.sin(a);
-    octx.strokeStyle='hsl('+(44+v*16)+','+(55+v*35)+'%,'+(48+v*24)+'%)';
-    octx.lineWidth=W*0.011; octx.beginPath(); octx.moveTo(cx+c*R0,cy+s*R0); octx.lineTo(cx+c*(R0+len),cy+s*(R0+len)); octx.stroke(); }
-}
+// shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
+if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
+  scene:document.getElementById('ov'), label:document.getElementById('ovlabel'),
+  reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 audioEl.addEventListener('play',()=>{ deckInitViz(); deckSetPlaying(true); });
 audioEl.addEventListener('pause',()=>deckSetPlaying(false));
 audioEl.addEventListener('ended',()=>{
