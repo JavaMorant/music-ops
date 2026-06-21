@@ -167,7 +167,7 @@ function ttRun(opts){
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
       stylusX=(pts[0].x-fxLeft)*sclx; stylusY=(pts[0].y-fxTop)*scly; hasStylus=true;}
-    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.14);  // builds on the build-up; a faint thread keeps rising once it's hot
+    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.14)*(cassette?1.35:1);  // build-up driven; the cassette smokes a little more
       for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff((pts[s].x-fxLeft)*sclx,(pts[s].y-fxTop)*scly,heat);}}
     // a sustained loud/full section = best guess at the chorus/hook -> an EXCESS of
     // particles streaming up from the bottom of the screen (not bursting off the deck)
