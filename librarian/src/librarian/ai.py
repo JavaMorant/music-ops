@@ -280,3 +280,170 @@ def propose_tags(
         return out
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise AIError(f"could not parse AI response: {exc}") from exc
+
+
+# --- genre + crate classification (for the by-genre move) -----------------
+
+# Leaf genre folders — the AI picks exactly one per track. Keep in sync with
+# the move taxonomy the user signed off on (Rap & Dance split; Edits by sound;
+# Pop & R&B split by era).
+LEAF_GENRES = (
+    "UK Drill & New Rap", "Afro Swing", "Grime & UK Classics",
+    "Trap (Melodic)", "Trap (Hard/Rage)",
+    "US Rap (Throwback)", "US Rap (Modern)", "Rap (Other)",
+    "EDM / Big Room", "Tech House / Techno", "Drum & Bass",
+    "Bass / Dubstep", "Trance",
+    "Edits (House)", "Edits (Afro/Amapiano)", "Edits (Jersey/Club)",
+    "Edits (Brazilian/Phonk)", "Edits (Pop/Throwback)",
+    "Pop (pre-2015)", "Pop (2015+)", "R&B (Throwback)", "R&B (Modern/Alt)",
+    "Latin & Brazilian", "UK Garage", "House", "K-Pop", "Afrobeats",
+    "Dancehall", "Funk & Disco", "Afro House", "Amapiano", "Other",
+)
+
+# Overlapping crates the AI can judge by name/feel. Floor Fillers / Popular
+# House / House Chants are *also* set from the play logs downstream — the AI's
+# vote here supplements that, it isn't the sole source.
+CRATES = (
+    "Old Gold", "Floor Fillers", "Popular House", "House Chants",
+    "Background", "Scottish", "Gyalist", "Jungle",
+    "Jazzy House", "Tropical House",
+)
+
+_CLASSIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tracks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "genre": {"type": "string", "enum": list(LEAF_GENRES)},
+                    "crates": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": list(CRATES)},
+                    },
+                    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "note": {"type": "string"},
+                },
+                "required": ["index", "genre", "crates", "confidence", "note"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["tracks"],
+    "additionalProperties": False,
+}
+
+_CLASSIFY_SYSTEM = (
+    "You file a DJ's tracks into ONE genre folder and flag any crates they belong to.\n\n"
+    "Pick exactly one `genre` from the allowed list — the single best home for the file:\n"
+    "  Rap & Hip-Hop: 'UK Drill & New Rap' (UK drill / new-wave UK rap, e.g. esdeekid, "
+    "Central Cee), 'Afro Swing' (UK afro-rap, e.g. NSG, Not3s, J Hus), 'Grime & UK Classics' "
+    "(grime + older UK rap, e.g. Skepta, Wiley), 'Trap (Melodic)' (melodic/mainstream US trap), "
+    "'Trap (Hard/Rage)' (hard 808/rage, e.g. Playboi Carti, Yeat, Ken Carson), "
+    "'US Rap (Throwback)' (pre-2015 US rap, e.g. 50 Cent, Nelly, Dr Dre), 'US Rap (Modern)' "
+    "(2015+ US rap, e.g. Drake, Travis Scott, Kendrick), 'Rap (Other)' (French/Afro/other-region).\n"
+    "  Dance & Electronic: 'EDM / Big Room', 'Tech House / Techno', 'Drum & Bass' (incl. jungle), "
+    "'Bass / Dubstep', 'Trance'.\n"
+    "  'Edits (...)' ONLY when the edit/bootleg/mashup IS the track's identity — file by the "
+    "edit's SOUND: 'Edits (House)', 'Edits (Afro/Amapiano)', 'Edits (Jersey/Club)', "
+    "'Edits (Brazilian/Phonk)', 'Edits (Pop/Throwback)'. A normal official remix files under its "
+    "genre, not here.\n"
+    "  'Pop (pre-2015)' vs 'Pop (2015+)' by release era; 'R&B (Throwback)' (90s/2000s) vs "
+    "'R&B (Modern/Alt)' (2015+, alt / Afro-R&B); plus 'Latin & Brazilian', 'UK Garage', 'House', "
+    "'K-Pop', 'Afrobeats', 'Dancehall' (incl. reggae), 'Funk & Disco', 'Afro House', 'Amapiano', "
+    "and 'Other' (only if truly nothing fits).\n\n"
+    "Then add zero or more `crates` (a track can be in several, or none):\n"
+    "  'Old Gold' — nostalgic singalong throwbacks everyone knows (disco/funk/Motown + 90s-2000s "
+    "party rap/R&B/pop): Boogie Wonderland, September, This Is How We Do It, In Da Club, Hey Ya!. "
+    "Match this FEEL, not a strict year.\n"
+    "  'Floor Fillers' — guaranteed crowd-pleasers that pack a floor.\n"
+    "  'Popular House' — big, widely-recognised house hits.\n"
+    "  'House Chants' — house tracks crowds sing/shout back, e.g. Better Off Alone.\n"
+    "  'Background' — low-energy chill/downtempo/lo-fi/jazzy listening, NOT peak-time.\n"
+    "  'Scottish' — Scottish/Celtic singalongs (Gerry Cinnamon, The Proclaimers, Bits n Pieces).\n"
+    "  'Gyalist' — female-led rap/hype 'for the girls' (Cardi B, Nicki Minaj, Ice Spice, Megan).\n"
+    "  'Jungle' — jungle / ragga-jungle.  'Jazzy House' — jazzy/soulful house.  "
+    "'Tropical House' — tropical house.\n\n"
+    "Only assign a crate when it clearly fits — an empty list is correct for most tracks. Never "
+    "invent a genre or crate outside the allowed lists. Never analyse or output musical key or "
+    "BPM. Give each track a confidence (high/medium/low) and a one-line note. Return exactly one "
+    "entry per track, keyed by the index you were given."
+)
+
+
+@dataclass(frozen=True)
+class ClassifySuggestion:
+    """A per-file classification from Claude: one leaf ``genre`` plus zero or
+    more ``crates`` it belongs to."""
+
+    index: int
+    genre: str
+    crates: tuple
+    confidence: str
+    note: str
+
+
+def _classify_user_prompt(tracks: list[dict]) -> str:
+    lines = ["Classify these tracks:"]
+    for t in tracks:
+        lines.append(f"\nTrack {t['index']}:")
+        lines.append(f"  filename: {t.get('filename', '?')}")
+        lines.append(f"  artist:   {t.get('artist') or '(none)'}")
+        lines.append(f"  title:    {t.get('title') or '(none)'}")
+        lines.append(f"  genre:    {t.get('genre') or '(none)'}")
+    return "\n".join(lines)
+
+
+def classify_tracks(
+    tracks: list[dict],
+    *,
+    client=None,
+    model: str = MODEL,
+) -> list[ClassifySuggestion]:
+    """Ask Claude for one leaf genre + crate flags per track. ``tracks`` is a
+    list of {index, filename, artist, title, genre}. Raises AIError on any
+    failure so the caller degrades cleanly."""
+    if client is None:
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - guarded by is_available()
+            raise AIError("anthropic package not installed") from exc
+        client = anthropic.Anthropic()
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=_tags_max_tokens(len(tracks)),
+            system=_CLASSIFY_SYSTEM,
+            messages=[{"role": "user", "content": _classify_user_prompt(tracks)}],
+            output_config={"format": {"type": "json_schema", "schema": _CLASSIFY_SCHEMA}},
+        )
+    except Exception as exc:
+        raise AIError(f"AI request failed: {exc}") from exc
+
+    text = "".join(
+        b.text for b in response.content if getattr(b, "type", None) == "text"
+    )
+    if not text:
+        raise AIError("AI response had no text content")
+    try:
+        data = json.loads(text)
+        out: list[ClassifySuggestion] = []
+        for t in data["tracks"]:
+            crates = tuple(
+                c for c in t.get("crates", []) if c in CRATES
+            )
+            out.append(
+                ClassifySuggestion(
+                    index=int(t["index"]),
+                    genre=str(t["genre"]),
+                    crates=crates,
+                    confidence=str(t["confidence"]),
+                    note=str(t.get("note", "")),
+                )
+            )
+        return out
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise AIError(f"could not parse AI response: {exc}") from exc
