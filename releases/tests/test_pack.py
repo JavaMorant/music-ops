@@ -171,6 +171,7 @@ def test_cassette_skin_present(tmp_path):
     assert 'class="cassette"' in idx and 'class="reel"' in idx   # the cassette + spinning reels
     assert "cassette-mode" in idx and 'id="skinbtn"' in idx      # toggle to switch skins
     assert "getSkin" in idx                                       # visualizer is skin-aware
+    assert "baseY-len/2" in idx and "played=fxp<=prc" in idx      # mirrored seek-style cassette waveform
 
 
 def test_cover_seeds_visualizer_colour(tmp_path):

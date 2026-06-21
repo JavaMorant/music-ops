@@ -160,7 +160,7 @@ function ttRun(opts){
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
       stylusX=(pts[0].x-fxLeft)*sclx; stylusY=(pts[0].y-fxTop)*scly; hasStylus=true;}
-    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.65,build*6+heat*0.10);  // builds on the build-up; a faint thread keeps rising once it's hot
+    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.14);  // builds on the build-up; a faint thread keeps rising once it's hot
       for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff((pts[s].x-fxLeft)*sclx,(pts[s].y-fxTop)*scly,heat);}}
     // a sustained loud/full section = best guess at the chorus/hook -> an EXCESS of
     // particles streaming up from the bottom of the screen (not bursting off the deck)
@@ -196,14 +196,15 @@ function ttRun(opts){
     var bars=cassette?80:96, half=bars/2, envAmp=playing?0.05:0.14, ringRot=idleT*0.08;
     if(!smoothV||smoothV.length!==bars){smoothV=new Float32Array(bars);}
     ctx.save();ctx.shadowBlur=W*0.011;ctx.lineCap='round';
-    if(cassette){var baseY=W*0.84;ctx.lineWidth=W*0.011;
+    if(cassette){var baseY=W*0.85,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;
+      var prc=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.currentTime/opts.audio.duration:0;
       for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;
         var raw=dataArr?dataArr[Math.floor(idx/half*dataArr.length*0.7)]/255:0;
         var env=envAmp*(0.5+0.5*Math.sin(idleT*1.7+idx*0.5));
         smoothV[i]+=(Math.max(raw,env)-smoothV[i])*0.35;var v=smoothV[i];
-        var x=W*0.08+(i/(bars-1))*W*0.84,len=W*0.01+v*v*W*0.2;
-        var col='hsl('+((hue+idx/half*40)%360).toFixed(0)+','+(72+v*25).toFixed(0)+'%,'+(52+v*20).toFixed(0)+'%)';
-        ctx.strokeStyle=col;ctx.shadowColor=col;ctx.beginPath();ctx.moveTo(x,baseY);ctx.lineTo(x,baseY-len);ctx.stroke();}}
+        var fxp=i/(bars-1),x=clx+fxp*ctw,len=W*0.012+v*v*W*0.16,played=fxp<=prc;  // mirrored seek-style waveform: played part lit, rest dimmed
+        var col=played?'hsl('+((hue+idx/half*46)%360).toFixed(0)+','+(80+v*20).toFixed(0)+'%,'+(56+v*20).toFixed(0)+'%)':'hsla(40,12%,'+(42+v*16).toFixed(0)+'%,.55)';
+        ctx.strokeStyle=col;ctx.shadowColor=played?col:'transparent';ctx.beginPath();ctx.moveTo(x,baseY-len/2);ctx.lineTo(x,baseY+len/2);ctx.stroke();}}
     else{ctx.lineWidth=W*0.013;
       for(var b=0;b<bars;b++){var j2=b<half?b:bars-1-b;
         var raw2=dataArr?dataArr[Math.floor(j2/half*dataArr.length*0.7)]/255:0;
@@ -213,11 +214,10 @@ function ttRun(opts){
         var k2='hsl('+((hue+j2/half*40)%360).toFixed(0)+','+(72+w2*25).toFixed(0)+'%,'+(52+w2*20).toFixed(0)+'%)';
         ctx.strokeStyle=k2;ctx.shadowColor=k2;ctx.beginPath();ctx.moveTo(cx+c2*R0,cy+s2*R0);ctx.lineTo(cx+c2*(R0+l2),cy+s2*(R0+l2));ctx.stroke();}}
     ctx.restore();
-    if(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration)){var pr=opts.audio.currentTime/opts.audio.duration;
+    if(!cassette && opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration)){var pr=opts.audio.currentTime/opts.audio.duration;
       ctx.save();ctx.strokeStyle='hsla('+hue.toFixed(0)+',90%,66%,.9)';ctx.lineCap='round';
-      if(cassette){ctx.lineWidth=W*0.008;ctx.beginPath();ctx.moveTo(W*0.08,W*0.88);ctx.lineTo(W*0.08+pr*W*0.84,W*0.88);ctx.stroke();}
-      else{ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();}
-      ctx.restore();}
+      ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();
+      ctx.restore();}  // cassette progress is shown by the lit portion of its waveform
   }
   // the stylus scorches a red groove into the vinyl as the record spins under it —
   // a charred ring + red-hot line + a bright contact ember, all building with heat.
