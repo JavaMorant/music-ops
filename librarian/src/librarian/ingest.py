@@ -17,7 +17,7 @@ from pathlib import Path
 from . import ai, paths as P, tags as TG
 
 AUDIO = {".mp3", ".m4a", ".flac", ".wav", ".aiff", ".ogg", ".aac", ".opus"}
-FP_LIB = "/tmp/lib-dedupe/fingerprints.jsonl"   # library keeper fingerprints (best-effort backstop)
+FP_LIB = "/tmp/lib-dedupe/library-fingerprints.jsonl"  # current full library (run_lib_fingerprint)
 DEDUPE = "/tmp/lib-dedupe/dedupe-plan.json"
 
 REMAP = {"Trance": "EDM / Big Room", "Bass / Dubstep": "Drum & Bass"}
