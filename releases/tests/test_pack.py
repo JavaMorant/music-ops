@@ -134,8 +134,8 @@ def test_fullscreen_particles_and_shake(tmp_path):
 def test_brake_heat_and_smoke_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
-    # reel hubs heat up like brake discs; full redness by the halfway point
-    assert "--heat" in idx and "heat=Math.min(1,pr*2)" in idx
+    # reel hubs heat up like brake discs; full redness by ~a third of the way in
+    assert "--heat" in idx and "heat=Math.min(1,pr*3)" in idx
     assert "color-mix(in srgb" in idx                            # the hub tints red with heat
     assert "setProperty('--heat'" in idx
     # smoke rises from the hot reels / the stylus, denser + redder over time
@@ -149,9 +149,17 @@ def test_buildup_smoke_and_burnt_trail(tmp_path):
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
     assert "energy-eLong*1.05" in idx and "build*6" in idx       # smoke starts when the build-up starts
     assert "if(eLong===0&&energy>0)eLong=energy" in idx          # ...and the intro isn't mistaken for one long build-up
-    assert "r:ref*0.006" in idx                                  # smoke begins as a thin wisp
+    assert "r:ref*0.003" in idx and "Math.sin(age*9" in idx      # thin, wavering match-like smoke threads
     assert "charred groove" in idx                               # the stylus scorches the vinyl
-    assert "ca=stylusAng" in idx                                 # the ember tracks the real stylus angle (lines up with the smoke)
+    assert "hasStylus?stylusX" in idx                            # the red contact circle sits at the stylus tip on the vinyl
+
+
+def test_chorus_particle_burst(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert "eMid+=(energy-eMid)" in idx                          # smoothed section energy
+    assert "var chorus=Math.min(1" in idx                        # loud/full sections = best guess at the chorus
+    assert "chorus*10" in idx and "sparks.length<340" in idx     # a large abundance of particles, capped
 
 
 def test_cassette_skin_present(tmp_path):

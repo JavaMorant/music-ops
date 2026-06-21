@@ -89,9 +89,9 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
 TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
-  var bassAvg=0, eLong=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
+  var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
-  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, curHeat=0, stylusAng=-0.7;  // particle field: full-screen size + origin, record centre (screen px), record scale, heat, stylus angle
+  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + heat + live stylus contact point (fx px)
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
     if(d){if(mx===r)h=((g-b)/d+6)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}return h;}
@@ -150,26 +150,35 @@ function ttRun(opts){
     // brake-disc heat: builds toward the end of the track; drives the cassette
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
-    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*2);  // full redness by the halfway point
+    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*3);  // full redness by about a third of the way in
     curHeat=heat;
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
     if(opts.scene)opts.scene.style.setProperty('--heat',heat.toFixed(3));
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
-    if(!cassette && playing && pts.length)  // ember tracks the real stylus angle, so it lines up with the smoke + tonearm
-      stylusAng=Math.atan2((pts[0].y-fxTop)-rcy,(pts[0].x-fxLeft)-rcx);
-    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.04);  // smoke kicks in on the build-up
+    if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
+      stylusX=pts[0].x-fxLeft; stylusY=pts[0].y-fxTop; hasStylus=true;}
+    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.65,build*6+heat*0.10);  // builds on the build-up; a faint thread keeps rising once it's hot
       for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff(pts[s].x-fxLeft,pts[s].y-fxTop,heat);}}
+    // a sustained loud/full section = best guess at the chorus/hook -> a large abundance of particles
+    eMid+=(energy-eMid)*0.06;  // ~0.7s smoothing so transient kicks don't count, only sustained sections
+    var chorus=Math.min(1,Math.max(0,(eMid-0.25)/0.30));
+    if(playing && opts.sparksOn && chorus>0.05){
+      var burst=Math.floor(chorus*10);
+      for(var ci=0;ci<burst && sparks.length<340;ci++){var ca2=Math.random()*6.2832,sp2=fxw*0.004*(1+Math.random()*4.5);
+        sparks.push({x:rcx+Math.cos(ca2)*ref*0.2,y:rcy+Math.sin(ca2)*ref*0.2,vx:Math.cos(ca2)*sp2,vy:Math.sin(ca2)*sp2-fxh*0.0012,life:1,h:(hue+Math.random()*140)%360,big:Math.random()<0.35});}
+      if(embers.length<150 && Math.random()<chorus*0.9)
+        embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0005,vy:-(fxh*0.0016)*(0.6+Math.random()*1.3),life:1,sz:ref*(0.004+Math.random()*0.012)});}
     draw(energy,kick,playing,breath);
     drawFX();  // particles, on the full-screen field
   }
   function ambient(energy){var cap=10+Math.floor(energy*60), n=1+Math.floor(energy*4);
     for(var q=0;q<n;q++){ if(embers.length<cap && Math.random()<0.5){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
-  // a smoke puff rising from a hot reel / the stylus; starts as a thin wisp and
-  // billows as it rises (slow growth while young, fast once old); hotter = redder
-  function puff(x,y,heat){if(smoke.length>84)return;
-    smoke.push({x:x+(Math.random()*2-1)*ref*0.008,y:y,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0012)*(0.7+Math.random()*0.8),r:ref*0.006,life:1,heat:heat});}
+  // a thin thread of smoke like the wisp off a match: rises in a wavering line and
+  // barely widens; hotter = redder
+  function puff(x,y,heat){if(smoke.length>120)return;
+    smoke.push({bx:x,x:x,y:y,vy:-(fxh*0.0012)*(0.8+Math.random()*0.5),r:ref*0.003,life:1,heat:heat,ph:Math.random()*6.2832,amp:ref*(0.01+Math.random()*0.016)});}
   function draw(energy,kick,playing,breath){
     var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,maxOuter=W*0.475;
     ctx.clearRect(0,0,W,W);
@@ -214,7 +223,10 @@ function ttRun(opts){
   // Drawn on the full-screen field (above the opaque record) so it's actually visible.
   function drawTrail(c){var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     if(cassette||curHeat<=0.001)return;
-    var h=curHeat, rr=ref*0.33;
+    var h=curHeat;
+    // groove ring = the circle the stylus traces; it passes through the contact point
+    var rr=hasStylus?Math.sqrt((stylusX-rcx)*(stylusX-rcx)+(stylusY-rcy)*(stylusY-rcy)):ref*0.33;
+    rr=Math.max(ref*0.12,Math.min(rr,ref*0.42));
     c.save();
     c.globalAlpha=Math.min(0.5,h*0.5);c.strokeStyle='rgba(30,7,3,1)';c.lineWidth=ref*0.05*h;  // charred groove
     c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
@@ -222,10 +234,11 @@ function ttRun(opts){
     c.strokeStyle='hsl('+(16+h*8).toFixed(0)+',100%,'+(46+h*16).toFixed(0)+'%)';c.lineWidth=ref*0.012*(0.6+h);
     c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
     c.restore();
-    var ca=stylusAng,sxp=rcx+Math.cos(ca)*rr,syp=rcy+Math.sin(ca)*rr,hr=ref*0.12*(0.45+h);  // hot contact ember on the groove at the stylus angle
+    // the red contact circle sits at the end of the stylus, on the vinyl
+    var sxp=hasStylus?stylusX:rcx+Math.cos(stylusAng)*rr, syp=hasStylus?stylusY:rcy+Math.sin(stylusAng)*rr, hr=ref*0.12*(0.45+h);
     var hg=c.createRadialGradient(sxp,syp,0,sxp,syp,hr);
     hg.addColorStop(0,'rgba(255,232,190,'+Math.min(0.95,0.35+h*0.6).toFixed(3)+')');
-    hg.addColorStop(0.4,'rgba(255,80,0,'+Math.min(0.8,h*0.8).toFixed(3)+')');
+    hg.addColorStop(0.4,'rgba(255,80,0,'+Math.min(0.85,h*0.85).toFixed(3)+')');
     hg.addColorStop(1,'rgba(255,40,0,0)');
     c.fillStyle=hg;c.beginPath();c.arc(sxp,syp,hr,0,6.2832);c.fill();c.globalAlpha=1;}
   // particles live on a full-screen canvas (opts.fxCanvas) so the burst, embers and
@@ -235,12 +248,13 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
-    for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.x+=pf.vx;pf.y+=pf.vy;pf.vy*=0.99;pf.r+=fxw*0.0006+(1-pf.life)*fxw*0.0024;pf.life-=0.009;
+    for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.y+=pf.vy;pf.vy*=0.997;
+      var age=1-pf.life;pf.x=pf.bx+Math.sin(age*9+pf.ph)*pf.amp*age;pf.r=ref*0.003+age*ref*0.013;pf.life-=0.006;
       if(pf.life<=0){smoke.splice(z,1);continue;}
-      var rr=Math.floor(118+pf.heat*137),gn=Math.floor(118-pf.heat*70),bb=Math.floor(118-pf.heat*96);
+      var sr=Math.floor(120+pf.heat*135),sg=Math.floor(120-pf.heat*72),sb=Math.floor(120-pf.heat*96);
       var gg=c.createRadialGradient(pf.x,pf.y,0,pf.x,pf.y,pf.r);
-      gg.addColorStop(0,'rgba('+rr+','+gn+','+bb+','+(pf.life*0.2).toFixed(3)+')');
-      gg.addColorStop(1,'rgba('+rr+','+gn+','+bb+',0)');
+      gg.addColorStop(0,'rgba('+sr+','+sg+','+sb+','+(pf.life*0.2).toFixed(3)+')');
+      gg.addColorStop(1,'rgba('+sr+','+sg+','+sb+',0)');
       c.fillStyle=gg;c.beginPath();c.arc(pf.x,pf.y,pf.r,0,6.2832);c.fill();}
     c.globalAlpha=1;
     for(e=embers.length-1;e>=0;e--){var p=embers[e];p.x+=p.vx;p.y+=p.vy;p.life-=0.004;
