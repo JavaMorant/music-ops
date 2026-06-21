@@ -76,6 +76,8 @@ class Project:
     master_state: Optional[str] = None  # 'mastered' | 'unmastered' (None ⇒ unmastered)
     artists: Optional[str] = None       # collaborators / producers worked with (free text)
     pack_month: Optional[str] = None    # month made / sent (e.g. "2026-06"), for beat-pack tracking
+    notes: Optional[str] = None         # free-text notes about the beat
+    suitable_for: Optional[str] = None  # rapper/artist names this beat suits (free text)
 
     @property
     def effective_stage(self) -> str:

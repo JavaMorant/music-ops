@@ -75,6 +75,17 @@ class TestTracks:
         # over-long artists rejected
         assert c.post("/api/mark", json={"id": tid, "artists": "x" * 500}).status_code == 400
 
+    def test_mark_notes_and_suitable_for(self, client):
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        t = c.post("/api/mark", json={"id": tid, "notes": "open for placement",
+                                      "suitable_for": "Drake, Travis Scott"}).json()
+        assert t["notes"] == "open for placement"
+        assert t["suitable_for"] == "Drake, Travis Scott"
+        # over-long / control-char values rejected
+        assert c.post("/api/mark", json={"id": tid, "suitable_for": "x" * 300}).status_code == 400
+        assert c.post("/api/mark", json={"id": tid, "notes": "a\nb"}).status_code == 400
+
     def test_audio_streams_and_bad_id_404s(self, client):
         c, _ = client
         tid = _tracks(c)[0]["id"]
@@ -193,6 +204,18 @@ class TestPack:
         assert any(n.endswith("/tracklist.txt") for n in names)
         assert any(n.endswith(".mp3") and " - " in n for n in names)  # clean-named audio
         assert all(n.startswith("Trap Pack June/") for n in names)  # one top folder
+
+    def test_pack_includes_suitable_for_and_notes(self, client):
+        import io, zipfile
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        c.post("/api/mark", json={"id": tid, "genre": "trap",
+                                  "suitable_for": "Drake", "notes": "exclusive avail"})
+        r = c.get("/api/pack?genre=trap&name=Trap Pack")
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        tl = next(n for n in zf.namelist() if n.endswith("tracklist.txt"))
+        text = zf.read(tl).decode()
+        assert "suitable for: Drake" in text and "note: exclusive avail" in text
 
     def test_pack_no_match_404(self, client):
         c, _ = client

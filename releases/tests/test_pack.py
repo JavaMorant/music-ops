@@ -8,11 +8,13 @@ from pathlib import Path
 from releases import pack as packmod
 
 
-def _track(tmp_path, fname, title, bpm=None, key=None, genre="unknown", artists=""):
+def _track(tmp_path, fname, title, bpm=None, key=None, genre="unknown", artists="",
+           suitable_for="", notes=""):
     src = tmp_path / "lib" / fname
     src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"\xff\xfb\x90\x00" + b"audio")
-    return packmod.PackTrack(src=src, title=title, bpm=bpm, key=key, genre=genre, artists=artists)
+    return packmod.PackTrack(src=src, title=title, bpm=bpm, key=key, genre=genre,
+                             artists=artists, suitable_for=suitable_for, notes=notes)
 
 
 def _meta(name="Trap Pack"):
@@ -45,6 +47,52 @@ def test_build_pack_writes_audio_player_and_tracklist(tmp_path):
     assert "01 - Encara [129 F].mp3" in idx  # the audio is wired into the player
     tl = (out / "tracklist.txt").read_text()
     assert "Encara" in tl and "150 BPM" in tl and "feat. Jah" in tl
+
+
+def test_suitable_for_and_notes_in_tracklist_and_player(tmp_path):
+    t = _track(tmp_path, "x.mp3", "Encara", bpm=140, key="Fm", genre="trap",
+               suitable_for="Drake, Travis Scott", notes="open for placement")
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([t], out, _meta())
+    tl = (out / "tracklist.txt").read_text()
+    assert "suitable for: Drake, Travis Scott" in tl
+    assert "note: open for placement" in tl
+    idx = (out / "index.html").read_text()
+    assert "Drake, Travis Scott" in idx        # suitable_for wired into the player
+    assert '"sf":' in idx and "for '+t.sf" in idx
+    assert "open for placement" in idx         # notes wired into the player too
+    assert '"n":' in idx and "'.nt2'" in idx
+
+
+def test_zip_pack_is_one_top_folder_ready_to_send(tmp_path):
+    import zipfile
+    out = tmp_path / "out" / "Trap Pack"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    z = tmp_path / "Trap Pack.zip"
+    assert packmod.zip_pack(out, z) == z and z.exists()
+    with zipfile.ZipFile(z) as zf:
+        names = zf.namelist()
+    assert names and all(n.startswith("Trap Pack/") for n in names)  # single named top folder
+    assert any(n.endswith("/index.html") for n in names)
+    assert any(n.endswith("/tracklist.txt") for n in names)
+
+
+def test_clean_rebuild_drops_stale_beats_from_zip(tmp_path):
+    """Re-running a pack into the same folder with fewer tracks must not ship the
+    old beats in the zip (the auto-zip regression the reviewer caught)."""
+    import zipfile
+    out = tmp_path / "out" / "Pack"
+    packmod.build_pack([_track(tmp_path, "a.mp3", "Alpha", bpm=140),
+                        _track(tmp_path, "b.mp3", "Beta", bpm=141)], out, _meta())
+    assert (out / "01 - Alpha [140].mp3").exists()
+    # rebuild with a single, different track + clean
+    packmod.build_pack([_track(tmp_path, "c.mp3", "Gamma", bpm=142)], out, _meta(), clean=True)
+    mp3s = sorted(p.name for p in out.glob("*.mp3"))
+    assert mp3s == ["01 - Gamma [142].mp3"]    # Alpha/Beta gone, not just unlinked
+    z = tmp_path / "Pack.zip"
+    packmod.zip_pack(out, z)
+    with zipfile.ZipFile(z) as zf:
+        assert sum(n.endswith(".mp3") for n in zf.namelist()) == 1
 
 
 def test_build_pack_does_not_touch_sources(tmp_path):

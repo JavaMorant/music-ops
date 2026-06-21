@@ -17,6 +17,7 @@ import html
 import json
 import re
 import shutil
+import zipfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -29,7 +30,9 @@ class PackTrack:
     bpm: int | None
     key: str | None
     genre: str
-    artists: str        # collaborators ("" if none)
+    artists: str          # collaborators ("" if none)
+    suitable_for: str = ""  # rapper/artist names this beat suits ("" if none)
+    notes: str = ""         # free-text note about the beat ("" if none)
 
 
 @dataclass
@@ -75,6 +78,10 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
     for i, t in enumerate(tracks, 1):
         info = _meta_str(t)
         lines.append(f"{i:>2}. {t.title}" + (f"   ({info})" if info else ""))
+        if t.suitable_for:
+            lines.append(f"      suitable for: {t.suitable_for}")
+        if t.notes:
+            lines.append(f"      note: {t.notes}")
     if meta.contact:
         lines += ["", f"Contact: {meta.contact}"]
     return "\n".join(lines) + "\n"
@@ -401,12 +408,18 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     box-shadow:0 0 8px var(--accent);animation:blink 1s ease-in-out infinite;}
   @keyframes blink{0%,100%{opacity:.2;transform:scale(.8);}45%{opacity:1;transform:scale(1.15);}}
   ol.list{list-style:none;margin:0;padding:0;text-align:left;}
-  ol.list li{display:flex;gap:11px;align-items:baseline;padding:11px 13px;border:1px solid var(--line);
+  ol.list li{display:flex;gap:11px;align-items:center;padding:11px 13px;border:1px solid var(--line);
     border-radius:9px;margin-bottom:9px;cursor:pointer;background:var(--panel);}
   ol.list li:hover{border-color:#4a4a55;}
   ol.list li.active{border-color:var(--accent);background:#1d1d12;}
   ol.list .num{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;}
+  ol.list .til{display:flex;flex-direction:column;gap:2px;min-width:0;}
   ol.list .ti{font-weight:500;}
+  ol.list .sf{color:var(--accent);font-size:11px;font-weight:600;letter-spacing:.02em;}
+  ol.list .sf:empty{display:none;}
+  ol.list .nt2{color:var(--dim);font-size:11px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  ol.list .nt2:empty{display:none;}
   ol.list .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
   .contact{color:var(--dim);margin-top:24px;}
   footer{color:var(--dim);font-size:12px;margin-top:30px;}
@@ -455,9 +468,11 @@ const audio=document.getElementById('audio'),vinyl=document.getElementById('viny
 const playBtn=document.getElementById('play'),nt=document.getElementById('nt'),nm=document.getElementById('nm'),list=document.getElementById('list');
 let cur=-1,actx,analyser,data;
 TRACKS.forEach((t,i)=>{const li=document.createElement('li');
-  li.innerHTML='<span class="num"></span><span class="ti"></span><span class="me"></span>';
+  li.innerHTML='<span class="num"></span><span class="til"><span class="ti"></span><span class="sf"></span><span class="nt2"></span></span><span class="me"></span>';
   li.querySelector('.num').textContent=String(i+1).padStart(2,'0');
   li.querySelector('.ti').textContent=t.t; li.querySelector('.me').textContent=t.m;
+  if(t.sf)li.querySelector('.sf').textContent='▸ for '+t.sf;
+  if(t.n)li.querySelector('.nt2').textContent=t.n;
   li.onclick=()=>select(i); list.appendChild(li);});
 function select(i){cur=i;const t=TRACKS[i];audio.src=encodeURI(t.f);
   nt.textContent=t.t;nm.textContent=t.m;
@@ -510,7 +525,8 @@ ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
 def render_index_html(
     tracks: list[PackTrack], meta: PackMeta, filenames: list[str], cover: str | None = None
 ) -> str:
-    items = [{"t": t.title, "m": _meta_str(t), "f": fn, "b": t.bpm or 0, "g": t.genre}
+    items = [{"t": t.title, "m": _meta_str(t), "f": fn, "b": t.bpm or 0, "g": t.genre,
+              "sf": t.suitable_for, "n": t.notes}
              for t, fn in zip(tracks, filenames)]
     # JSON for the <script> context: escape <, >, & so a title can't break out of it.
     tracks_json = (
@@ -554,12 +570,18 @@ def is_image(path: Path) -> bool:
 
 
 def build_pack(
-    tracks: list[PackTrack], out_dir: Path, meta: PackMeta, cover_src: Path | None = None
+    tracks: list[PackTrack], out_dir: Path, meta: PackMeta, cover_src: Path | None = None,
+    clean: bool = False,
 ) -> list[str]:
     """Write the pack into ``out_dir`` (created): clean-named audio copies +
     index.html + tracklist.txt. ``cover_src``, if an image, is copied in as the
     vinyl-label cover art. Returns the list of audio filenames written. Read-only
-    on the sources (copy only)."""
+    on the sources (copy only).
+
+    If ``clean``, an existing ``out_dir`` is wiped first so a rebuilt pack never
+    carries stale beats from a previous run (a re-zip would otherwise ship them)."""
+    if clean and out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     filenames: list[str] = []
     used: dict[str, int] = {}
@@ -582,3 +604,18 @@ def build_pack(
     )
     (out_dir / "tracklist.txt").write_text(render_tracklist_txt(tracks, meta), encoding="utf-8")
     return filenames
+
+
+def zip_pack(folder: Path, zip_path: Path) -> Path:
+    """Zip a built pack ``folder`` into ``zip_path`` with the folder itself as the
+    single top-level entry, so it extracts cleanly to one named folder. Stored
+    (no deflate) since the audio is already compressed. Returns ``zip_path``.
+    Arc names are sanitised so a file named with a separator can't escape on
+    extraction (zip-slip)."""
+    top = _SEP.sub("_", folder.name) or "pack"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+        for f in sorted(folder.rglob("*")):
+            if f.is_file():
+                rel = "/".join(_SEP.sub("_", part) for part in f.relative_to(folder).parts)
+                z.write(f, arcname=f"{top}/{rel}")
+    return zip_path

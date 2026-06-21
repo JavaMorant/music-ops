@@ -281,10 +281,13 @@ def mark(
     master: Annotated[Optional[str], typer.Option("--master", help="mastered | unmastered")] = None,
     artists: Annotated[Optional[str], typer.Option("--artists", help="Artists / producers worked with")] = None,
     month: Annotated[Optional[str], typer.Option("--month", help="Month made / sent, e.g. 2026-06")] = None,
+    notes: Annotated[Optional[str], typer.Option("--notes", help="Free-text notes about the beat")] = None,
+    suitable_for: Annotated[Optional[str], typer.Option("--suitable-for", help="Rapper/artist names this beat suits")] = None,
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
-    """Mark a project's genre / mix / master / artists / month in the index
-    (drives `organize tracklist` + the web app). Index-only — never touches files."""
+    """Mark a project's genre / mix / master / artists / month / notes / suitable-for
+    in the index (drives `organize tracklist` + the web app + packs). Index-only —
+    never touches files."""
     from .model import MASTER_STATES, MIX_STATES
     if genre is not None and (not genre.strip() or "/" in genre or "\\" in genre):
         typer.secho("--genre must be a non-empty name without slashes.", fg="red", err=True)
@@ -295,12 +298,13 @@ def mark(
     if master is not None and master not in MASTER_STATES:
         typer.secho(f"--master must be one of {MASTER_STATES}", fg="red", err=True)
         raise typer.Exit(1)
-    if all(x is None for x in (genre, mix, master, artists, month)):
-        typer.secho("Nothing to set — pass --genre, --mix, --master, --artists and/or --month.", fg="red", err=True)
+    if all(x is None for x in (genre, mix, master, artists, month, notes, suitable_for)):
+        typer.secho("Nothing to set — pass --genre, --mix, --master, --artists, --month, --notes and/or --suitable-for.", fg="red", err=True)
         raise typer.Exit(1)
     conn = _open(db)
     p = _resolve_project_or_exit(conn, project)
-    dbmod.set_marks(conn, p.path, genre=genre, mix=mix, master=master, artists=artists, month=month)
+    dbmod.set_marks(conn, p.path, genre=genre, mix=mix, master=master, artists=artists,
+                    month=month, notes=notes, suitable_for=suitable_for)
     typer.secho(
         f"{p.name}: genre={genre or p.effective_genre}  mix={mix or p.effective_mix}  "
         f"master={master or p.effective_master}"
@@ -913,16 +917,25 @@ def pack_cmd(
         if month and (p.pack_month or "") != month:
             continue
         tracks.append(packmod.PackTrack(src=path, title=p.name, bpm=p.bpm, key=p.key,
-                                        genre=p.effective_genre, artists=p.artists or ""))
+                                        genre=p.effective_genre, artists=p.artists or "",
+                                        suitable_for=p.suitable_for or "", notes=p.notes or ""))
     if not tracks:
         typer.secho("No matching tracks for the pack.", fg="red", err=True)
         raise typer.Exit(1)
     from datetime import date as _date
     meta = packmod.PackMeta(name=name, producer=artist, made_on=_date.today().isoformat(), contact=contact)
     dest = out.resolve() / packmod.safe_filename(name)
-    packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None)
+    # Rebuild cleanly so a re-zip never ships stale beats — but never delete a
+    # folder we didn't build (refuse if it exists and isn't a prior pack).
+    if dest.exists() and not (dest / "index.html").exists() and not (dest / "tracklist.txt").exists():
+        typer.secho(f"{dest} exists and isn't a pack folder — pick another name or --out.", fg="red", err=True)
+        raise typer.Exit(1)
+    packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None, clean=True)
+    zpath = dest.with_name(dest.name + ".zip")
+    packmod.zip_pack(dest, zpath)  # auto-zip — ready to send out
     typer.secho(f"Built pack: {dest}  ({len(tracks)} beats)", fg="green")
-    typer.echo("Send it: zip + WeTransfer/Drive, or drag the folder to Netlify Drop for a player link.")
+    typer.secho(f"Ready to send: {zpath}", fg="green")
+    typer.echo("Email the .zip, or drag the folder to Netlify Drop for an instant player link.")
 
 
 @organize_app.command("runs")

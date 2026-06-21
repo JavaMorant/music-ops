@@ -41,6 +41,8 @@ class MarkBody(BaseModel):
     master: str | None = None
     artists: str | None = None
     month: str | None = None
+    notes: str | None = None
+    suitable_for: str | None = None
 
 
 class ApplyBody(BaseModel):
@@ -100,6 +102,8 @@ def create_app(config: AppConfig) -> FastAPI:
             "master": p.effective_master,
             "artists": p.artists or "",
             "month": p.pack_month or "",
+            "notes": p.notes or "",
+            "suitable_for": p.suitable_for or "",
             "bpm": p.bpm,
             "key": p.key,
             "taggable": path.suffix.lower() == ".mp3",
@@ -197,12 +201,14 @@ def create_app(config: AppConfig) -> FastAPI:
             raise HTTPException(400, f"mix must be one of {MIX_STATES}")
         if body.master is not None and body.master not in MASTER_STATES:
             raise HTTPException(400, f"master must be one of {MASTER_STATES}")
-        for field_name, val, cap in (("artists", body.artists, 200), ("month", body.month, 40)):
+        for field_name, val, cap in (("artists", body.artists, 200), ("month", body.month, 40),
+                                     ("suitable_for", body.suitable_for, 200), ("notes", body.notes, 400)):
             if val is not None and (len(val) > cap or any(ord(ch) < 32 for ch in val)):
                 raise HTTPException(400, f"{field_name} too long or has control characters")
         genre = body.genre.strip() if body.genre is not None else None
         dbmod.set_marks(c, abspath, genre=genre, mix=body.mix, master=body.master,
-                        artists=body.artists, month=body.month)
+                        artists=body.artists, month=body.month,
+                        notes=body.notes, suitable_for=body.suitable_for)
         rows = c.execute("SELECT * FROM projects WHERE path = ?", (abspath,)).fetchall()
         if not rows:
             raise HTTPException(404, "track not in index")
@@ -333,7 +339,8 @@ def create_app(config: AppConfig) -> FastAPI:
         pack_name = (name or genre or "Beat Pack").strip()[:80] or "Beat Pack"
         tracks = [
             packmod.PackTrack(src=Path(p.path), title=p.name, bpm=p.bpm, key=p.key,
-                              genre=p.effective_genre, artists=p.artists or "")
+                              genre=p.effective_genre, artists=p.artists or "",
+                              suitable_for=p.suitable_for or "", notes=p.notes or "")
             for p in projs
         ]
         meta = packmod.PackMeta(name=pack_name, producer=config.producer,
@@ -345,10 +352,7 @@ def create_app(config: AppConfig) -> FastAPI:
         try:
             root = Path(workdir) / folder
             packmod.build_pack(tracks, root, meta, cover_src=config.cover_src)
-            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
-                for f in sorted(root.rglob("*")):
-                    if f.is_file():
-                        z.write(f, arcname=f"{folder}/{f.relative_to(root).as_posix()}")
+            packmod.zip_pack(root, Path(zpath))
         except Exception:
             if os.path.exists(zpath):
                 os.unlink(zpath)

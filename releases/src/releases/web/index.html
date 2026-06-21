@@ -189,7 +189,8 @@
 <table>
   <thead><tr>
     <th></th><th>Track</th><th>BPM / Key</th><th>Genre</th>
-    <th>Mix</th><th>Master</th><th>Artists</th><th>Month</th><th>Location</th>
+    <th>Mix</th><th>Master</th><th>Artists</th><th>Month</th>
+    <th>Suitable for</th><th>Notes</th><th>Location</th>
   </tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -232,6 +233,7 @@
 
 <datalist id="genres"></datalist>
 <datalist id="months"></datalist>
+<datalist id="rappers"></datalist>
 
 <script src="/api/turntable.js"></script>
 <script>
@@ -263,7 +265,19 @@ async function loadTracks() {
   const mf = document.getElementById('mfilter'), mcur = mf.value;
   mf.innerHTML = '<option value="">all</option>' + MONTHS.map(m=>`<option>${m}</option>`).join('');
   mf.value = mcur;
+  updateRappers();
   render();
+}
+
+function updateRappers() {
+  const set = new Set();
+  TRACKS.forEach(t => {
+    const s = (t.suitable_for || '').trim(); if (!s) return;
+    set.add(s);  // the whole combo, e.g. "Drake, Travis Scott"
+    s.split(',').map(x => x.trim()).filter(Boolean).forEach(n => set.add(n));  // and each name
+  });
+  document.getElementById('rappers').innerHTML =
+    [...set].sort().map(n => `<option value="${esc(n)}">`).join('');
 }
 
 function render() {
@@ -336,6 +350,10 @@ function rowHtml(t) {
          onchange="setText('${t.id}','artists',this.value)"></td>
     <td><input class="ginput" list="months" style="width:88px" value="${esc(t.month)}" placeholder="—"
          onchange="setText('${t.id}','month',this.value)"></td>
+    <td><input class="ginput" list="rappers" style="width:150px" value="${esc(t.suitable_for)}" placeholder="rappers…"
+         onchange="setText('${t.id}','suitable_for',this.value)"></td>
+    <td><input class="ginput" style="width:170px" value="${esc(t.notes)}" placeholder="—"
+         onchange="setText('${t.id}','notes',this.value)"></td>
     <td>${loc}</td>
   </tr>`;
 }
@@ -348,6 +366,7 @@ function patch(updated) {
   if (updated.genre!=='unknown' && !GENRES.includes(updated.genre)) { GENRES.push(updated.genre); GENRES.sort(); listsChanged = true; }
   if (updated.month && !MONTHS.includes(updated.month)) { MONTHS.push(updated.month); MONTHS.sort().reverse(); listsChanged = true; }
   if (listsChanged) refreshFilters();
+  updateRappers();
   render();
 }
 function refreshFilters() {

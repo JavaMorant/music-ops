@@ -98,7 +98,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Per-project marks (genre override + mix/master state) set via `mark`.
     # Like stage_manual, these are user state preserved across re-scans.
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
-    for col in ("genre_manual", "mix_state", "master_state", "artists", "pack_month"):
+    for col in ("genre_manual", "mix_state", "master_state", "artists", "pack_month",
+                "notes", "suitable_for"):
         if col not in pcols:
             conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT")
     conn.commit()
@@ -122,6 +123,8 @@ def _row_to_project(r: sqlite3.Row) -> Project:
         master_state=r["master_state"] if "master_state" in r.keys() else None,
         artists=r["artists"] if "artists" in r.keys() else None,
         pack_month=r["pack_month"] if "pack_month" in r.keys() else None,
+        notes=r["notes"] if "notes" in r.keys() else None,
+        suitable_for=r["suitable_for"] if "suitable_for" in r.keys() else None,
     )
 
 
@@ -201,9 +204,11 @@ def set_marks(
     master: str | None = None,
     artists: str | None = None,
     month: str | None = None,
+    notes: str | None = None,
+    suitable_for: str | None = None,
 ) -> None:
     """Set per-project marks (only the ones provided). An empty string clears a
-    free-text mark (artists/month). Index-only."""
+    free-text mark (artists/month/notes/suitable_for). Index-only."""
     sets, vals = [], []
     if genre is not None:
         sets.append("genre_manual = ?"); vals.append(genre)
@@ -215,6 +220,10 @@ def set_marks(
         sets.append("artists = ?"); vals.append(artists or None)
     if month is not None:
         sets.append("pack_month = ?"); vals.append(month or None)
+    if notes is not None:
+        sets.append("notes = ?"); vals.append(notes or None)
+    if suitable_for is not None:
+        sets.append("suitable_for = ?"); vals.append(suitable_for or None)
     if not sets:
         return
     vals.append(path)
