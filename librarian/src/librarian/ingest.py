@@ -134,7 +134,7 @@ def apply_ingest(library_root: Path, plan: dict) -> dict:
     """Execute a plan from plan_ingest: file survivors, quarantine dupes, refresh crates."""
     quar_dir = library_root.parent / "_quarantine"
     playlists = library_root / "_Playlists"
-    genres = library_root / "_Genres"
+    genres = playlists  # crates + genre playlists live in one folder
     reserved, affected = set(), set()
     crate_adds = collections.defaultdict(list)
 
