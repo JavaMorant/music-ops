@@ -117,19 +117,23 @@ async function loadUsb() {
     if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
     $("usb").innerHTML = d.sticks.map(s => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
+      const bpm = s.bpm_range ? ` · BPM ${s.bpm_range.low}–${s.bpm_range.high}` : "";
       return `<div class="panel">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap">
-          <span class="stickname">🎛 ${esc(s.name)}</span><span class="pill">${s.coverage_pct}% played</span>
-          <span class="muted">${s.sessions} sets logged · avg ${s.avg_per_set} tracks/set</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+          <span class="stickname">🎛 ${esc(s.name)}</span>
+          ${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}
+          <span class="muted">${s.sessions} sets · avg ${s.avg_per_set}/set (${s.set_lengths.min}–${s.set_lengths.max})${bpm}</span></div>
         <div class="cards" style="margin:14px 0">
-          ${stat(s.tracks.toLocaleString(),"tracks on stick")}
-          ${stat(s.plays.toLocaleString(),"plays logged","accent")}
-          ${stat(s.distinct_played.toLocaleString(),"distinct played","ok")}
-          ${stat(s.untouched.toLocaleString(),"never played here","warm")}
+          ${stat(s.distinct_played.toLocaleString(),"distinct tracks played")}
+          ${stat(s.plays.toLocaleString(),"total plays","accent")}
+          ${stat(s.sessions.toLocaleString(),"sets logged","ok")}
+          ${stat(s.window.toLocaleString(),"recent window","cold")}
         </div>
         <h2 style="margin-top:4px">🔀 Transitions you repeat <span class="muted">— last ${s.window} sets</span></h2>
         ${transHtml(s.transitions)}
-        <div class="grid2" style="margin-top:8px">
+        <h2 style="margin-top:14px">🎚️ Genre flow <span class="muted">— how you move between styles</span></h2>
+        ${transHtml((s.genre_flow||[]).map(g=>({from:g.from,to:g.to,count:g.count})))}
+        <div class="grid2" style="margin-top:14px">
           <div><h2 style="margin-top:0">🔥 Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"×"})}</div>
           <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>"was "+t.plays+"×"})}</div>
         </div>

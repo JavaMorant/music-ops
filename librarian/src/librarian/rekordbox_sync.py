@@ -56,7 +56,7 @@ def _index(db):
         fp = getattr(c, "FolderPath", None)
         if fp:
             by_path[fp] = c
-        by_at[_norm(_artist(c)) + "|" + _norm(getattr(c, "Title", "") or "")].append(c)
+        by_at[_norm(_artist(c) + " " + (getattr(c, "Title", "") or ""))].append(c)
     return by_path, by_at
 
 
@@ -100,16 +100,15 @@ def sync_playlists(db, playlists_dir: Path, *, dry_run: bool = True,
 
 
 def usb_play_counts() -> collections.Counter:
-    """Plays per normalised artist|title aggregated across mounted sticks."""
+    """Plays per normalised artist+title across mounted sticks — combining BOTH
+    Device Library and Device Library Plus (Opus) history."""
     from . import pulse_usb
     plays = collections.Counter()
-    for vol, pdb in pulse_usb.find_usbs():
-        tracks, sessions = pulse_usb.parse_pdb(pdb)
+    for vol in pulse_usb.find_usbs():
+        sessions, _meta, _fmts = pulse_usb.read_stick(vol)
         for s in sessions:
-            for tid in s:
-                t = tracks.get(tid)
-                if t:
-                    plays[_norm(t["artist"]) + "|" + _norm(t["title"])] += 1
+            for label in s:
+                plays[_norm(label)] += 1
     return plays
 
 

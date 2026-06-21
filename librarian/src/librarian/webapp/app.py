@@ -303,9 +303,9 @@ def create_app(config: AppConfig) -> FastAPI:
         if not pulse_usb.available():
             return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed (cargo install rekordcrate)"})
         sticks = []
-        for vol, pdb in pulse_usb.find_usbs():
+        for vol in pulse_usb.find_usbs():
             try:
-                sticks.append(pulse_usb.usb_insights(vol, pdb))
+                sticks.append(pulse_usb.usb_insights(vol))
             except Exception as exc:
                 sticks.append({"name": vol.name, "error": str(exc)})
         return {"sticks": sticks}
