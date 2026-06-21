@@ -90,8 +90,8 @@ TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
-  var sparks=[], embers=[], shocks=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
-  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0;  // particle field: full-screen size, record centre (screen px), record scale
+  var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
+  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, curHeat=0, stylusAng=-0.7;  // particle field: full-screen size + origin, record centre (screen px), record scale, heat, stylus angle
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
     if(d){if(mx===r)h=((g-b)/d+6)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}return h;}
@@ -112,13 +112,14 @@ function ttRun(opts){
     var W=opts.canvas.width; if(!W){return;}
     // size + locate the full-screen particle field (record centre in the field's own px)
     var fx=opts.fxCanvas;
+    if(fx && !fx.clientWidth)return;  // overlay hidden (display:none) — skip; avoids particles spawned at the corner
     if(fx){if(!fxctx)fxctx=fx.getContext('2d');
       if(fx.clientWidth&&fx.width!==fx.clientWidth)fx.width=fx.clientWidth;
       if(fx.clientHeight&&fx.height!==fx.clientHeight)fx.height=fx.clientHeight;
       var fr=fx.getBoundingClientRect(), dr=opts.canvas.getBoundingClientRect();
-      fxw=fx.width; fxh=fx.height; ref=dr.width||W;
+      fxw=fx.width; fxh=fx.height; ref=dr.width||W; fxLeft=fr.left; fxTop=fr.top;
       rcx=dr.left+dr.width/2-fr.left; rcy=dr.top+dr.height/2-fr.top;
-    }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;}
+    }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;}
     var playing=!!(opts.audio&&!opts.audio.paused);
     var an=opts.getAnalyser(), bass=0, energy=0;
     if(an){if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}
@@ -126,6 +127,7 @@ function ttRun(opts){
       for(var i=0;i<5;i++){bass+=dataArr[i];}bass/=1275;
       for(var j=0;j<dataArr.length;j++){energy+=dataArr[j];}energy/=dataArr.length*255;}
     curEnergy=energy;
+    if(eLong===0&&energy>0)eLong=energy;  // seed the running average so a track's intro isn't read as one long build-up
     bassAvg=bassAvg*0.9+bass*0.1; eLong=eLong*0.985+energy*0.015;
     var kick=Math.max(0,bass-bassAvg-0.05);
     if(energy>eLong*1.45+0.12 && energy>0.30 && nowMs()-lastDrop>1400){lastDrop=nowMs();onDrop(energy);}
@@ -145,12 +147,29 @@ function ttRun(opts){
     if(opts.flash){opts.flash.style.opacity=Math.min(0.7,flash).toFixed(3);
       if(flash>0.02)opts.flash.style.background='radial-gradient(circle at 50% 45%,hsla('+hue.toFixed(0)+',90%,75%,.9),transparent 70%)';}
     if(playing)ambient(energy);  // embers only while music plays — idle stays clean
+    // brake-disc heat: builds toward the end of the track; drives the cassette
+    // reels' red glow (via the --heat CSS var) and the smoke colour.
+    var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
+    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*2);  // full redness by the halfway point
+    curHeat=heat;
+    var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
+    if(opts.scene)opts.scene.style.setProperty('--heat',heat.toFixed(3));
+    var cassette=opts.getSkin&&opts.getSkin()==='cassette';
+    var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
+    if(!cassette && playing && pts.length)  // ember tracks the real stylus angle, so it lines up with the smoke + tonearm
+      stylusAng=Math.atan2((pts[0].y-fxTop)-rcy,(pts[0].x-fxLeft)-rcx);
+    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.04);  // smoke kicks in on the build-up
+      for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff(pts[s].x-fxLeft,pts[s].y-fxTop,heat);}}
     draw(energy,kick,playing,breath);
     drawFX();  // particles, on the full-screen field
   }
   function ambient(energy){var cap=10+Math.floor(energy*60), n=1+Math.floor(energy*4);
     for(var q=0;q<n;q++){ if(embers.length<cap && Math.random()<0.5){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
+  // a smoke puff rising from a hot reel / the stylus; starts as a thin wisp and
+  // billows as it rises (slow growth while young, fast once old); hotter = redder
+  function puff(x,y,heat){if(smoke.length>84)return;
+    smoke.push({x:x+(Math.random()*2-1)*ref*0.008,y:y,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0012)*(0.7+Math.random()*0.8),r:ref*0.006,life:1,heat:heat});}
   function draw(energy,kick,playing,breath){
     var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,maxOuter=W*0.475;
     ctx.clearRect(0,0,W,W);
@@ -190,12 +209,40 @@ function ttRun(opts){
       else{ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();}
       ctx.restore();}
   }
+  // the stylus scorches a red groove into the vinyl as the record spins under it —
+  // a charred ring + red-hot line + a bright contact ember, all building with heat.
+  // Drawn on the full-screen field (above the opaque record) so it's actually visible.
+  function drawTrail(c){var cassette=opts.getSkin&&opts.getSkin()==='cassette';
+    if(cassette||curHeat<=0.001)return;
+    var h=curHeat, rr=ref*0.33;
+    c.save();
+    c.globalAlpha=Math.min(0.5,h*0.5);c.strokeStyle='rgba(30,7,3,1)';c.lineWidth=ref*0.05*h;  // charred groove
+    c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
+    c.globalAlpha=Math.min(0.85,h*0.85);c.shadowBlur=ref*0.05*h;c.shadowColor='rgba(255,60,0,1)';  // red-hot line
+    c.strokeStyle='hsl('+(16+h*8).toFixed(0)+',100%,'+(46+h*16).toFixed(0)+'%)';c.lineWidth=ref*0.012*(0.6+h);
+    c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
+    c.restore();
+    var ca=stylusAng,sxp=rcx+Math.cos(ca)*rr,syp=rcy+Math.sin(ca)*rr,hr=ref*0.12*(0.45+h);  // hot contact ember on the groove at the stylus angle
+    var hg=c.createRadialGradient(sxp,syp,0,sxp,syp,hr);
+    hg.addColorStop(0,'rgba(255,232,190,'+Math.min(0.95,0.35+h*0.6).toFixed(3)+')');
+    hg.addColorStop(0.4,'rgba(255,80,0,'+Math.min(0.8,h*0.8).toFixed(3)+')');
+    hg.addColorStop(1,'rgba(255,40,0,0)');
+    c.fillStyle=hg;c.beginPath();c.arc(sxp,syp,hr,0,6.2832);c.fill();c.globalAlpha=1;}
   // particles live on a full-screen canvas (opts.fxCanvas) so the burst, embers and
   // shockwaves fill the whole viewport — not just the record box. Falls back to the
   // deck canvas when no field is supplied (drawn after draw(), which already cleared it).
   function drawFX(){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
+    if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
+    for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.x+=pf.vx;pf.y+=pf.vy;pf.vy*=0.99;pf.r+=fxw*0.0006+(1-pf.life)*fxw*0.0024;pf.life-=0.009;
+      if(pf.life<=0){smoke.splice(z,1);continue;}
+      var rr=Math.floor(118+pf.heat*137),gn=Math.floor(118-pf.heat*70),bb=Math.floor(118-pf.heat*96);
+      var gg=c.createRadialGradient(pf.x,pf.y,0,pf.x,pf.y,pf.r);
+      gg.addColorStop(0,'rgba('+rr+','+gn+','+bb+','+(pf.life*0.2).toFixed(3)+')');
+      gg.addColorStop(1,'rgba('+rr+','+gn+','+bb+',0)');
+      c.fillStyle=gg;c.beginPath();c.arc(pf.x,pf.y,pf.r,0,6.2832);c.fill();}
+    c.globalAlpha=1;
     for(e=embers.length-1;e>=0;e--){var p=embers[e];p.x+=p.vx;p.y+=p.vy;p.life-=0.004;
       if(p.y<-14||p.life<=0){embers.splice(e,1);continue;}
       c.globalAlpha=p.life*0.4;c.fillStyle='hsl('+hue.toFixed(0)+',70%,62%)';
@@ -286,6 +333,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
   .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);
     background:linear-gradient(#3a3a44,#191920);border:1px solid #000;}
+  .arm .tip{position:absolute;left:0;top:50%;width:1px;height:1px;}  /* stylus anchor for the smoke origin */
   /* cassette skin (toggled with .cassette-mode) */
   .cassette{position:absolute;left:6%;top:24%;width:88%;height:52%;border-radius:14px;display:none;z-index:1;
     background:linear-gradient(165deg,#34343f,#16161c);border:1px solid #000;
@@ -302,7 +350,12 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .cassette .reel{width:31%;aspect-ratio:1;border-radius:50%;position:relative;
     background:repeating-conic-gradient(#34343e 0 18deg,#14141a 18deg 36deg);
     box-shadow:inset 0 0 0 3px #000;animation:spin 1.7s linear infinite;animation-play-state:paused;}
-  .cassette .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);box-shadow:inset 0 0 0 2px #000;}
+  /* the reel hubs heat up like brake discs as the track plays (--heat 0..1) */
+  .cassette .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);
+    background:radial-gradient(circle at 40% 35%,color-mix(in srgb,#3a3a44,#ff3a00 calc(var(--heat,0)*88%)),color-mix(in srgb,#1c1c22,#7a1400 calc(var(--heat,0)*82%)));
+    box-shadow:inset 0 0 0 2px #000,inset 0 0 calc(var(--heat,0)*16px) rgba(255,70,0,calc(var(--heat,0)*0.9)),0 0 calc(var(--heat,0)*30px) rgba(255,45,0,calc(var(--heat,0)*0.85));
+    filter:brightness(calc(1 + var(--heat,0)*0.6));}
   .cassette .reel:after{content:"";position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#000;z-index:2;}
   .cassette .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;background:#42424c;}
   body.playing .cassette .reel{animation-play-state:running;}
@@ -310,7 +363,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
     animation:sheen 3.6s ease-in-out infinite;}
   @keyframes sheen{0%,100%{opacity:.35;}50%{opacity:.85;}}
-  .fx{position:fixed;inset:0;pointer-events:none;z-index:8;
+  .fx{position:fixed;inset:0;pointer-events:none;z-index:5;
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
@@ -360,7 +413,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     <canvas id="viz"></canvas>
     <div class="vinyl" id="vinyl">__LABEL_HTML__<div class="hole"></div></div>
     <div class="gloss"></div>
-    <div class="arm" id="arm"></div>
+    <div class="arm" id="arm"><i class="tip" id="armtip"></i></div>
     <div class="cassette" id="cassette">
       __CLABEL_HTML__
       <div class="win"><div class="reel"></div><div class="tape"></div><div class="reel"></div></div>
@@ -423,8 +476,12 @@ function initViz(){
     src.connect(analyser);analyser.connect(actx.destination);
   }catch(e){/* file:// or unsupported — vinyl still spins, audio still plays */}
 }
+function centerOf(el){var r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}
+function smokeAt(){  // smoke rises from the hot reels (cassette) or the stylus (vinyl)
+  if(isCassette()){return [].slice.call(document.querySelectorAll('#cassette .reel')).map(centerOf);}
+  var t=document.getElementById('armtip');return t?[centerOf(t)]:[];}
 ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
-  fxCanvas:document.getElementById('pfx'),
+  fxCanvas:document.getElementById('pfx'),smokeAt:smokeAt,
   scene:document.querySelector('.wrap'),
   getLabel:function(){return isCassette()?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
   flash:document.querySelector('.flash'),getCover:function(){return PACK_COVER;},
