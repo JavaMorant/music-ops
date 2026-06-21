@@ -126,8 +126,9 @@ def test_fullscreen_particles_and_shake(tmp_path):
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
     assert 'class="pfx"' in idx                                  # the full-screen particle canvas exists
     assert "fxCanvas:document.getElementById('pfx')" in idx      # wired into the visualizer
+    assert "fx.width/fr.width" in idx                            # coords account for a scaled scene (reel mode)
     assert "function drawFX" in idx and "opts.fxCanvas" in idx   # particles draw on the full-screen field
-    assert "rcx=dr.left" in idx                                  # burst emanates from the record's on-screen centre
+    assert "rcx=(dr.left" in idx                                 # burst emanates from the record's on-screen centre
     assert "shake>0.25||punch>0.01" in idx                       # screen shakes on kicks in the normal view too
 
 
@@ -136,6 +137,7 @@ def test_brake_heat_and_smoke_present(tmp_path):
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
     # reel hubs heat up like brake discs; full redness by ~a third of the way in
     assert "--heat" in idx and "heat=Math.min(1,pr*3)" in idx
+    assert "curHeat=Math.min(1,pr*2.2)" in idx                   # the vinyl groove glows a bit later than the cassette
     assert "color-mix(in srgb" in idx                            # the hub tints red with heat
     assert "setProperty('--heat'" in idx
     # smoke rises from the hot reels / the stylus, denser + redder over time
@@ -159,7 +161,8 @@ def test_chorus_particle_burst(tmp_path):
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
     assert "eMid+=(energy-eMid)" in idx                          # smoothed section energy
     assert "var chorus=Math.min(1" in idx                        # loud/full sections = best guess at the chorus
-    assert "chorus*10" in idx and "sparks.length<340" in idx     # a large abundance of particles, capped
+    assert "streaming up from the bottom" in idx                 # the excess rises from the bottom, not off the deck
+    assert "chorus*chorus*9" in idx and "embers.length<300" in idx
 
 
 def test_cassette_skin_present(tmp_path):

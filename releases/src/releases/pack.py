@@ -91,7 +91,7 @@ function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
-  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + heat + live stylus contact point (fx px)
+  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
     if(d){if(mx===r)h=((g-b)/d+6)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}return h;}
@@ -117,9 +117,10 @@ function ttRun(opts){
       if(fx.clientWidth&&fx.width!==fx.clientWidth)fx.width=fx.clientWidth;
       if(fx.clientHeight&&fx.height!==fx.clientHeight)fx.height=fx.clientHeight;
       var fr=fx.getBoundingClientRect(), dr=opts.canvas.getBoundingClientRect();
-      fxw=fx.width; fxh=fx.height; ref=dr.width||W; fxLeft=fr.left; fxTop=fr.top;
-      rcx=dr.left+dr.width/2-fr.left; rcy=dr.top+dr.height/2-fr.top;
-    }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;}
+      sclx=fr.width?fx.width/fr.width:1; scly=fr.height?fx.height/fr.height:1;  // backing px per on-screen px (handles a scaled scene, e.g. reel mode / kick punch)
+      fxw=fx.width; fxh=fx.height; ref=(dr.width||W)*sclx; fxLeft=fr.left; fxTop=fr.top;
+      rcx=(dr.left+dr.width/2-fr.left)*sclx; rcy=(dr.top+dr.height/2-fr.top)*scly;
+    }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;sclx=1;scly=1;}
     var playing=!!(opts.audio&&!opts.audio.paused);
     var an=opts.getAnalyser(), bass=0, energy=0;
     if(an){if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}
@@ -150,25 +151,24 @@ function ttRun(opts){
     // brake-disc heat: builds toward the end of the track; drives the cassette
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
-    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*3);  // full redness by about a third of the way in
-    curHeat=heat;
+    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
+    curHeat=Math.min(1,pr*2.2);  // the vinyl groove takes a little longer to glow than the cassette
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
     if(opts.scene)opts.scene.style.setProperty('--heat',heat.toFixed(3));
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
-      stylusX=pts[0].x-fxLeft; stylusY=pts[0].y-fxTop; hasStylus=true;}
+      stylusX=(pts[0].x-fxLeft)*sclx; stylusY=(pts[0].y-fxTop)*scly; hasStylus=true;}
     if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.65,build*6+heat*0.10);  // builds on the build-up; a faint thread keeps rising once it's hot
-      for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff(pts[s].x-fxLeft,pts[s].y-fxTop,heat);}}
-    // a sustained loud/full section = best guess at the chorus/hook -> a large abundance of particles
+      for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff((pts[s].x-fxLeft)*sclx,(pts[s].y-fxTop)*scly,heat);}}
+    // a sustained loud/full section = best guess at the chorus/hook -> an EXCESS of
+    // particles streaming up from the bottom of the screen (not bursting off the deck)
     eMid+=(energy-eMid)*0.06;  // ~0.7s smoothing so transient kicks don't count, only sustained sections
     var chorus=Math.min(1,Math.max(0,(eMid-0.25)/0.30));
     if(playing && opts.sparksOn && chorus>0.05){
-      var burst=Math.floor(chorus*10);
-      for(var ci=0;ci<burst && sparks.length<340;ci++){var ca2=Math.random()*6.2832,sp2=fxw*0.004*(1+Math.random()*4.5);
-        sparks.push({x:rcx+Math.cos(ca2)*ref*0.2,y:rcy+Math.sin(ca2)*ref*0.2,vx:Math.cos(ca2)*sp2,vy:Math.sin(ca2)*sp2-fxh*0.0012,life:1,h:(hue+Math.random()*140)%360,big:Math.random()<0.35});}
-      if(embers.length<150 && Math.random()<chorus*0.9)
-        embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0005,vy:-(fxh*0.0016)*(0.6+Math.random()*1.3),life:1,sz:ref*(0.004+Math.random()*0.012)});}
+      var rise=Math.floor(chorus*chorus*9);  // up to ~9 per frame, rising from the bottom edge
+      for(var ci=0;ci<rise && embers.length<300;ci++)
+        embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0006,vy:-(fxh*0.0017)*(0.7+Math.random()*1.5)*(0.7+chorus*0.8),life:1,sz:ref*(0.004+Math.random()*0.013)});}
     draw(energy,kick,playing,breath);
     drawFX();  // particles, on the full-screen field
   }
