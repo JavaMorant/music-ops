@@ -61,6 +61,18 @@
   <button id="refresh" class="ghost">↻ refresh</button>
 </header>
 <main>
+  <h2>Add music <span class="muted">— fold a folder into the library</span></h2>
+  <div class="panel">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input id="ingFolder" type="text" value="~/DJ/inbox"
+        style="flex:1;min-width:240px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:12px" />
+      <button id="ingPreview" class="ghost">Preview</button>
+      <button id="ingApply" disabled>Fold in</button>
+    </div>
+    <div class="muted" style="margin-top:8px">Classifies + acoustic-dedupes the folder against the library, then files survivors into the flat genres and refreshes crates. Preview moves nothing.</div>
+    <div id="ingOut"></div>
+  </div>
+
   <h2>Your sticks <span class="muted">— what you actually play</span></h2>
   <div id="usb"><div class="skel">reading mounted USBs…</div></div>
 
@@ -139,6 +151,34 @@ async function loadDesktop() {
     </div>`;
   } catch (e) { $("desktop").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
+
+async function ingest(apply) {
+  const folder = $("ingFolder").value.trim();
+  if (!folder) return;
+  $("ingPreview").disabled = $("ingApply").disabled = true;
+  $("ingOut").innerHTML = `<div class="skel">${apply ? "folding in" : "analysing"} ${esc(folder)}… (classify + fingerprint — can take a minute)</div>`;
+  try {
+    const r = await fetch("/api/pulse/ingest", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder, apply }) });
+    const d = await r.json();
+    if (!r.ok) { $("ingOut").innerHTML = `<div class="banner bad">${esc(d.detail || "error")}</div>`; $("ingPreview").disabled = false; return; }
+    if (d.total === 0) { $("ingOut").innerHTML = '<div class="muted" style="padding:10px 0">No audio files in that folder.</div>'; $("ingPreview").disabled = false; return; }
+    const toItems = (o) => Object.entries(o).map(([genre, count]) => ({ genre, count }));
+    let html = `<div class="cards" style="margin:14px 0">
+      ${stat(d.total, "scanned")}${stat(d.survivors, "to add", "ok")}${stat(d.dupes, "dupes skipped", "warm")}</div>`;
+    if (d.applied) {
+      html = `<div class="banner" style="background:rgba(95,208,138,.12);color:var(--ok);border:1px solid rgba(95,208,138,.3)">✓ Folded in ${d.applied.filed} · ${d.applied.quarantined} dupes quarantined · crates: ${esc(d.applied.crates_updated.join(", ") || "none")}</div>` + html;
+    }
+    if (Object.keys(d.by_genre).length) html += `<h2 style="margin-top:6px">${d.applied ? "Filed into" : "Would file into"}</h2>` + bars(toItems(d.by_genre));
+    if (Object.keys(d.by_crate).length) html += `<h2>${d.applied ? "Joined crates" : "Would join crates"}</h2>` + bars(toItems(d.by_crate));
+    $("ingOut").innerHTML = html;
+    $("ingApply").disabled = !!d.applied || d.survivors === 0;  // re-enable to fold in after a preview
+  } catch (e) { $("ingOut").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  $("ingPreview").disabled = false;
+}
+$("ingPreview").onclick = () => ingest(false);
+$("ingApply").onclick = () => { if (confirm("Fold these tracks into the library? This moves files.")) ingest(true); };
 
 function load() {
   $("usb").innerHTML = '<div class="skel">reading mounted USBs…</div>';

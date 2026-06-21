@@ -60,6 +60,11 @@ class OrganizeRequest(BaseModel):
     spec: dict | None = None  # power users / tests can pass a rule-set directly
 
 
+class IngestRequest(BaseModel):
+    folder: str
+    apply: bool = False
+
+
 def _rel(path: Path, root: Path) -> str:
     try:
         return str(path.relative_to(root))
@@ -304,6 +309,23 @@ def create_app(config: AppConfig) -> FastAPI:
             except Exception as exc:
                 sticks.append({"name": vol.name, "error": str(exc)})
         return {"sticks": sticks}
+
+    @app.post("/api/pulse/ingest", dependencies=[Depends(guard_origin)])
+    def post_ingest(req: IngestRequest, st: AppState = Depends(state)) -> dict:
+        """Fold a drop folder into the library: classify + dedupe (always),
+        then file + refresh crates if ``apply``. Slow (classify + fingerprint)."""
+        from .. import ingest
+        drop = Path(req.folder).expanduser()
+        if not drop.is_dir():
+            return JSONResponse(status_code=400, content={"detail": f"not a folder: {drop}"})
+        lib = st.config.library_root
+        plan = ingest.plan_ingest(drop, lib)
+        out = {"drop": plan["drop"], "total": plan["total"],
+               "survivors": len(plan["survivors"]), "dupes": len(plan["dupes"]),
+               "by_genre": plan["by_genre"], "by_crate": plan["by_crate"], "applied": None}
+        if req.apply and plan["survivors"]:
+            out["applied"] = ingest.apply_ingest(lib, plan)
+        return out
 
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
