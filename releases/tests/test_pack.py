@@ -111,6 +111,26 @@ def test_dopamine_effects_present(tmp_path):
     assert '"g": "trap"' in idx                                  # genre wired for the hook
 
 
+def test_idle_animation_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert "@keyframes float" in idx                     # the deck gently floats even at rest
+    assert "idleT" in idx                                 # always-on motion clock
+    assert "smoothV" in idx and "*0.35" in idx           # spectrum bars ease (flow, not jitter)
+    assert "envAmp=playing?0.05:0.14" in idx             # idle shimmer keeps the bars alive when paused
+    assert "ringRot" in idx                               # the spectrum slowly revolves
+
+
+def test_fullscreen_particles_and_shake(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert 'class="pfx"' in idx                                  # the full-screen particle canvas exists
+    assert "fxCanvas:document.getElementById('pfx')" in idx      # wired into the visualizer
+    assert "function drawFX" in idx and "opts.fxCanvas" in idx   # particles draw on the full-screen field
+    assert "rcx=dr.left" in idx                                  # burst emanates from the record's on-screen centre
+    assert "shake>0.25||punch>0.01" in idx                       # screen shakes on kicks in the normal view too
+
+
 def test_cassette_skin_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
