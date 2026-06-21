@@ -278,6 +278,33 @@ def create_app(config: AppConfig) -> FastAPI:
             saved.append({"name": dest.name, "bytes": written, "rel": _rel(dest, cfg.library_root)})
         return {"saved": saved, "rejected": rejected, "inbox_dir": str(inbox)}
 
+    @app.get("/api/pulse")
+    def get_pulse(last_n: int = 15) -> dict:
+        """Library intelligence from the desktop rekordbox DB (master.db)."""
+        try:
+            from pyrekordbox import Rekordbox6Database
+            from .. import pulse
+        except ImportError as exc:
+            return JSONResponse(status_code=503, content={"detail": f"pyrekordbox not installed: {exc}"})
+        try:
+            return pulse.pulse_json(Rekordbox6Database(), last_n=last_n)
+        except Exception as exc:  # rekordbox not found / locked
+            return JSONResponse(status_code=503, content={"detail": f"rekordbox DB unavailable: {exc}"})
+
+    @app.get("/api/pulse/usb")
+    def get_pulse_usb() -> dict:
+        """Per-stick play history straight off mounted CDJ USBs (export.pdb)."""
+        from .. import pulse_usb
+        if not pulse_usb.available():
+            return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed (cargo install rekordcrate)"})
+        sticks = []
+        for vol, pdb in pulse_usb.find_usbs():
+            try:
+                sticks.append(pulse_usb.usb_insights(vol, pdb))
+            except Exception as exc:
+                sticks.append({"name": vol.name, "error": str(exc)})
+        return {"sticks": sticks}
+
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 

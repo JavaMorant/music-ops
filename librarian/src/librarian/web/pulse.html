@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pulse — librarian</title>
+<style>
+  :root {
+    --bg:#0e0f12; --panel:#16181d; --line:#262a31; --text:#e7e9ee; --dim:#8b909b;
+    --accent:#7aa2ff; --warm:#e0a85b; --ok:#5fd08a; --bad:#ff6b6b; --cold:#6fb3d2;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex;
+    align-items:baseline; gap:14px; }
+  header h1 { margin:0; font-size:18px; letter-spacing:.06em; font-weight:600; }
+  header .sub { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+  button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px;
+    padding:7px 15px; font-weight:600; cursor:pointer; font-size:13px; }
+  button.ghost { background:#2a2f39; color:var(--text); }
+  main { max-width:1080px; margin:0 auto; padding:24px; }
+  h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim);
+    font-weight:600; margin:26px 0 12px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin-bottom:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .stat .n { font-size:30px; font-weight:700; letter-spacing:-.01em; }
+  .stat .l { color:var(--dim); font-size:12px; margin-top:2px; }
+  .stat.accent .n { color:var(--accent); } .stat.warm .n { color:var(--warm); }
+  .stat.ok .n { color:var(--ok); } .stat.cold .n { color:var(--cold); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+  ol.list { margin:0; padding:0; list-style:none; }
+  ol.list li { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  ol.list li .rank { color:var(--dim); width:20px; text-align:right; font-variant-numeric:tabular-nums; }
+  ol.list li .lab { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  ol.list li .cnt { color:var(--dim); font-variant-numeric:tabular-nums; }
+  .bars div { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:13px; }
+  .bars .name { width:130px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bars .track { flex:1; height:8px; background:#0e0f12; border-radius:99px; overflow:hidden; }
+  .bars .fill { height:100%; background:var(--accent); border-radius:99px; }
+  .stickname { font-weight:600; font-size:15px; }
+  .pill { font-size:11px; padding:1px 8px; border-radius:99px; background:rgba(122,162,255,.16); color:var(--accent); }
+  .muted { color:var(--dim); font-size:12px; }
+  .banner { padding:11px 14px; border-radius:9px; margin:10px 0; font-size:13px; }
+  .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
+  .skel { color:var(--dim); padding:14px 0; }
+  a.nav { color:var(--dim); text-decoration:none; font-size:12px; }
+  a.nav:hover { color:var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>pulse</h1>
+  <span class="sub">library intelligence</span>
+  <span class="spacer"></span>
+  <a class="nav" href="/">‹ review app</a>
+  <button id="refresh" class="ghost">↻ refresh</button>
+</header>
+<main>
+  <h2>Your sticks <span class="muted">— what you actually play</span></h2>
+  <div id="usb"><div class="skel">reading mounted USBs…</div></div>
+
+  <h2>Desktop library</h2>
+  <div id="desktop"><div class="skel">reading rekordbox…</div></div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => (
+  { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+
+function stat(n, l, cls) {
+  return `<div class="stat ${cls||""}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
+}
+function listOl(items, fmt) {
+  if (!items || !items.length) return '<div class="muted">nothing yet</div>';
+  return `<ol class="list">${items.map((it, i) =>
+    `<li><span class="rank">${i+1}</span><span class="lab">${esc(fmt.lab(it))}</span>`
+    + `<span class="cnt">${esc(fmt.cnt(it))}</span></li>`).join("")}</ol>`;
+}
+function bars(items) {
+  if (!items || !items.length) return '<div class="muted">—</div>';
+  const max = Math.max(...items.map(g => g.count));
+  return `<div class="bars">${items.map(g =>
+    `<div><span class="name">${esc(g.genre)}</span><span class="track">`
+    + `<span class="fill" style="width:${Math.round(100*g.count/max)}%"></span></span>`
+    + `<span class="cnt">${g.count}</span></div>`).join("")}</div>`;
+}
+
+async function loadUsb() {
+  try {
+    const r = await fetch("/api/pulse/usb");
+    const d = await r.json();
+    if (!r.ok) { $("usb").innerHTML = `<div class="banner bad">${esc(d.detail||"error")}</div>`; return; }
+    if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
+    $("usb").innerHTML = d.sticks.map(s => {
+      if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
+      return `<div class="panel">
+        <div class="row" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span class="stickname">🎛 ${esc(s.name)}</span><span class="pill">${s.coverage_pct}% played</span></div>
+        <div class="cards" style="margin-bottom:16px">
+          ${stat(s.tracks.toLocaleString(),"tracks on stick")}
+          ${stat(s.plays.toLocaleString(),"plays logged","accent")}
+          ${stat(s.distinct_played.toLocaleString(),"distinct played","ok")}
+          ${stat(s.untouched.toLocaleString(),"never played here","warm")}
+        </div>
+        <div class="grid2">
+          <div><h2 style="margin-top:0">Most played off ${esc(s.name)}</h2>
+            ${listOl(s.top, {lab:t=>t.label, cnt:t=>t.plays+"×"})}</div>
+          <div><h2 style="margin-top:0">What you play — by genre</h2>${bars(s.genre_lean)}</div>
+        </div></div>`;
+    }).join("");
+  } catch (e) { $("usb").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+
+async function loadDesktop() {
+  try {
+    const r = await fetch("/api/pulse");
+    const d = await r.json();
+    if (!r.ok) { $("desktop").innerHTML = `<div class="panel"><div class="banner bad">${esc(d.detail||"error")}</div><div class="muted">The desktop view needs rekordbox closed-ish (it reads master.db). Your sticks above don't need it.</div></div>`; return; }
+    const win = d.window_from ? `last ${d.window} sets · ${d.window_from} → ${d.window_to}` : "no sessions logged yet";
+    $("desktop").innerHTML = `<div class="panel">
+      <div class="cards" style="margin-bottom:16px">
+        ${stat(d.library.toLocaleString(),"tracks in collection")}
+        ${stat(d.sessions.toLocaleString(),"logged sets")}
+        ${stat(d.coverage_pct+"%","ever played","ok")}
+        ${stat(d.untouched.toLocaleString(),"untouched in window","warm")}
+      </div>
+      <div class="muted" style="margin-bottom:14px">Window: ${esc(win)}</div>
+      <div class="grid2">
+        <div><h2 style="margin-top:0">🔥 Staples</h2>${listOl(d.staples, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
+        <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(d.cold, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
+      </div>
+      <h2>Recent set lean</h2>${bars(d.genre_lean)}
+    </div>`;
+  } catch (e) { $("desktop").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+
+function load() {
+  $("usb").innerHTML = '<div class="skel">reading mounted USBs…</div>';
+  $("desktop").innerHTML = '<div class="skel">reading rekordbox…</div>';
+  loadUsb(); loadDesktop();
+}
+$("refresh").onclick = load;
+load();
+</script>
+</body>
+</html>

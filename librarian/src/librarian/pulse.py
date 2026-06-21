@@ -200,3 +200,39 @@ def _write_report(path, tracks, sessions, window, untouched, untouched_q, ever, 
     L += ["", "---", f"Crates written next to this report: `Untouched.m3u` "
           f"({len(untouched_q)}), " + ("`Recommended.m3u`" if recs else "(no AI recs)"), ""]
     path.write_text("\n".join(L), encoding="utf-8")
+
+
+def pulse_json(db, *, last_n: int = 15) -> dict:
+    """The same insights as run_pulse, returned as a JSON-serialisable dict for
+    the web GUI (writes nothing)."""
+    tracks, sessions = _load(db)
+    sess_of = defaultdict(set)
+    spins = Counter()
+    for _, name, cids in sessions:
+        for cid in cids:
+            spins[cid] += 1
+            sess_of[cid].add(name)
+    by_sessions = {cid: len(s) for cid, s in sess_of.items()}
+    window = sessions[:last_n]
+    window_cids = {cid for _, _, cids in window for cid in cids}
+    ever = set(spins)
+    untouched = [cid for cid in tracks if cid not in window_cids]
+
+    def lbl(cid):
+        t = tracks.get(cid)
+        return f"{t.artist} - {t.title}".strip(" -") if t else str(cid)
+
+    ranked = sorted(by_sessions.items(), key=lambda kv: -kv[1])
+    cold = [{"label": lbl(c), "sets": n} for c, n in ranked if c not in window_cids][:15]
+    genres = Counter(tracks[c].genre for _, _, cids in window for c in cids
+                     if c in tracks and tracks[c].genre)
+    return {
+        "library": len(tracks), "sessions": len(sessions), "window": len(window),
+        "window_from": window[-1][0].date().isoformat() if window else None,
+        "window_to": window[0][0].date().isoformat() if window else None,
+        "ever_played": len(ever), "untouched": len(untouched),
+        "coverage_pct": round(100 * len(ever) / max(1, len(tracks))),
+        "staples": [{"label": lbl(c), "sets": n} for c, n in ranked[:20]],
+        "cold": cold,
+        "genre_lean": [{"genre": g, "count": c} for g, c in genres.most_common(8)],
+    }
