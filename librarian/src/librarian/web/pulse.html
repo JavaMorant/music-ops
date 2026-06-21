@@ -102,6 +102,12 @@ function bars(items) {
     + `<span class="fill" style="width:${Math.round(100*g.count/max)}%"></span></span>`
     + `<span class="cnt">${g.count}</span></div>`).join("")}</div>`;
 }
+function transHtml(items) {
+  if (!items || !items.length) return '<div class="muted" style="padding:6px 0">No transitions repeated yet — keep playing out.</div>';
+  return `<ol class="list">${items.map(t =>
+    `<li><span class="cnt" style="width:30px;text-align:left;color:var(--accent);font-weight:600">${t.count}×</span>`
+    + `<span class="lab">${esc(t.from)} <span style="color:var(--accent)">→</span> ${esc(t.to)}</span></li>`).join("")}</ol>`;
+}
 
 async function loadUsb() {
   try {
@@ -112,19 +118,26 @@ async function loadUsb() {
     $("usb").innerHTML = d.sticks.map(s => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
       return `<div class="panel">
-        <div class="row" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <span class="stickname">🎛 ${esc(s.name)}</span><span class="pill">${s.coverage_pct}% played</span></div>
-        <div class="cards" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap">
+          <span class="stickname">🎛 ${esc(s.name)}</span><span class="pill">${s.coverage_pct}% played</span>
+          <span class="muted">${s.sessions} sets logged · avg ${s.avg_per_set} tracks/set</span></div>
+        <div class="cards" style="margin:14px 0">
           ${stat(s.tracks.toLocaleString(),"tracks on stick")}
           ${stat(s.plays.toLocaleString(),"plays logged","accent")}
           ${stat(s.distinct_played.toLocaleString(),"distinct played","ok")}
           ${stat(s.untouched.toLocaleString(),"never played here","warm")}
         </div>
+        <h2 style="margin-top:4px">🔀 Transitions you repeat <span class="muted">— last ${s.window} sets</span></h2>
+        ${transHtml(s.transitions)}
+        <div class="grid2" style="margin-top:8px">
+          <div><h2 style="margin-top:0">🔥 Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"×"})}</div>
+          <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>"was "+t.plays+"×"})}</div>
+        </div>
         <div class="grid2">
-          <div><h2 style="margin-top:0">Most played off ${esc(s.name)}</h2>
-            ${listOl(s.top, {lab:t=>t.label, cnt:t=>t.plays+"×"})}</div>
-          <div><h2 style="margin-top:0">What you play — by genre</h2>${bars(s.genre_lean)}</div>
-        </div></div>`;
+          <div><h2 style="margin-top:0">▶ Openers</h2>${listOl(s.openers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
+          <div><h2 style="margin-top:0">⏹ Closers</h2>${listOl(s.closers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
+        </div>
+        <h2>What you play — by genre</h2>${bars(s.genre_lean)}</div>`;
     }).join("");
   } catch (e) { $("usb").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
