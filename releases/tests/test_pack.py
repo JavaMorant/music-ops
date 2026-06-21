@@ -137,7 +137,7 @@ def test_brake_heat_and_smoke_present(tmp_path):
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
     # reel hubs heat up like brake discs; full redness by ~a third of the way in
     assert "--heat" in idx and "heat=Math.min(1,pr*3)" in idx
-    assert "curHeat=Math.min(1,pr*2.2)" in idx                   # the vinyl groove glows a bit later than the cassette
+    assert "((ct-20)/dur)*3" in idx                              # the vinyl groove stays cold for the first ~20s, then ramps
     assert "color-mix(in srgb" in idx                            # the hub tints red with heat
     assert "setProperty('--heat'" in idx
     # smoke rises from the hot reels / the stylus, denser + redder over time

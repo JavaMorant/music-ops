@@ -151,8 +151,9 @@ function ttRun(opts){
     // brake-disc heat: builds toward the end of the track; drives the cassette
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
-    var pr=dur?opts.audio.currentTime/dur:0, heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
-    curHeat=Math.min(1,pr*2.2);  // the vinyl groove takes a little longer to glow than the cassette
+    var ct=opts.audio?(opts.audio.currentTime||0):0;
+    var pr=dur?ct/dur:0, heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
+    curHeat=dur?Math.min(1,Math.max(0,((ct-20)/dur)*3)):0;  // vinyl groove stays cold for the first ~20s, then ramps
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
     if(opts.scene)opts.scene.style.setProperty('--heat',heat.toFixed(3));
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
