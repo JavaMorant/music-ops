@@ -7,6 +7,7 @@
     outreach draft <contact> --profile me.toml         # write an email draft FILE
     outreach import contacts.csv                        # bulk-add from CSV
     outreach export backup.csv                          # back the pipeline up
+    outreach web --profile me.toml                      # local CRM board in the browser
 
 Hard rule: this tool DRAFTS and TRACKS. It never sends. `draft` writes a file
 for you to review, edit, and send yourself.
@@ -207,6 +208,32 @@ def draft(
         )
     typer.echo("Review, edit, and send it yourself — outreach never sends.")
     typer.echo(f"After you send:  outreach log {c.id} \"sent intro\" --stage contacted")
+
+
+@app.command()
+def web(
+    host: Annotated[str, typer.Option("--host", help="Bind address (localhost only by default)")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Port to serve on")] = 8011,
+    profile: Annotated[Optional[Path], typer.Option("--profile", help="Sender profile TOML for drafting; see outreach-profile.example.toml")] = None,
+    out_dir: Annotated[Path, typer.Option("--out", help="Where drafts are written")] = DEFAULT_DRAFTS_DIR,
+    db_path: Annotated[Path, typer.Option("--db", help="Pipeline database")] = DEFAULT_DB,
+) -> None:
+    """Launch the local CRM web app — the pipeline board, drafting, and logging
+    in the browser. Still drafts only; it never sends. Needs the [web] extra."""
+    try:
+        import uvicorn
+
+        from . import web as webapp
+    except ImportError:
+        typer.secho(
+            "outreach web needs the web extra: pip install -e '.[web]'", fg="red", err=True
+        )
+        raise typer.Exit(1)
+    webapp.DB_PATH = db_path
+    webapp.DRAFTS_DIR = out_dir
+    webapp.PROFILE_PATH = profile if profile is not None else (DEFAULT_PROFILE if DEFAULT_PROFILE.exists() else None)
+    typer.secho(f"outreach CRM → http://{host}:{port}  (drafts only — never sends)", fg="green")
+    uvicorn.run(webapp.app, host=host, port=port)
 
 
 @app.command()
