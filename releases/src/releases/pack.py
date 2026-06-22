@@ -226,6 +226,27 @@ function ttRun(opts){
       ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();
       ctx.restore();}  // cassette progress is shown by the lit portion of its waveform
   }
+  // a flickering flame band along the bottom of the screen (toggle via opts.fireGet).
+  // It roars with energy + heat; the rising embers spark up out of it. Additive
+  // ('lighter') blend so the tongues glow and overlap like real fire.
+  function drawFire(c){
+    if(!(opts.fireGet&&opts.fireGet()))return;
+    var W=fxw,H=fxh,n=44,inten=Math.min(1,curEnergy*1.5+curHeat*0.25+0.18);
+    c.save();c.globalCompositeOperation='lighter';
+    for(var i=0;i<n;i++){var x=(i+0.5)/n*W;
+      var f=0.5+0.5*Math.sin(idleT*3.1+i*1.7)*Math.sin(idleT*1.3+i*0.6);  // per-column flicker
+      var h=H*(0.06+inten*(0.13+0.13*f)),w=W/n*1.7,y0=H,y1=H-h;
+      var g=c.createLinearGradient(0,y0,0,y1);
+      g.addColorStop(0,'rgba(255,238,170,'+(0.5*inten).toFixed(3)+')');
+      g.addColorStop(0.35,'rgba(255,140,24,'+(0.4*inten).toFixed(3)+')');
+      g.addColorStop(0.72,'rgba(220,42,0,'+(0.22*inten).toFixed(3)+')');
+      g.addColorStop(1,'rgba(120,0,0,0)');
+      c.fillStyle=g;c.beginPath();c.moveTo(x-w/2,y0);
+      c.quadraticCurveTo(x-w*0.2,y1+h*0.2,x,y1);
+      c.quadraticCurveTo(x+w*0.2,y1+h*0.2,x+w/2,y0);
+      c.closePath();c.fill();}
+    c.restore();
+  }
   // the stylus scorches a red groove into the vinyl as the record spins under it —
   // a charred ring + red-hot line + a bright contact ember, all building with heat.
   // Drawn on the full-screen field (above the opaque record) so it's actually visible.
@@ -255,6 +276,7 @@ function ttRun(opts){
   function drawFX(){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
+    if(fxctx)drawFire(c);   // flame band along the bottom (toggleable), behind the particles
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
     for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.y+=pf.vy;pf.vy*=0.997;
       var age=1-pf.life;pf.x=pf.bx+Math.sin(age*9+pf.ph)*pf.amp*age;pf.r=ref*0.003+age*ref*0.013;pf.life-=0.006;
@@ -431,6 +453,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   body.reel .now{transform:scale(1.15);margin-bottom:0;}
 </style></head>
 <body>
+<button class="reelbtn" id="firebtn" style="right:190px">Fire ✓</button>
 <button class="reelbtn" id="skinbtn" style="right:96px">Cassette</button>
 <button class="reelbtn" id="reelbtn">⤢ Reel</button>
 <div class="wrap">
@@ -495,6 +518,9 @@ ttScrub({vinyl:vinyl,audio:audio,secPerRev:4,onTap:togglePlay});
 const reelbtn=document.getElementById('reelbtn');
 reelbtn.onclick=()=>{const on=document.body.classList.toggle('reel');
   reelbtn.textContent=on?'✕ Exit':'⤢ Reel';size();};
+const firebtn=document.getElementById('firebtn');
+document.body.classList.add('fire-on');firebtn.textContent='Fire ✓';  // on by default — toggle off any time
+firebtn.onclick=()=>{const on=document.body.classList.toggle('fire-on');firebtn.textContent=on?'Fire ✓':'Fire';};
 const canvas=document.getElementById('viz');
 function size(){const s=document.getElementById('deck').clientWidth;canvas.width=s*2;canvas.height=s*2;}
 size();addEventListener('resize',size);
@@ -516,6 +542,7 @@ ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
   getLabel:function(){return isCassette()?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
   flash:document.querySelector('.flash'),getCover:function(){return PACK_COVER;},
   getSkin:function(){return isCassette()?'cassette':'vinyl';},
+  fireGet:function(){return document.body.classList.contains('fire-on');},
   reelGet:function(){return document.body.classList.contains('reel');},sparksOn:true});
 </script>
 </body></html>

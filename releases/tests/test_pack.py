@@ -213,6 +213,15 @@ def test_chorus_particle_burst(tmp_path):
     assert "chorus*chorus*9" in idx and "embers.length<300" in idx
 
 
+def test_fire_effect_toggle_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    assert "function drawFire" in idx and "opts.fireGet" in idx     # the flame band
+    assert "globalCompositeOperation='lighter'" in idx              # additive fire glow
+    assert 'id="firebtn"' in idx and "fire-on" in idx               # a toggle, on by default
+    assert "\U0001f525" not in idx                                  # still no fire EMOJI (drawn, not 🔥)
+
+
 def test_cassette_skin_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()

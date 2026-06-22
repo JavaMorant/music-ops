@@ -201,13 +201,14 @@
 </div>
 <div id="toast"></div>
 
-<div id="ov">
+<div id="ov" class="fire-on">
   <canvas class="pfx" id="ovpfx"></canvas>
   <div class="fx"></div>
   <div class="flash"></div>
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
+    <button id="firetgl" onclick="deckFire()">Fire ✓</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
     <button onclick="closeDeck()">✕ Close</button>
@@ -414,6 +415,8 @@ function deckLabel(){
 }
 function deckSkin(){ const ov=document.getElementById('ov'); const on=ov.classList.toggle('cassette-mode');
   document.getElementById('skintgl').textContent=on?'Vinyl':'Cassette'; deckSize(); }
+function deckFire(){ const on=document.getElementById('ov').classList.toggle('fire-on');
+  document.getElementById('firetgl').textContent=on?'Fire ✓':'Fire'; }
 
 function pickCover(){ document.getElementById('coverInput').click(); }
 document.getElementById('coverInput').addEventListener('change', function(e){
@@ -493,6 +496,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'ovclabel':'ovlabel'),
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
+  fireGet:()=>document.getElementById('ov').classList.contains('fire-on'),
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
