@@ -158,8 +158,10 @@ def _loaded_count(vol: Path) -> int:
     return 0
 
 
-def usb_insights(vol: Path, last_n: int = 50) -> dict:
+def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
     sess, meta, fmts = read_stick(vol)
+    if source in ("DL", "DL+"):
+        sess = [s for s in sess if s["fmt"] == source]
     sessions = [s["tracks"] for s in sess]  # to label-lists for the analytics
     recent = sessions[-last_n:] if last_n else sessions
     recent_ids = {_norm(t) for s in recent for t in s}
@@ -195,6 +197,7 @@ def usb_insights(vol: Path, last_n: int = 50) -> dict:
     return {
         "name": vol.name,
         "formats": fmts,
+        "source": source,
         "loaded": _loaded_count(vol),
         "tracks": len(plays),
         "plays": sum(plays.values()),

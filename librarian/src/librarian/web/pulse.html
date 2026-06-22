@@ -44,6 +44,9 @@
   .bars .fill { height:100%; background:var(--accent); border-radius:99px; }
   .stickname { font-weight:600; font-size:15px; }
   .pill { font-size:11px; padding:1px 8px; border-radius:99px; background:rgba(122,162,255,.16); color:var(--accent); }
+  .src { background:#2a2f39; color:var(--dim); border:0; border-radius:6px; padding:4px 10px; font-size:11px;
+    font-weight:600; cursor:pointer; text-transform:none; letter-spacing:0; margin-left:4px; }
+  .src.on { background:var(--accent); color:#0b0d12; }
   .muted { color:var(--dim); font-size:12px; }
   .banner { padding:11px 14px; border-radius:9px; margin:10px 0; font-size:13px; }
   .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
@@ -73,7 +76,11 @@
     <div id="ingOut"></div>
   </div>
 
-  <h2>Your sticks <span class="muted">— what you actually play</span></h2>
+  <h2 style="display:flex;align-items:center;gap:10px">Your sticks <span class="muted">— what you actually play</span>
+    <span style="flex:1"></span>
+    <span id="srcToggle">
+      <button class="src on" data-src="all">Combined</button><button class="src" data-src="DL">DL</button><button class="src" data-src="DL+">DL+</button>
+    </span></h2>
   <div id="usb"><div class="skel">reading mounted USBs…</div></div>
 
   <h2>Your sets <span class="muted">— name them, link a recording, review the tracklist</span></h2>
@@ -112,9 +119,10 @@ function transHtml(items) {
     + `<span class="lab">${esc(t.from)} <span style="color:var(--accent)">→</span> ${esc(t.to)}</span></li>`).join("")}</ol>`;
 }
 
+let usbSource = "all";
 async function loadUsb() {
   try {
-    const r = await fetch("/api/pulse/usb");
+    const r = await fetch("/api/pulse/usb?source=" + encodeURIComponent(usbSource));
     const d = await r.json();
     if (!r.ok) { $("usb").innerHTML = `<div class="banner bad">${esc(d.detail||"error")}</div>`; return; }
     if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
@@ -247,6 +255,13 @@ function load() {
   loadUsb(); loadSets(); loadDesktop();
 }
 $("refresh").onclick = load;
+document.getElementById("srcToggle").onclick = (e) => {
+  const b = e.target.closest(".src");
+  if (!b) return;
+  usbSource = b.dataset.src;
+  document.querySelectorAll("#srcToggle .src").forEach(x => x.classList.toggle("on", x === b));
+  loadUsb();
+};
 load();
 </script>
 </body>
