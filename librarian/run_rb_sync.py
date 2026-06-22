@@ -35,8 +35,13 @@ def main():
 
     rt = rb.auto_rate(db, dry_run=not apply)
     print(f"\nRATINGS: {rt['total']} tracks would change -> {rt['by_stars']}")
-    for e in rt["examples"][:8]:
+    for e in rt["examples"][:6]:
         print(f"  {'★' * e['stars']:<5} ({e['plays']}×)  {e['track'][:46]}")
+
+    cm = rb.stamp_comments(db, dry_run=not apply)
+    print(f"\nCOMMENTS: {cm['updated']} stamped  (e.g. {cm['examples'][0]['comment'] if cm['examples'] else '-'})")
+    cl = rb.colour_by_status(db, dry_run=not apply)
+    print(f"COLOURS: {cl['total']} -> {cl['by_status']}  (hot=red · cold=blue · untouched=green)")
 
     print("\nAPPLIED." if apply else "\n(dry run — quit rekordbox, then: APPLY=1 .venv/bin/python run_rb_sync.py)")
 

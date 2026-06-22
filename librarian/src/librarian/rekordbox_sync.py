@@ -148,3 +148,84 @@ def auto_rate(db, *, dry_run: bool = True, plays: collections.Counter | None = N
         db.commit()
     return {"by_stars": dict(sorted(changes.items(), reverse=True)),
             "total": sum(changes.values()), "examples": examples}
+
+
+def usb_track_stats(recent_n: int = 50):
+    """Per-title (plays, sets, recently-played) across mounted sticks, DL + DL+."""
+    from . import pulse_usb
+    plays, sets, recent = collections.Counter(), collections.Counter(), set()
+    for vol in pulse_usb.find_usbs():
+        sess, meta, _ = pulse_usb.read_stick(vol)
+        for s in sess:
+            titles = set()
+            for label in s["tracks"]:
+                ttl = meta.get(_norm(label), {}).get("title", "")
+                if ttl:
+                    k = _norm(ttl)
+                    plays[k] += 1
+                    titles.add(k)
+            sets.update(titles)
+        for s in sess[-recent_n:]:
+            for label in s["tracks"]:
+                ttl = meta.get(_norm(label), {}).get("title", "")
+                if ttl:
+                    recent.add(_norm(ttl))
+    return plays, sets, recent
+
+
+def stamp_comments(db, *, dry_run: bool = True, backup_to: Path | None = None) -> dict:
+    """Write play stats into each track's Comment ('▶ 13× · 13 sets'), so it shows
+    on the CDJ. Matched by title (combined DL + DL+ plays)."""
+    plays, sets, _ = usb_track_stats()
+    if not dry_run:
+        _guard(dry_run, backup_to)
+    n, examples = 0, []
+    for c in db.get_content():
+        k = _norm(getattr(c, "Title", "") or "")
+        p = plays.get(k, 0)
+        comment = f"▶ {p}× · {sets.get(k, 0)} sets" if p else "▶ never played"
+        if (getattr(c, "Commnt", None) or "") == comment:
+            continue
+        n += 1
+        if p and len(examples) < 8:
+            examples.append({"track": f"{_artist(c)} - {c.Title}".strip(" -"), "comment": comment})
+        if not dry_run:
+            c.Commnt = comment
+    if not dry_run:
+        db.commit()
+    return {"updated": n, "examples": examples}
+
+
+def _color_ids(db):
+    from pyrekordbox.db6 import tables
+    out = {}
+    for col in db.session.query(tables.DjmdColor).all():
+        nm = (getattr(col, "Commnt", None) or "").lower()
+        if nm:
+            out[nm] = col.ID
+    return out
+
+
+def colour_by_status(db, *, dry_run: bool = True, backup_to: Path | None = None,
+                     recent_n: int = 50) -> dict:
+    """Colour tracks by play status: recently-played = Red, played-but-cold = Blue,
+    never-played = Green."""
+    plays, _sets, recent = usb_track_stats(recent_n)
+    cols = _color_ids(db)
+    pick = {"hot": cols.get("red"), "cold": cols.get("blue"), "untouched": cols.get("green")}
+    if not dry_run:
+        _guard(dry_run, backup_to)
+    counts = collections.Counter()
+    for c in db.get_content():
+        k = _norm(getattr(c, "Title", "") or "")
+        status = "untouched" if k not in plays else ("hot" if k in recent else "cold")
+        cid = pick[status]
+        if cid is None or getattr(c, "ColorID", None) == cid:
+            continue
+        counts[status] += 1
+        if not dry_run:
+            c.ColorID = cid
+    if not dry_run:
+        db.commit()
+    return {"by_status": dict(counts), "total": sum(counts.values()),
+            "legend": {"hot": "red", "cold": "blue", "untouched": "green"}}
