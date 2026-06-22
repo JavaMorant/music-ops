@@ -249,6 +249,7 @@ function setCard(s, i) {
       <input id="nm${i}" type="text" value="${esc(s.name)}" style="flex:1;min-width:160px;${inp}"/>
       <span class="muted">${s.n} tracks</span>
       <button class="ghost" onclick="toggleTl(${i})">tracklist</button>
+      <button class="ghost" onclick="exportSet('${esc(s.key)}')">export</button>
       <button onclick="saveSet(${i},'${esc(s.key)}')">save</button>
     </div>
     <input id="rec${i}" type="text" placeholder="link a recording — file path (optional)" value="${esc(s.recording||'')}"
@@ -258,6 +259,7 @@ function setCard(s, i) {
   </div>`;
 }
 function toggleTl(i) { const el = $("tl" + i); el.style.display = el.style.display === "none" ? "block" : "none"; }
+function exportSet(key) { window.location = "/api/pulse/sets/report?key=" + encodeURIComponent(key); }
 async function saveSet(i, key) {
   const name = $("nm" + i).value, recording = $("rec" + i).value;
   await fetch("/api/pulse/sets", { method: "POST", headers: { "Content-Type": "application/json" },

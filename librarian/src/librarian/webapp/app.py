@@ -9,12 +9,13 @@ else is dry-run plan building.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -367,6 +368,31 @@ def create_app(config: AppConfig) -> FastAPI:
         if not vols or not track.strip():
             return {"next": []}
         return {"next": pulse_usb.follows(vols[0], track)}
+
+    @app.get("/api/pulse/sets/report")
+    def get_set_report(key: str):
+        """A named set as a downloadable markdown report — tracklist + stats."""
+        from .. import pulse_usb, setlog
+        stick = key.split("|")[0]
+        vols = [v for v in pulse_usb.find_usbs() if v.name == stick]
+        if not vols:
+            return PlainTextResponse("set not found", status_code=404)
+        s = next((x for x in pulse_usb.stick_sets(vols[0], limit=300) if x["key"] == key), None)
+        if not s:
+            return PlainTextResponse("set not found", status_code=404)
+        log = setlog.load().get(key, {})
+        name = log.get("name") or s["auto_name"]
+        bpms = [b for b in s["bpms"] if b]
+        md = [f"# {name}", "", f"- **Stick:** {stick} · {s['fmt']} · {s['n']} tracks"]
+        if bpms:
+            md.append(f"- **BPM:** {min(bpms)}–{max(bpms)}")
+        if log.get("recording"):
+            md.append(f"- **Recording:** {log['recording']}")
+        md += ["", "## Tracklist", ""]
+        md += [f"{i}. {t}" for i, t in enumerate(s["tracks"], 1)]
+        fname = re.sub(r"[^\w .-]", "_", name)[:60] or "set"
+        return PlainTextResponse("\n".join(md) + "\n",
+                                 headers={"Content-Disposition": f'attachment; filename="{fname}.md"'})
 
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
