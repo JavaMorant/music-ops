@@ -177,13 +177,17 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
     def lbl(k):
         return disp.get(k, k)
 
-    trans = collections.Counter()
-    genre_flow = collections.Counter()
-    for s in recent:
+    trans = collections.Counter()  # transitions over the last 10 sets only
+    trans_window = sessions[-10:]
+    for s in trans_window:
         ks = [_norm(t) for t in s]
         for a, b in zip(ks, ks[1:]):
             if a != b:
                 trans[(a, b)] += 1
+    genre_flow = collections.Counter()
+    for s in recent:
+        ks = [_norm(t) for t in s]
+        for a, b in zip(ks, ks[1:]):
             ga = meta.get(a, {}).get("genre", "")
             gb = meta.get(b, {}).get("genre", "")
             if ga and gb and ga != gb:
@@ -218,6 +222,7 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
         "plays": sum(plays.values()),
         "sessions": len(sessions),
         "window": len(recent),
+        "trans_window": len(trans_window),
         "avg_per_set": round(sum(lengths) / max(1, len(lengths)), 1),
         "set_lengths": {"min": min(lengths) if lengths else 0, "max": max(lengths) if lengths else 0},
         "bpm_range": ({"low": round(min(bpms)), "high": round(max(bpms))} if bpms else None),
