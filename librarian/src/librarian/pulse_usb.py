@@ -145,6 +145,19 @@ def read_stick(vol: Path):
     return sessions, meta, fmts
 
 
+def _loaded_count(vol: Path) -> int:
+    """Tracks loaded on the stick (not the play history)."""
+    rb = vol / "PIONEER" / "rekordbox"
+    if (rb / "exportLibrary.db").exists() and dlplus_available():
+        try:
+            r = _sqlcipher(rb / "exportLibrary.db", "SELECT count(*) FROM content;")
+            if r and r[0] and r[0][0].strip().isdigit():
+                return int(r[0][0])
+        except Exception:
+            pass
+    return 0
+
+
 def usb_insights(vol: Path, last_n: int = 50) -> dict:
     sess, meta, fmts = read_stick(vol)
     sessions = [s["tracks"] for s in sess]  # to label-lists for the analytics
@@ -182,6 +195,7 @@ def usb_insights(vol: Path, last_n: int = 50) -> dict:
     return {
         "name": vol.name,
         "formats": fmts,
+        "loaded": _loaded_count(vol),
         "tracks": len(plays),
         "plays": sum(plays.values()),
         "sessions": len(sessions),

@@ -120,6 +120,10 @@ async function loadUsb() {
     if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
     $("usb").innerHTML = d.sticks.map(s => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
+      if (!s.sessions) return `<div class="panel">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="stickname">🎛 ${esc(s.name)}</span>${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}</div>
+        <div class="muted" style="margin-top:10px">${(s.loaded||0).toLocaleString()} tracks loaded · <b style="color:var(--text)">no sets played off this stick yet</b> — gig with it and pulse fills in.</div></div>`;
       const bpm = s.bpm_range ? ` · BPM ${s.bpm_range.low}–${s.bpm_range.high}` : "";
       return `<div class="panel">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
