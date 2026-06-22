@@ -231,7 +231,8 @@ function ttRun(opts){
   // ('lighter') blend so the tongues glow and overlap like real fire.
   function drawFire(c){
     if(!(opts.fireGet&&opts.fireGet()))return;
-    var W=fxw,H=fxh,n=44,inten=Math.min(1,curEnergy*1.5+curHeat*0.25+0.18);
+    if(curHeat<=0.02)return;  // only ignites once the track has heated up
+    var W=fxw,H=fxh,n=44,inten=Math.min(1,curHeat*(0.55+curEnergy*0.9));  // grows with heat, flares with energy
     c.save();c.globalCompositeOperation='lighter';
     for(var i=0;i<n;i++){var x=(i+0.5)/n*W;
       var f=0.5+0.5*Math.sin(idleT*3.1+i*1.7)*Math.sin(idleT*1.3+i*0.6);  // per-column flicker
