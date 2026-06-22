@@ -167,6 +167,8 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
     recent_ids = {_norm(t) for s in recent for t in s}
     plays = collections.Counter(_norm(t) for s in sessions for t in s)
     recent_plays = collections.Counter(_norm(t) for s in recent for t in s)
+    recent_sets = collections.Counter(k for s in recent for k in {_norm(t) for t in s})
+    all_sets = collections.Counter(k for s in sessions for k in {_norm(t) for t in s})
     disp = {}
     for s in sessions:
         for t in s:
@@ -189,7 +191,8 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
 
     openers = collections.Counter(_norm(s[0]) for s in recent if s)
     closers = collections.Counter(_norm(s[-1]) for s in recent if s)
-    cold = [{"label": lbl(k), "plays": plays[k]} for k, _ in plays.most_common() if k not in recent_ids][:12]
+    cold = [{"label": lbl(k), "plays": plays[k], "sets": all_sets[k]}
+            for k, _ in plays.most_common() if k not in recent_ids][:12]
     gl = collections.Counter(meta.get(k, {}).get("genre", "") for k in recent_ids if meta.get(k, {}).get("genre"))
     lengths = [len(s) for s in recent if s]
     bpms = [meta[k]["bpm"] for k in recent_ids if meta.get(k, {}).get("bpm")]
@@ -208,7 +211,7 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
         "bpm_range": ({"low": round(min(bpms)), "high": round(max(bpms))} if bpms else None),
         "distinct_played": len(plays),
         "coverage_note": f"{len(plays)} distinct tracks played across {len(sessions)} sets",
-        "hot": [{"label": lbl(k), "plays": n} for k, n in recent_plays.most_common(15)],
+        "hot": [{"label": lbl(k), "plays": n, "sets": recent_sets[k]} for k, n in recent_plays.most_common(15)],
         "cold": cold,
         "transitions": [{"from": lbl(a), "to": lbl(b), "count": n}
                         for (a, b), n in trans.most_common(8) if n > 1],

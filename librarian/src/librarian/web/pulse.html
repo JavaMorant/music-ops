@@ -149,8 +149,8 @@ async function loadUsb() {
         <h2 style="margin-top:14px">🎚️ Genre flow <span class="muted">— how you move between styles</span></h2>
         ${transHtml((s.genre_flow||[]).map(g=>({from:g.from,to:g.to,count:g.count})))}
         <div class="grid2" style="margin-top:14px">
-          <div><h2 style="margin-top:0">🔥 Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"×"})}</div>
-          <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>"was "+t.plays+"×"})}</div>
+          <div><h2 style="margin-top:0">🔥 Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
+          <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
         </div>
         <div class="grid2">
           <div><h2 style="margin-top:0">▶ Openers</h2>${listOl(s.openers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
