@@ -66,6 +66,10 @@
   .ovhead{width:100%;max-width:560px;display:flex;align-items:center;gap:10px;margin-bottom:8px;}
   .ovtitle{font-weight:600;font-size:15px;letter-spacing:.02em;}
   .ovhead .sp{flex:1;}
+  #ov .fxbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;position:relative;z-index:2;}
+  #ov .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
+    padding:5px 11px;font-size:12px;cursor:pointer;}
+  #ov .fxchip.off{color:var(--dim);border-color:var(--line);}
   #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;animation:float 7s ease-in-out infinite;}
   @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
   #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
@@ -201,17 +205,23 @@
 </div>
 <div id="toast"></div>
 
-<div id="ov" class="fire-on">
+<div id="ov">
   <canvas class="pfx" id="ovpfx"></canvas>
   <div class="fx"></div>
   <div class="flash"></div>
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
-    <button id="firetgl" onclick="deckFire()">Fire ✓</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
     <button onclick="closeDeck()">✕ Close</button>
+  </div>
+  <div class="fxbar" id="fxbar">
+    <button class="fxchip" data-fx="fire">Fire</button>
+    <button class="fxchip" data-fx="smoke">Smoke</button>
+    <button class="fxchip" data-fx="particles">Particles</button>
+    <button class="fxchip" data-fx="shake">Shake</button>
+    <button class="fxchip" data-fx="heat">Heat</button>
   </div>
   <div class="hook" id="ovhook"></div>
   <div class="deck">
@@ -415,8 +425,11 @@ function deckLabel(){
 }
 function deckSkin(){ const ov=document.getElementById('ov'); const on=ov.classList.toggle('cassette-mode');
   document.getElementById('skintgl').textContent=on?'Vinyl':'Cassette'; deckSize(); }
-function deckFire(){ const on=document.getElementById('ov').classList.toggle('fire-on');
-  document.getElementById('firetgl').textContent=on?'Fire ✓':'Fire'; }
+// FX toggles — each chip flips an off-<name> class on #ov; all on by default
+document.querySelectorAll('#ov .fxchip').forEach(function(ch){
+  ch.onclick=function(){ ch.classList.toggle('off',
+    document.getElementById('ov').classList.toggle('off-'+ch.dataset.fx)); };
+});
 
 function pickCover(){ document.getElementById('coverInput').click(); }
 document.getElementById('coverInput').addEventListener('change', function(e){
@@ -496,7 +509,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'ovclabel':'ovlabel'),
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
-  fireGet:()=>document.getElementById('ov').classList.contains('fire-on'),
+  fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });

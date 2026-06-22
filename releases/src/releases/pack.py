@@ -99,6 +99,8 @@ function ttRun(opts){
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
+  var fxFire=true, fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
+  function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
     if(d){if(mx===r)h=((g-b)/d+6)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}return h;}
@@ -109,6 +111,7 @@ function ttRun(opts){
       if(n)hue=rgbHue(r/n,g/n,b/n);}catch(e){}};img.src=url;}
   // beat-drop payoff: a burst that flings outward across the WHOLE screen + two clean rings
   function onDrop(energy){flash=1;punch=1;shake=15;
+    if(!fxParticles)return;  // keep the flash/shake payoff, drop the spark+ring particles
     for(var i=0;i<80;i++){var a=Math.random()*6.2832,sp=fxw*0.007*(1+Math.random()*4.5);
       sparks.push({x:rcx+Math.cos(a)*ref*0.18,y:rcy+Math.sin(a)*ref*0.18,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-fxh*0.002,life:1,h:(hue+Math.random()*80)%360,big:true});}
     shocks.push({x:rcx,y:rcy,r:ref*0.45,life:1}); shocks.push({x:rcx,y:rcy,r:ref*0.25,life:0.8});}
@@ -129,6 +132,7 @@ function ttRun(opts){
       rcx=(dr.left+dr.width/2-fr.left)*sclx; rcy=(dr.top+dr.height/2-fr.top)*scly;
     }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;sclx=1;scly=1;}
     var playing=!!(opts.audio&&!opts.audio.paused);
+    fxFire=on('fire');fxSmoke=on('smoke');fxParticles=on('particles');fxShake=on('shake');fxHeat=on('heat');
     var an=opts.getAnalyser(), bass=0, energy=0;
     if(an){if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}
       an.getByteFrequencyData(dataArr);
@@ -141,12 +145,12 @@ function ttRun(opts){
     if(energy>eLong*1.45+0.12 && energy>0.30 && nowMs()-lastDrop>1400){lastDrop=nowMs();onDrop(energy);}
     hue=(hue+0.04+energy*0.45)%360;  // a touch slower so the colour drift reads as calm, not strobing
     flash*=0.86; punch*=0.9; shake*=0.82;
-    if(kick>0.05){shake=Math.max(shake,Math.min(11,kick*34)); if(opts.sparksOn)spawn(kick);}  // bass/kick → screen shake
+    if(kick>0.05){shake=Math.max(shake,Math.min(11,kick*34)); if(opts.sparksOn&&fxParticles)spawn(kick);}  // bass/kick → screen shake
     var breath=0.5+0.5*Math.sin(idleT*0.9);  // gentle idle pulse, ~7s cycle
     var lbl=opts.getLabel?opts.getLabel():opts.label;
     if(lbl){var ls=1+Math.min(0.2,kick*1.4)+punch*0.06+(playing?0:breath*0.02);
       lbl.style.transform='scale('+ls.toFixed(3)+')';}
-    if(opts.scene){var sx=(Math.random()*2-1)*shake,sy=(Math.random()*2-1)*shake;
+    if(opts.scene){var sx=fxShake?(Math.random()*2-1)*shake:0,sy=fxShake?(Math.random()*2-1)*shake:0;
       if(opts.reelGet&&opts.reelGet()){
         opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.05+Math.min(0.05,energy*0.06)+punch*0.12).toFixed(3)+')';}
       else if(shake>0.25||punch>0.01){  // shake the whole view on kicks here too, not just in reel mode
@@ -154,7 +158,7 @@ function ttRun(opts){
       else{opts.scene.style.transform='';}}
     if(opts.flash){opts.flash.style.opacity=Math.min(0.7,flash).toFixed(3);
       if(flash>0.02)opts.flash.style.background='radial-gradient(circle at 50% 45%,hsla('+hue.toFixed(0)+',90%,75%,.9),transparent 70%)';}
-    if(playing)ambient(energy);  // embers only while music plays — idle stays clean
+    if(playing&&fxParticles)ambient(energy);  // embers only while music plays — idle stays clean
     // brake-disc heat: builds toward the end of the track; drives the cassette
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
@@ -162,18 +166,18 @@ function ttRun(opts){
     var pr=dur?ct/dur:0, heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
     curHeat=dur?Math.min(1,Math.max(0,((ct-20)/dur)*3)):0;  // vinyl groove stays cold for the first ~20s, then ramps
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
-    if(opts.scene)opts.scene.style.setProperty('--heat',heat.toFixed(3));
+    if(opts.scene)opts.scene.style.setProperty('--heat',(fxHeat?heat:0).toFixed(3));  // heat toggle → reels' red glow
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
       stylusX=(pts[0].x-fxLeft)*sclx; stylusY=(pts[0].y-fxTop)*scly; hasStylus=true;}
-    if(playing && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.14)*(cassette?1.35:1);  // build-up driven; the cassette smokes a little more
+    if(playing && fxSmoke && opts.fxCanvas && pts.length){var prob=Math.min(0.7,build*6+heat*0.14)*(cassette?1.35:1);  // build-up driven; the cassette smokes a little more
       for(var s=0;s<pts.length;s++){if(Math.random()<prob)puff((pts[s].x-fxLeft)*sclx,(pts[s].y-fxTop)*scly,heat);}}
     // a sustained loud/full section = best guess at the chorus/hook -> an EXCESS of
     // particles streaming up from the bottom of the screen (not bursting off the deck)
     eMid+=(energy-eMid)*0.06;  // ~0.7s smoothing so transient kicks don't count, only sustained sections
     var chorus=Math.min(1,Math.max(0,(eMid-0.25)/0.30));
-    if(playing && opts.sparksOn && chorus>0.05){
+    if(playing && opts.sparksOn && fxParticles && chorus>0.05){
       var rise=Math.floor(chorus*chorus*9);  // up to ~9 per frame, rising from the bottom edge
       for(var ci=0;ci<rise && embers.length<300;ci++)
         embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0006,vy:-(fxh*0.0017)*(0.7+Math.random()*1.5)*(0.7+chorus*0.8),life:1,sz:ref*(0.004+Math.random()*0.013)});}
@@ -230,7 +234,7 @@ function ttRun(opts){
   // It roars with energy + heat; the rising embers spark up out of it. Additive
   // ('lighter') blend so the tongues glow and overlap like real fire.
   function drawFire(c){
-    if(!(opts.fireGet&&opts.fireGet()))return;
+    if(!fxFire)return;
     if(curHeat<=0.02)return;  // only ignites once the track has heated up
     var W=fxw,H=fxh,n=44,inten=Math.min(1,curHeat*(0.55+curEnergy*0.9));  // grows with heat, flares with energy
     c.save();c.globalCompositeOperation='lighter';
@@ -252,7 +256,7 @@ function ttRun(opts){
   // a charred ring + red-hot line + a bright contact ember, all building with heat.
   // Drawn on the full-screen field (above the opaque record) so it's actually visible.
   function drawTrail(c){var cassette=opts.getSkin&&opts.getSkin()==='cassette';
-    if(cassette||curHeat<=0.001)return;
+    if(cassette||!fxHeat||curHeat<=0.001)return;
     var h=curHeat;
     // groove ring = the circle the stylus traces; it passes through the contact point
     var rr=hasStylus?Math.sqrt((stylusX-rcx)*(stylusX-rcx)+(stylusY-rcy)*(stylusY-rcy)):ref*0.33;
@@ -349,6 +353,10 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .reelbtn{position:fixed;top:12px;right:12px;z-index:9;background:#20202a;color:var(--txt);
     border:1px solid var(--line);border-radius:20px;padding:7px 14px;font-size:13px;cursor:pointer;}
   .reelbtn:hover{border-color:var(--accent);}
+  .fxbar{position:fixed;top:12px;left:12px;z-index:9;display:flex;gap:6px;flex-wrap:wrap;max-width:62vw;}
+  .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
+    padding:6px 12px;font-size:12px;cursor:pointer;}
+  .fxchip.off{color:var(--dim);border-color:var(--line);}
   /* deck + record are sized in % of .deck, so reel mode just scales .deck */
   .deck{position:relative;width:330px;height:330px;margin:8px auto 14px;animation:float 7s ease-in-out infinite;}
   @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
@@ -454,9 +462,15 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   body.reel .now{transform:scale(1.15);margin-bottom:0;}
 </style></head>
 <body>
-<button class="reelbtn" id="firebtn" style="right:190px">Fire ✓</button>
 <button class="reelbtn" id="skinbtn" style="right:96px">Cassette</button>
 <button class="reelbtn" id="reelbtn">⤢ Reel</button>
+<div class="fxbar" id="fxbar">
+  <button class="fxchip" data-fx="fire">Fire</button>
+  <button class="fxchip" data-fx="smoke">Smoke</button>
+  <button class="fxchip" data-fx="particles">Particles</button>
+  <button class="fxchip" data-fx="shake">Shake</button>
+  <button class="fxchip" data-fx="heat">Heat</button>
+</div>
 <div class="wrap">
   <h1>__PACK_NAME__</h1>
   <p class="by">Produced by <b>__PRODUCER__</b> · __MADE__ · __NBEATS__ beats</p>
@@ -519,9 +533,9 @@ ttScrub({vinyl:vinyl,audio:audio,secPerRev:4,onTap:togglePlay});
 const reelbtn=document.getElementById('reelbtn');
 reelbtn.onclick=()=>{const on=document.body.classList.toggle('reel');
   reelbtn.textContent=on?'✕ Exit':'⤢ Reel';size();};
-const firebtn=document.getElementById('firebtn');
-document.body.classList.add('fire-on');firebtn.textContent='Fire ✓';  // on by default — toggle off any time
-firebtn.onclick=()=>{const on=document.body.classList.toggle('fire-on');firebtn.textContent=on?'Fire ✓':'Fire';};
+// FX toggles — each chip flips an off-<name> class on <body>; all on by default
+document.querySelectorAll('.fxchip').forEach(function(ch){
+  ch.onclick=function(){ch.classList.toggle('off',document.body.classList.toggle('off-'+ch.dataset.fx));};});
 const canvas=document.getElementById('viz');
 function size(){const s=document.getElementById('deck').clientWidth;canvas.width=s*2;canvas.height=s*2;}
 size();addEventListener('resize',size);
@@ -543,7 +557,7 @@ ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
   getLabel:function(){return isCassette()?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
   flash:document.querySelector('.flash'),getCover:function(){return PACK_COVER;},
   getSkin:function(){return isCassette()?'cassette':'vinyl';},
-  fireGet:function(){return document.body.classList.contains('fire-on');},
+  fxOn:function(n){return !document.body.classList.contains('off-'+n);},
   reelGet:function(){return document.body.classList.contains('reel');},sparksOn:true});
 </script>
 </body></html>

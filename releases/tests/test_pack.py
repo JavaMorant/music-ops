@@ -213,14 +213,20 @@ def test_chorus_particle_burst(tmp_path):
     assert "chorus*chorus*9" in idx and "embers.length<300" in idx
 
 
-def test_fire_effect_toggle_present(tmp_path):
+def test_fx_toggles_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
-    assert "function drawFire" in idx and "opts.fireGet" in idx     # the flame band
+    # the flame band, gated on heat + the fire toggle
+    assert "function drawFire" in idx and "if(!fxFire)return" in idx
     assert "curHeat<=0.02)return" in idx                            # only ignites once the track is hot
     assert "globalCompositeOperation='lighter'" in idx              # additive fire glow
-    assert 'id="firebtn"' in idx and "fire-on" in idx               # a toggle, on by default
-    assert "\U0001f525" not in idx                                  # still no fire EMOJI (drawn, not 🔥)
+    assert "\U0001f525" not in idx                                  # flames are drawn, not the 🔥 emoji
+    # generic on/off mechanism + a chip per effect, all on by default
+    assert "fxOn:function(n){return !document.body.classList.contains('off-'+n)" in idx
+    for fx in ("fire", "smoke", "particles", "shake", "heat"):
+        assert f'data-fx="{fx}"' in idx
+    # each effect is actually gated in the visualizer
+    assert all(g in idx for g in ("fxFire", "fxSmoke", "fxParticles", "fxShake", "fxHeat"))
 
 
 def test_cassette_skin_present(tmp_path):
