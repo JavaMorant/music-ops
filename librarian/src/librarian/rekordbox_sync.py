@@ -229,3 +229,32 @@ def colour_by_status(db, *, dry_run: bool = True, backup_to: Path | None = None,
         db.commit()
     return {"by_status": dict(counts), "total": sum(counts.values()),
             "legend": {"hot": "red", "cold": "blue", "untouched": "green"}}
+
+
+def build_analytics_crates(db, *, dry_run: bool = True, backup_to: Path | None = None,
+                           recent_n: int = 50) -> list[dict]:
+    """Auto-build rekordbox playlists from your play stats, under a 'pulse crates'
+    folder: Floor Fillers (in 5+ sets), Resurface (was a staple, gone cold)."""
+    plays, sets, recent = usb_track_stats(recent_n)
+    _by_path, by_title = _index(db)
+    crates = {
+        "★ Floor Fillers": [k for k, n in sets.items() if n >= 5],
+        "★ Resurface": [k for k, n in sets.items() if n >= 3 and k not in recent],
+    }
+    plans = []
+    for name, keys in crates.items():
+        cids = [c.ID for k in keys for c in by_title.get(k, [])]
+        plans.append({"name": name, "tracks": len(cids), "_cids": cids})
+
+    if not dry_run:
+        _guard(dry_run, backup_to)
+        folder = _get_or_create_folder(db, "pulse crates")
+        for p in plans:
+            for ex in _find_playlists(db, p["name"]):
+                if ex.ID != folder.ID:
+                    db.delete_playlist(ex)
+            pl = db.create_playlist(p["name"], parent=folder)
+            for cid in p["_cids"]:
+                db.add_to_playlist(pl, cid)
+        db.commit()
+    return [{k: v for k, v in p.items() if not k.startswith("_")} for p in plans]

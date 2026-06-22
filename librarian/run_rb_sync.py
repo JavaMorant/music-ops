@@ -43,6 +43,9 @@ def main():
     cl = rb.colour_by_status(db, dry_run=not apply)
     print(f"COLOURS: {cl['total']} -> {cl['by_status']}  (hot=red · cold=blue · untouched=green)")
 
+    cr = rb.build_analytics_crates(db, dry_run=not apply)
+    print("\nANALYTICS CRATES: " + " · ".join(f"{c['name']} ({c['tracks']})" for c in cr))
+
     print("\nAPPLIED." if apply else "\n(dry run — quit rekordbox, then: APPLY=1 .venv/bin/python run_rb_sync.py)")
 
 
