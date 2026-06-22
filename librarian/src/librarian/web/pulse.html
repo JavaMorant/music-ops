@@ -76,6 +76,9 @@
   <h2>Your sticks <span class="muted">— what you actually play</span></h2>
   <div id="usb"><div class="skel">reading mounted USBs…</div></div>
 
+  <h2>Your sets <span class="muted">— name them, link a recording, review the tracklist</span></h2>
+  <div id="sets"><div class="skel">reading sets off the stick…</div></div>
+
   <h2>Desktop library</h2>
   <div id="desktop"><div class="skel">reading rekordbox…</div></div>
 </main>
@@ -197,10 +200,47 @@ async function ingest(apply) {
 $("ingPreview").onclick = () => ingest(false);
 $("ingApply").onclick = () => { if (confirm("Fold these tracks into the library? This moves files.")) ingest(true); };
 
+async function loadSets() {
+  try {
+    const r = await fetch("/api/pulse/sets?limit=40");
+    const d = await r.json();
+    if (!r.ok) { $("sets").innerHTML = `<div class="banner bad">${esc(d.detail||"error")}</div>`; return; }
+    if (!d.sets.length) { $("sets").innerHTML = '<div class="panel muted">No sets on a mounted stick.</div>'; return; }
+    $("sets").innerHTML = `<div class="muted" style="margin-bottom:8px">Stick: ${esc(d.stick||"")} · newest first</div>`
+      + d.sets.map((s, i) => setCard(s, i)).join("");
+  } catch (e) { $("sets").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+function setCard(s, i) {
+  const tl = s.tracks.map((t, j) =>
+    `<li><span class="rank">${j+1}</span><span class="lab">${esc(t)}</span></li>`).join("");
+  const inp = "background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 9px";
+  return `<div class="panel">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="pill">${esc(s.fmt)}</span>
+      <input id="nm${i}" type="text" value="${esc(s.name)}" style="flex:1;min-width:160px;${inp}"/>
+      <span class="muted">${s.n} tracks</span>
+      <button class="ghost" onclick="toggleTl(${i})">tracklist</button>
+      <button onclick="saveSet(${i},'${esc(s.key)}')">save</button>
+    </div>
+    <input id="rec${i}" type="text" placeholder="link a recording — file path (optional)" value="${esc(s.recording||'')}"
+      style="width:100%;margin-top:8px;font-family:ui-monospace,monospace;font-size:12px;${inp}"/>
+    <ol class="list" id="tl${i}" style="display:none;margin-top:10px">${tl}</ol>
+  </div>`;
+}
+function toggleTl(i) { const el = $("tl" + i); el.style.display = el.style.display === "none" ? "block" : "none"; }
+async function saveSet(i, key) {
+  const name = $("nm" + i).value, recording = $("rec" + i).value;
+  await fetch("/api/pulse/sets", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, name, recording }) });
+  const el = $("nm" + i); el.style.borderColor = "var(--ok)";
+  setTimeout(() => { el.style.borderColor = "var(--line)"; }, 900);
+}
+
 function load() {
   $("usb").innerHTML = '<div class="skel">reading mounted USBs…</div>';
+  $("sets").innerHTML = '<div class="skel">reading sets off the stick…</div>';
   $("desktop").innerHTML = '<div class="skel">reading rekordbox…</div>';
-  loadUsb(); loadDesktop();
+  loadUsb(); loadSets(); loadDesktop();
 }
 $("refresh").onclick = load;
 load();

@@ -56,7 +56,7 @@ def _index(db):
         fp = getattr(c, "FolderPath", None)
         if fp:
             by_path[fp] = c
-        by_at[_norm(_artist(c) + " " + (getattr(c, "Title", "") or ""))].append(c)
+        by_at[_norm(getattr(c, "Title", "") or "")].append(c)  # title-keyed: stick artists differ
     return by_path, by_at
 
 
@@ -105,10 +105,12 @@ def usb_play_counts() -> collections.Counter:
     from . import pulse_usb
     plays = collections.Counter()
     for vol in pulse_usb.find_usbs():
-        sessions, _meta, _fmts = pulse_usb.read_stick(vol)
+        sessions, meta, _fmts = pulse_usb.read_stick(vol)
         for s in sessions:
-            for label in s:
-                plays[_norm(label)] += 1
+            for label in s["tracks"]:
+                title = meta.get(_norm(label), {}).get("title", "")
+                if title:
+                    plays[_norm(title)] += 1
     return plays
 
 
@@ -117,29 +119,31 @@ def _stars(n: int) -> int:
 
 
 def auto_rate(db, *, dry_run: bool = True, plays: collections.Counter | None = None,
-              backup_to: Path | None = None) -> dict:
-    """Rate collection tracks by how often you play them off your sticks
-    (>=5 plays=5★, 3-4=4★, 2=3★, 1=2★). Matches USB plays to the collection by
-    artist+title. Leaves never-played tracks untouched."""
+              backup_to: Path | None = None, rate_all: bool = True) -> dict:
+    """Rate every collection track by how often you play it off your sticks
+    (>=5 plays=5★, 3-4=4★, 2=3★, 1=2★, unplayed=1★ when rate_all). Matches USB
+    plays to the collection by artist+title; combines DL + DL+ history."""
     plays = plays if plays is not None else usb_play_counts()
-    _, by_at = _index(db)
     if not dry_run:
         _guard(dry_run, backup_to)  # confirm rekordbox closed + back up BEFORE any write
     changes = collections.Counter()
     examples = []
-    for key, n in plays.items():
-        if n < 1 or key == "|":
-            continue
+    for c in db.get_content():
+        key = _norm(getattr(c, "Title", "") or "")
+        n = plays.get(key, 0)
         st = _stars(n)
-        for c in by_at.get(key, []):
-            if getattr(c, "Rating", 0) == st:
+        if st == 0:
+            if not rate_all:
                 continue
-            changes[st] += 1
-            if len(examples) < 12:
-                examples.append({"track": f"{_artist(c)} - {c.Title}".strip(" -"),
-                                 "plays": n, "stars": st})
-            if not dry_run:
-                c.Rating = st
+            st = 1  # every song gets a baseline; unplayed = 1 star
+        if getattr(c, "Rating", 0) == st:
+            continue
+        changes[st] += 1
+        if n > 0 and len(examples) < 12:
+            examples.append({"track": f"{_artist(c)} - {c.Title}".strip(" -"),
+                             "plays": n, "stars": st})
+        if not dry_run:
+            c.Rating = st
     if not dry_run:
         db.commit()
     return {"by_stars": dict(sorted(changes.items(), reverse=True)),

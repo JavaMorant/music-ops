@@ -65,6 +65,12 @@ class IngestRequest(BaseModel):
     apply: bool = False
 
 
+class SetLabelRequest(BaseModel):
+    key: str
+    name: str | None = None
+    recording: str | None = None
+
+
 def _rel(path: Path, root: Path) -> str:
     try:
         return str(path.relative_to(root))
@@ -326,6 +332,29 @@ def create_app(config: AppConfig) -> FastAPI:
         if req.apply and plan["survivors"]:
             out["applied"] = ingest.apply_ingest(lib, plan)
         return out
+
+    @app.get("/api/pulse/sets")
+    def get_sets(stick: str = "", limit: int = 40) -> dict:
+        """Recent sets off a stick — tracklist in play order, custom name + linked
+        recording from the sidecar."""
+        from .. import pulse_usb, setlog
+        vols = pulse_usb.find_usbs()
+        if stick:
+            vols = [v for v in vols if v.name == stick] or vols
+        if not vols:
+            return {"sets": [], "sticks": [], "stick": None}
+        log = setlog.load()
+        sets = pulse_usb.stick_sets(vols[0], limit=limit)
+        for s in sets:
+            e = log.get(s["key"], {})
+            s["name"] = e.get("name") or s["auto_name"]
+            s["recording"] = e.get("recording", "")
+        return {"sets": sets, "sticks": [v.name for v in pulse_usb.find_usbs()], "stick": vols[0].name}
+
+    @app.post("/api/pulse/sets", dependencies=[Depends(guard_origin)])
+    def post_set(req: SetLabelRequest) -> dict:
+        from .. import setlog
+        return setlog.save_one(req.key, req.name, req.recording)
 
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
