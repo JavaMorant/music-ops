@@ -83,6 +83,16 @@
     </span></h2>
   <div id="usb"><div class="skel">reading mounted USBs…</div></div>
 
+  <h2>What I play after… <span class="muted">— set-builder</span></h2>
+  <div class="panel">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input id="afterTrack" type="text" placeholder="type a track — e.g. one dance"
+        style="flex:1;min-width:200px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px"/>
+      <button id="afterBtn">find</button>
+    </div>
+    <div id="afterOut"></div>
+  </div>
+
   <h2>Your sets <span class="muted">— name them, link a recording, review the tracklist</span></h2>
   <div id="sets"><div class="skel">reading sets off the stick…</div></div>
 
@@ -156,7 +166,14 @@ async function loadUsb() {
           <div><h2 style="margin-top:0">▶ Openers</h2>${listOl(s.openers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
           <div><h2 style="margin-top:0">⏹ Closers</h2>${listOl(s.closers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
         </div>
-        <h2>What you play — by genre</h2>${bars(s.genre_lean)}</div>`;
+        <h2>What you play — by genre</h2>${bars(s.genre_lean)}
+        <div class="grid2" style="margin-top:14px">
+          <div><h2 style="margin-top:0">🏆 Crowd-pleasers <span class="muted">— % of sets</span></h2>${listOl(s.crowd_pleasers, {lab:t=>t.label, cnt:t=>t.pct+"% · "+t.sets+" sets"})}</div>
+          <div><h2 style="margin-top:0">💤 One-hit wonders <span class="muted">— played once</span></h2>${listOl(s.one_hit_wonders, {lab:t=>t.label, cnt:t=>""})}</div>
+        </div>
+        ${(s.signature_runs&&s.signature_runs.length) ? `<h2>🔗 Signature runs <span class="muted">— your repeated 3-track moves</span></h2>`
+          + s.signature_runs.map(r=>`<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13px"><span style="color:var(--accent);font-weight:600">${r.count}×</span> ${esc(r.tracks.join(" → "))}</div>`).join("") : ""}
+        </div>`;
     }).join("");
   } catch (e) { $("usb").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
@@ -236,6 +253,7 @@ function setCard(s, i) {
     </div>
     <input id="rec${i}" type="text" placeholder="link a recording — file path (optional)" value="${esc(s.recording||'')}"
       style="width:100%;margin-top:8px;font-family:ui-monospace,monospace;font-size:12px;${inp}"/>
+    ${spark(s.bpms)}
     <ol class="list" id="tl${i}" style="display:none;margin-top:10px">${tl}</ol>
   </div>`;
 }
@@ -248,6 +266,27 @@ async function saveSet(i, key) {
   setTimeout(() => { el.style.borderColor = "var(--line)"; }, 900);
 }
 
+async function findNext() {
+  const t = $("afterTrack").value.trim();
+  if (!t) return;
+  $("afterOut").innerHTML = '<div class="skel">looking…</div>';
+  try {
+    const r = await fetch("/api/pulse/next?track=" + encodeURIComponent(t));
+    const d = await r.json();
+    if (!d.next || !d.next.length) { $("afterOut").innerHTML = '<div class="muted" style="padding:8px 0">No follow-ons found — try part of the title.</div>'; return; }
+    $("afterOut").innerHTML = `<div class="muted" style="margin:12px 0 4px">After a track matching "${esc(t)}", you usually go to:</div>`
+      + listOl(d.next, { lab:x=>x.label, cnt:x=>x.count+"×" });
+  } catch (e) { $("afterOut").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+function spark(bpms) {
+  const b = (bpms||[]).filter(x=>x>0);
+  if (b.length < 2) return "";
+  const mn = Math.min(...b), mx = Math.max(...b), rng = (mx-mn)||1;
+  return `<div style="display:flex;align-items:flex-end;gap:1px;height:30px;margin-top:10px">`
+    + b.map(x=>`<span title="${x} BPM" style="flex:1;background:var(--accent);border-radius:1px;height:${20+70*(x-mn)/rng}%"></span>`).join("")
+    + `</div><div class="muted" style="font-size:11px;margin-top:2px">⚡ energy arc · BPM ${mn}–${mx} across the set</div>`;
+}
+
 function load() {
   $("usb").innerHTML = '<div class="skel">reading mounted USBs…</div>';
   $("sets").innerHTML = '<div class="skel">reading sets off the stick…</div>';
@@ -255,6 +294,8 @@ function load() {
   loadUsb(); loadSets(); loadDesktop();
 }
 $("refresh").onclick = load;
+$("afterBtn").onclick = findNext;
+$("afterTrack").addEventListener("keydown", e => { if (e.key === "Enter") findNext(); });
 document.getElementById("srcToggle").onclick = (e) => {
   const b = e.target.closest(".src");
   if (!b) return;

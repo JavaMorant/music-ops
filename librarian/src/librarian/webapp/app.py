@@ -357,6 +357,17 @@ def create_app(config: AppConfig) -> FastAPI:
         from .. import setlog
         return setlog.save_one(req.key, req.name, req.recording)
 
+    @app.get("/api/pulse/next")
+    def get_next(track: str, stick: str = "") -> dict:
+        """Set-builder: what you usually play after a track."""
+        from .. import pulse_usb
+        vols = pulse_usb.find_usbs()
+        if stick:
+            vols = [v for v in vols if v.name == stick] or vols
+        if not vols or not track.strip():
+            return {"next": []}
+        return {"next": pulse_usb.follows(vols[0], track)}
+
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 

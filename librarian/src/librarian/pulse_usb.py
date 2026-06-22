@@ -197,6 +197,18 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
     lengths = [len(s) for s in recent if s]
     bpms = [meta[k]["bpm"] for k in recent_ids if meta.get(k, {}).get("bpm")]
 
+    total_sets = len(sessions)
+    crowd = [{"label": lbl(k), "sets": all_sets[k], "pct": round(100 * all_sets[k] / max(1, total_sets))}
+             for k, _ in all_sets.most_common(15)]
+    one_hit = [{"label": lbl(k)} for k, n in plays.items() if n == 1][:15]
+    grams = collections.Counter()  # repeated 3-track runs across all sets
+    for s in sessions:
+        ks = [_norm(t) for t in s]
+        for i in range(len(ks) - 2):
+            grams[(ks[i], ks[i + 1], ks[i + 2])] += 1
+    sig_runs = [{"tracks": [lbl(a), lbl(b), lbl(c)], "count": n}
+                for (a, b, c), n in grams.most_common(6) if n > 1]
+
     return {
         "name": vol.name,
         "formats": fmts,
@@ -219,19 +231,41 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
         "openers": [{"label": lbl(k), "count": n} for k, n in openers.most_common(6)],
         "closers": [{"label": lbl(k), "count": n} for k, n in closers.most_common(6)],
         "genre_lean": [{"genre": g, "count": c} for g, c in gl.most_common(8)],
+        "crowd_pleasers": crowd,
+        "one_hit_wonders": one_hit,
+        "signature_runs": sig_runs,
     }
+
+
+def follows(vol: Path, query: str, *, last_n: int = 80) -> list[dict]:
+    """'What do I play after X' — next-track distribution after any track whose
+    label contains the query, across recent sets."""
+    sess, _meta, _fmts = read_stick(vol)
+    qn = _norm(query)
+    if not qn:
+        return []
+    nxt, disp = collections.Counter(), {}
+    for s in (sess[-last_n:] if last_n else sess):
+        ks = [_norm(t) for t in s["tracks"]]
+        for t in s["tracks"]:
+            disp.setdefault(_norm(t), t)
+        for i in range(len(ks) - 1):
+            if qn in ks[i] and ks[i + 1] != ks[i]:
+                nxt[ks[i + 1]] += 1
+    return [{"label": disp.get(k, k), "count": n} for k, n in nxt.most_common(10)]
 
 
 def stick_sets(vol: Path, *, limit: int = 60) -> list[dict]:
     """Most-recent sets on a stick, each with its tracklist in play order and a
     stable key (for naming / linking a recording in a sidecar)."""
-    sess, _meta, _fmts = read_stick(vol)
+    sess, meta, _fmts = read_stick(vol)
     out = []
     for s in reversed(sess):  # newest first
         out.append({
             "key": f"{vol.name}|{s['fmt']}|{s['id']}",
             "fmt": s["fmt"], "auto_name": s["name"],
             "n": len(s["tracks"]), "tracks": s["tracks"],
+            "bpms": [round(meta.get(_norm(t), {}).get("bpm", 0) or 0) for t in s["tracks"]],
         })
         if len(out) >= limit:
             break
