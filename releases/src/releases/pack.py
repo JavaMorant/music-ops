@@ -152,7 +152,7 @@ function ttRun(opts){
       lbl.style.transform='scale('+ls.toFixed(3)+')';}
     if(opts.scene){var sx=fxShake?(Math.random()*2-1)*shake:0,sy=fxShake?(Math.random()*2-1)*shake:0;
       if(opts.reelGet&&opts.reelGet()){
-        opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.05+Math.min(0.05,energy*0.06)+punch*0.12).toFixed(3)+')';}
+        opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.0+Math.min(0.03,energy*0.04)+punch*0.06).toFixed(3)+')';}  // gentle — keep the whole deck in frame
       else if(shake>0.25||punch>0.01){  // shake the whole view on kicks here too, not just in reel mode
         opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1+punch*0.04).toFixed(3)+')';}
       else{opts.scene.style.transform='';}}
@@ -458,7 +458,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   body.reel .wrap{max-width:none;min-height:100vh;display:flex;flex-direction:column;
     align-items:center;justify-content:center;padding:16px;}
   body.reel h1,body.reel .by,body.reel ol.list,body.reel footer,body.reel .contact{display:none;}
-  body.reel .deck{width:min(88vw,64vh);height:min(88vw,64vh);margin:0 auto 26px;}
+  body.reel .deck{width:min(82vw,58vh);height:min(82vw,58vh);margin:0 auto 26px;}
   body.reel .now{transform:scale(1.15);margin-bottom:0;}
 </style></head>
 <body>
