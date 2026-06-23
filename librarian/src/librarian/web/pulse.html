@@ -22,6 +22,11 @@
   .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
   .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
   .tab.active .dot { opacity:1; }
+  .rootlbl { color:var(--dim); font-size:12px; }
+  .rootsel { background:#1c1f25; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:6px 10px; font-size:12px; font-weight:600; max-width:240px; cursor:pointer; }
+  .rootsel:disabled { opacity:.5; cursor:not-allowed; }
+  body.scanning main { pointer-events:none; opacity:.5; }   /* lock everything while folding in */
   header h1 { margin:0; font-size:18px; letter-spacing:.06em; font-weight:600; }
   header .sub { color:var(--dim); font-size:12px; }
   header .spacer { flex:1; }
@@ -71,9 +76,11 @@
     <a class="tab active" href="/pulse.html"><span class="dot" style="background:#5fd08a"></span>Pulse</a>
     <a class="tab" href="/dedupe.html"><span class="dot" style="background:#e0a85b"></span>Duplicates</a>
   </nav>
+  <span class="rootlbl">working in:</span>
+  <select id="rootSel" class="rootsel"><option>…</option></select>
   <span class="spacer"></span>
   <span class="sub">library intelligence</span>
-  <button id="refresh" class="ghost">↻ refresh</button>
+  <button id="refresh" class="ghost" data-lock>↻ refresh</button>
 </header>
 <main>
   <h2>Add music <span class="muted">— fold a folder into the library</span></h2>
@@ -111,6 +118,7 @@
   <h2>Desktop library</h2>
   <div id="desktop"><div class="skel">reading rekordbox…</div></div>
 </main>
+<script src="/workspace.js"></script>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -218,6 +226,7 @@ async function ingest(apply) {
   const folder = $("ingFolder").value.trim();
   if (!folder) return;
   $("ingPreview").disabled = $("ingApply").disabled = true;
+  Workspace.setScanning(true);   // lock the folder switcher while folding in
   $("ingOut").innerHTML = `<div class="skel">${apply ? "folding in" : "analysing"} ${esc(folder)}… (classify + fingerprint — can take a minute)</div>`;
   try {
     const r = await fetch("/api/pulse/ingest", {
@@ -237,6 +246,7 @@ async function ingest(apply) {
     $("ingOut").innerHTML = html;
     $("ingApply").disabled = !!d.applied || d.survivors === 0;  // re-enable to fold in after a preview
   } catch (e) { $("ingOut").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  finally { Workspace.setScanning(false); }
   $("ingPreview").disabled = false;
 }
 $("ingPreview").onclick = () => ingest(false);
@@ -310,6 +320,7 @@ function load() {
   $("desktop").innerHTML = '<div class="skel">reading rekordbox…</div>';
   loadUsb(); loadSets(); loadDesktop();
 }
+Workspace.init();
 $("refresh").onclick = load;
 $("afterBtn").onclick = findNext;
 $("afterTrack").addEventListener("keydown", e => { if (e.key === "Enter") findNext(); });

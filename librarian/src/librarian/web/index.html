@@ -24,6 +24,14 @@
   .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
   .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
   .tab.active .dot { opacity:1; }
+  .rootctl { display:inline-flex; align-items:center; gap:8px; }
+  .rootlbl { color:var(--dim); font-size:12px; }
+  .rootsel { background:#1c1f25; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:6px 10px; font-size:12px; font-weight:600; max-width:240px; cursor:pointer; }
+  .rootsel:disabled { opacity:.5; cursor:not-allowed; }
+  .rbhint { color:var(--ok); text-decoration:none; font-size:12px; font-weight:600; padding:5px 10px;
+    border:1px solid rgba(95,208,138,.35); border-radius:8px; white-space:nowrap; }
+  body.scanning main { pointer-events:none; opacity:.5; }   /* lock everything while scanning/applying */
   main { max-width:1100px; margin:0 auto; padding:24px; }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
     padding:16px 18px; margin-bottom:18px; }
@@ -115,9 +123,42 @@ async function api(path, opts) {
 
 // --- state -----------------------------------------------------------------
 const state = {
-  cfg: null, mode: "cleanup", organize: true, playlist: "New This Week",
+  cfg: null, roots: null, mode: "cleanup", organize: true, playlist: "New This Week",
   instruction: "", plan: null, kept: new Set(), backup: true, runs: [], busy: false, msg: null,
 };
+
+// Working-folder switcher (mirrors workspace.js on the static pages). Switching
+// re-points the engine at another folder/USB; a rekordbox stick links to Pulse.
+function rootControl(s) {
+  const data = s.roots;
+  if (!data) return h("span", { class: "root" }, s.cfg ? s.cfg.library_root : "…");
+  const cur = (data.roots || []).find((r) => r.path === data.current);
+  const sel = h("select",
+    { class: "rootsel", disabled: s.busy, onChange: (e) => switchRoot(e.target.value) },
+    (data.roots || []).map((r) =>
+      h("option", { value: r.path },
+        (r.kind === "usb" ? "🔌 " : r.kind === "folder" ? "📁 " : "▸ ")
+        + r.label + (r.rekordbox ? " · rekordbox" : ""))));
+  sel.value = data.current;   // set AFTER options exist, else it can't match
+  const kids = [h("span", { class: "rootlbl" }, "working in:"), sel];
+  if (cur && cur.rekordbox)
+    kids.push(h("a", { class: "rbhint", href: "/pulse.html" }, "▶ play history → Pulse"));
+  return h("span", { class: "rootctl" }, kids);
+}
+
+async function switchRoot(path) {
+  if (state.busy || !path || (state.roots && path === state.roots.current)) return;
+  if (state.plan && state.plan.actions.length
+      && !confirm("Switching folders discards the current unapplied plan. Continue?")) {
+    render(); return;   // re-render resets the <select> back to the current root
+  }
+  state.busy = true; state.msg = null; render();
+  try {
+    await api("/api/root", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }) });
+    location.reload();                         // re-scan everything for the new root
+  } catch (e) { state.busy = false; state.msg = { kind: "bad", text: e.message }; render(); }
+}
 
 // --- views -----------------------------------------------------------------
 function organizePanel(s) {
@@ -228,13 +269,14 @@ function runsPanel(s) {
 function render() {
   const s = state;
   const hasPlan = s.plan && s.plan.actions.length > 0;
+  document.body.classList.toggle("scanning", s.busy);   // lock main while busy
   const root = document.getElementById("root");
   root.replaceChildren(
     h("header", null,
       h("span", { class: "brand" }, "librarian"),
       navTabs("review"),
       h("span", { class: "spacer" }),
-      h("span", { class: "root" }, s.cfg ? s.cfg.library_root : "…")),
+      rootControl(s)),
     h("main", null,
       s.msg && h("div", { class: "banner " + s.msg.kind }, s.msg.text),
       organizePanel(s),
@@ -310,20 +352,23 @@ async function undo(run_id) {
 }
 
 async function upload(fileList) {
+  if (state.busy) return;                 // no staging while a scan/apply is running
   const fd = new FormData();
   for (const f of fileList) fd.append("files", f);
+  state.busy = true; render();
   try {
     const r = await api("/api/inbox/upload", { method: "POST", body: fd });
     state.msg = { kind: "ok", text: "Staged " + r.saved.length + " file(s) in Inbox"
       + (r.rejected.length ? ", rejected " + r.rejected.length : "") + ". Now Scan." };
-    render();
-  } catch (e) { state.msg = { kind: "bad", text: e.message }; render(); }
+  } catch (e) { state.msg = { kind: "bad", text: e.message }; }
+  finally { state.busy = false; render(); }
 }
 
 // --- boot ------------------------------------------------------------------
 render();
 api("/api/config").then((c) => { state.cfg = c; render(); })
   .catch((e) => { state.msg = { kind: "bad", text: e.message }; render(); });
+api("/api/roots").then((d) => { state.roots = d; render(); }).catch(() => {});
 refreshRuns();
 </script>
 </body>

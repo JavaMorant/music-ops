@@ -28,6 +28,10 @@ class AppConfig:
     inbox_dir: Path | None = None
     port: int = 8765
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
+    # Folders the working-root switcher may re-point at (a track must live strictly
+    # under one of these). Defaults to the user's home tree + mounted volumes, so a
+    # stray request can never aim the file engine at the system root.
+    allowed_root_bases: list[Path] | None = None
 
     def __post_init__(self) -> None:
         # .absolute(), NOT .resolve(): the engine, planner and rekordbox matching
@@ -40,6 +44,9 @@ class AppConfig:
         if self.rekordbox_xml is not None:
             self.rekordbox_xml = self.rekordbox_xml.absolute()
         self.inbox_dir = (self.inbox_dir or self.library_root / "Inbox").absolute()
+        if self.allowed_root_bases is None:
+            self.allowed_root_bases = [Path.home(), Path("/Volumes")]
+        self.allowed_root_bases = [Path(b).absolute() for b in self.allowed_root_bases]
 
 
 @dataclass

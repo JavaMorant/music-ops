@@ -20,6 +20,13 @@
   .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
   .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
   .tab.active .dot { opacity:1; }
+  .rootsel { background:#1c1f25; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:6px 10px; font-size:12px; font-weight:600; max-width:240px; cursor:pointer; }
+  .rootsel:disabled { opacity:.5; cursor:not-allowed; }
+  .rootlbl { color:var(--dim); font-size:12px; }
+  body.scanning main { pointer-events:none; opacity:.5; }   /* lock everything while scanning */
+  .rbhint { color:var(--ok); text-decoration:none; font-size:12px; font-weight:600; padding:5px 10px;
+    border:1px solid rgba(95,208,138,.35); border-radius:8px; white-space:nowrap; }
   button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px; padding:8px 16px;
     font-weight:600; cursor:pointer; font-size:13px; } button.ghost { background:#2a2f39; color:var(--text); }
   button:disabled { opacity:.45; cursor:default; }
@@ -64,10 +71,12 @@
     <a class="tab" href="/pulse.html"><span class="dot" style="background:#5fd08a"></span>Pulse</a>
     <a class="tab active" href="/dedupe.html"><span class="dot" style="background:#e0a85b"></span>Duplicates</a>
   </nav>
+  <span class="rootlbl">working in:</span>
+  <select id="rootSel" class="rootsel"><option>…</option></select>
+  <a id="rbHint" class="rbhint" href="/pulse.html" hidden>▶ play history → Pulse</a>
   <span class="spacer"></span>
-  <span class="sub">same song, different files</span>
-  <button id="plsBtn" class="ghost">playlist names: off</button>
-  <button id="rescan" class="ghost">↻ rescan</button>
+  <button id="plsBtn" class="ghost" data-lock>playlist names: off</button>
+  <button id="rescan" class="ghost" data-lock>↻ rescan</button>
 </header>
 <main>
   <div id="stats"></div>
@@ -79,6 +88,7 @@
   <span id="result" class="muted"></span>
   <button id="apply" disabled>Apply merges</button>
 </div>
+<script src="/workspace.js"></script>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -176,27 +186,30 @@ function recount(){
   const d = collect();
   const copies = d.reduce((a,x)=>a+x.drop.length,0);
   $("cnt").innerHTML = `<b>${d.length}</b> groups · <b>${copies}</b> copies will be quarantined`;
-  $("apply").disabled = copies === 0;
+  $("apply").disabled = copies === 0 || Workspace.scanning;
 }
 
 async function apply(){
   const decisions = collect();
   if (!decisions.length) return;
   if (!confirm(`Quarantine ${decisions.reduce((a,x)=>a+x.drop.length,0)} duplicate files? Nothing is deleted — undoable from the review app.`)) return;
+  Workspace.setScanning(true);
   $("apply").disabled = true; $("result").textContent = "applying…";
   try {
     const r = await fetch("/api/dedupe/apply", { method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ decisions }) });
     const j = await r.json();
-    if (!r.ok){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(j.detail||"error")}</span>`; $("apply").disabled=false; return; }
+    if (!r.ok){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(j.detail||"error")}</span>`; return; }
     $("out").innerHTML = `<div class="banner ok">✓ Quarantined ${j.applied} duplicates · run <code>${esc(j.run_id)}</code>`
       + (j.rekordbox_rewritten ? ' · rekordbox XML updated' : '')
       + ` — undo anytime from the review app.</div>`;
     $("stats").innerHTML = ""; $("cnt").textContent = "done"; $("result").textContent = "";
-  } catch(e){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; $("apply").disabled=false; }
+  } catch(e){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  finally { Workspace.setScanning(false); recount(); }
 }
 
 async function load(rescan){
+  Workspace.setScanning(true);
   $("out").innerHTML = '<div class="skel">analysing the library for duplicate songs… (~10s)</div>';
   try {
     const r = await fetch("/api/dedupe/plan" + (rescan?"?rescan=1":""));
@@ -204,6 +217,7 @@ async function load(rescan){
     if (!r.ok){ $("out").innerHTML = `<div class="banner bad">${esc(PLAN.detail||"error")}</div>`; return; }
     render();
   } catch(e){ $("out").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  finally { Workspace.setScanning(false); recount(); }
 }
 $("apply").onclick = apply;
 $("plsBtn").onclick = () => {
@@ -211,6 +225,7 @@ $("plsBtn").onclick = () => {
   $("plsBtn").textContent = "playlist names: " + (on ? "on" : "off");
 };
 $("rescan").onclick = () => load(true);
+Workspace.init();
 load(false);
 </script>
 </body>

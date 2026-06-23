@@ -66,6 +66,10 @@ class IngestRequest(BaseModel):
     apply: bool = False
 
 
+class RootRequest(BaseModel):
+    path: str
+
+
 class DedupeDecision(BaseModel):
     keep: str
     drop: list[str]
@@ -162,6 +166,67 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.exception_handler(InboxError)
     def _inbox_error(request: Request, exc: InboxError):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    def _has_rb(p: Path) -> bool:
+        """Does this folder carry a CDJ-stick rekordbox export (play history)?"""
+        rb = p / "PIONEER" / "rekordbox"
+        return (rb / "export.pdb").exists() or (rb / "exportLibrary.db").exists()
+
+    @app.get("/api/roots")
+    def get_roots(st: AppState = Depends(state)) -> dict:
+        """Where librarian can work: the current root, mounted USB sticks, and a
+        few common music folders. ``rekordbox`` flags a stick whose play history
+        pulse can read — the UI redirects those to Pulse for 'what I play most'."""
+        cfg = st.config
+        home = Path.home()
+        cur = os.path.abspath(cfg.library_root)
+        out: list[dict] = []
+        seen: set[str] = set()
+
+        def add(p: Path, kind: str, label: str | None = None) -> None:
+            ap = os.path.abspath(Path(p).expanduser())
+            if ap in seen or not Path(ap).is_dir():
+                return
+            seen.add(ap)
+            out.append({"path": ap, "label": label or ap.replace(str(home), "~"),
+                        "kind": kind, "rekordbox": _has_rb(Path(ap))})
+
+        add(cfg.library_root, "current")
+        vols = Path("/Volumes")
+        if vols.is_dir():
+            for v in sorted(vols.iterdir()):
+                # skip symlinks — e.g. "/Volumes/Macintosh HD" is a link to "/",
+                # which must never be offered as a working root.
+                if v.is_dir() and not v.name.startswith(".") and not v.is_symlink():
+                    add(v, "usb", v.name)
+        for p in (home / "DJ" / "library", home / "DJ" / "inbox", home / "Music"):
+            add(p, "folder")
+        return {"current": cur, "roots": out}
+
+    @app.post("/api/root", dependencies=[Depends(guard_origin)])
+    def set_root(req: RootRequest, st: AppState = Depends(state)) -> dict:
+        """Re-point librarian at another folder/USB. Restricted to the user's home
+        tree or /Volumes, and only an existing directory — so a stray request
+        can't aim the file engine at the system root."""
+        if not req.path.strip():
+            raise HTTPException(status_code=400, detail="no folder given")
+        ap = os.path.abspath(Path(req.path).expanduser())
+        # Validate the REAL target (symlinks resolved): abspath alone would let a
+        # symlink whose name sits under an allowed base but points outside (e.g.
+        # /Volumes/Macintosh HD -> /) escape the allowlist and aim the engine at /.
+        real = os.path.realpath(ap)
+        if not Path(real).is_dir():
+            raise HTTPException(status_code=400, detail=f"not a folder: {ap}")
+        bases = [os.path.realpath(b) for b in st.config.allowed_root_bases]
+        if not any(real.startswith(b + os.sep) for b in bases):
+            raise HTTPException(status_code=403,
+                                detail="folder must be under your home directory or /Volumes")
+        with st.apply_lock:
+            st.config.library_root = Path(ap)
+            st.config.inbox_dir = Path(ap) / "Inbox"
+            st.plans.clear()      # plans/dedupe were for the old root
+            st.dedupe = None
+        return {"library_root": ap, "rekordbox": _has_rb(Path(ap))}
 
     @app.get("/api/config")
     def get_config(st: AppState = Depends(state)) -> dict:
