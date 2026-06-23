@@ -167,6 +167,7 @@ function ttRun(opts){
     curHeat=dur?Math.min(1,Math.max(0,((ct-20)/dur)*3)):0;  // vinyl groove stays cold for the first ~20s, then ramps
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
     if(opts.scene)opts.scene.style.setProperty('--heat',(fxHeat?heat:0).toFixed(3));  // heat toggle → reels' red glow
+    if(opts.scene)opts.scene.style.setProperty('--prog',pr.toFixed(4));  // tonearm tracks inward with track progress
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
@@ -258,18 +259,20 @@ function ttRun(opts){
   function drawTrail(c){var cassette=opts.getSkin&&opts.getSkin()==='cassette';
     if(cassette||!fxHeat||curHeat<=0.001)return;
     var h=curHeat;
-    // groove ring = the circle the stylus traces; it passes through the contact point
-    var rr=hasStylus?Math.sqrt((stylusX-rcx)*(stylusX-rcx)+(stylusY-rcy)*(stylusY-rcy)):ref*0.33;
-    rr=Math.max(ref*0.12,Math.min(rr,ref*0.42));
-    c.save();
-    c.globalAlpha=Math.min(0.5,h*0.5);c.strokeStyle='rgba(30,7,3,1)';c.lineWidth=ref*0.05*h;  // charred groove
-    c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
-    c.globalAlpha=Math.min(0.85,h*0.85);c.shadowBlur=ref*0.05*h;c.shadowColor='rgba(255,60,0,1)';  // red-hot line
+    // the stylus tracks inward as the track plays (the arm sweeps via --prog), so the
+    // contact radius shrinks from the outer edge toward the label — a real record groove.
+    var contactR=hasStylus?Math.sqrt((stylusX-rcx)*(stylusX-rcx)+(stylusY-rcy)*(stylusY-rcy)):ref*0.34;
+    contactR=Math.max(ref*0.2,Math.min(contactR,ref*0.36));
+    var outerR=ref*0.36;  // the groove the needle started on (outer edge)
+    // scorched band the needle has already crossed (outer → current), widening as it tracks in
+    if(outerR-contactR>1){c.save();c.globalAlpha=Math.min(0.45,h*0.45);c.strokeStyle='rgba(42,10,4,1)';
+      c.lineWidth=outerR-contactR;c.beginPath();c.arc(rcx,rcy,(outerR+contactR)/2,0,6.2832);c.stroke();c.restore();}
+    // red-hot current groove ring at the contact radius
+    c.save();c.globalAlpha=Math.min(0.85,h*0.85);c.shadowBlur=ref*0.05*h;c.shadowColor='rgba(255,60,0,1)';
     c.strokeStyle='hsl('+(16+h*8).toFixed(0)+',100%,'+(46+h*16).toFixed(0)+'%)';c.lineWidth=ref*0.012*(0.6+h);
-    c.beginPath();c.arc(rcx,rcy,rr,0,6.2832);c.stroke();
-    c.restore();
+    c.beginPath();c.arc(rcx,rcy,contactR,0,6.2832);c.stroke();c.restore();
     // the red contact circle sits at the end of the stylus, on the vinyl
-    var sxp=hasStylus?stylusX:rcx+Math.cos(stylusAng)*rr, syp=hasStylus?stylusY:rcy+Math.sin(stylusAng)*rr, hr=ref*0.12*(0.45+h);
+    var sxp=hasStylus?stylusX:rcx+Math.cos(stylusAng)*contactR, syp=hasStylus?stylusY:rcy+Math.sin(stylusAng)*contactR, hr=ref*0.12*(0.45+h);
     var hg=c.createRadialGradient(sxp,syp,0,sxp,syp,hr);
     hg.addColorStop(0,'rgba(255,232,190,'+Math.min(0.95,0.35+h*0.6).toFixed(3)+')');
     hg.addColorStop(0.4,'rgba(255,80,0,'+Math.min(0.85,h*0.85).toFixed(3)+')');
@@ -381,7 +384,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .arm{position:absolute;right:4%;top:2%;width:46%;height:3.2%;border-radius:4px;z-index:3;
     background:linear-gradient(180deg,#60606c,#2a2a32);transform-origin:100% 50%;
     transform:rotate(8deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);box-shadow:0 2px 7px rgba(0,0,0,.5);}
-  .arm.on{transform:rotate(-32deg);}  /* playing: needle swings DOWN onto the grooves */
+  .arm.on{transform:rotate(calc(-21deg - var(--prog,0)*14deg));}  /* playing: needle on the grooves, sweeping inward with progress */
   .arm:before{content:"";position:absolute;right:-12%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translateY(-50%);
     background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
   .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);

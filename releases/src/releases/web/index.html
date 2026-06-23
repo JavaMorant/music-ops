@@ -94,7 +94,7 @@
   #ov .arm{position:absolute;right:4%;top:2%;width:46%;height:3.2%;border-radius:4px;z-index:3;
     background:linear-gradient(180deg,#60606c,#2a2a32);transform-origin:100% 50%;transform:rotate(8deg);
     transition:transform .6s cubic-bezier(.4,1.3,.5,1);box-shadow:0 2px 7px rgba(0,0,0,.5);}
-  #ov .arm.on{transform:rotate(-32deg);}  /* playing: needle down on the grooves */
+  #ov .arm.on{transform:rotate(calc(-21deg - var(--prog,0)*14deg));}  /* playing: needle on the grooves, sweeping inward with progress */
   #ov .arm:before{content:"";position:absolute;right:-12%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translateY(-50%);
     background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
   #ov .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);

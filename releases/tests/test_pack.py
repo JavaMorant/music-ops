@@ -143,7 +143,7 @@ def test_reactive_effects_present(tmp_path):
     assert "createRadialGradient" in idx                # the bass halo
     assert "opts.scene.style.transform" in idx          # the beat-synced screen shake
     assert "function ttScrub" in idx and "secPerRev" in idx  # drag-the-record scrubbing
-    assert ".arm.on{transform:rotate(-32deg)" in idx    # playing = needle DOWN on the record
+    assert ".arm.on{transform:rotate(calc(-21deg" in idx  # playing = needle DOWN on the record, sweeping inward
 
 
 def test_dopamine_effects_present(tmp_path):
@@ -200,8 +200,10 @@ def test_buildup_smoke_and_burnt_trail(tmp_path):
     assert "energy-eLong*1.05" in idx and "build*6" in idx       # smoke starts when the build-up starts
     assert "if(eLong===0&&energy>0)eLong=energy" in idx          # ...and the intro isn't mistaken for one long build-up
     assert "r:ref*0.003" in idx and "Math.sin(age*9" in idx      # thin, wavering match-like smoke threads
-    assert "charred groove" in idx                               # the stylus scorches the vinyl
     assert "hasStylus?stylusX" in idx                            # the red contact circle sits at the stylus tip on the vinyl
+    # the groove spirals inward and the tonearm tracks it (like a real record)
+    assert "scorched band the needle has already crossed" in idx
+    assert "setProperty('--prog'" in idx and "var(--prog,0)*14deg" in idx
 
 
 def test_chorus_particle_burst(tmp_path):
