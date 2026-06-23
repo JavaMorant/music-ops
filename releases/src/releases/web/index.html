@@ -81,8 +81,13 @@
     user-select:none;width:76px;transition:opacity .2s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
   #ov .charfig{width:60px;height:76px;display:block;will-change:transform,filter;transform-origin:50% 92%;}
-  #ov .charstage{height:80px;display:flex;align-items:flex-end;justify-content:center;}
+  #ov .charfig .arm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder */
+  #ov .charstage{height:80px;display:flex;align-items:flex-end;justify-content:center;position:relative;}
   #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
+  #ov .note{position:absolute;bottom:46px;font-size:16px;pointer-events:none;color:var(--cc);
+    text-shadow:0 0 8px var(--cc);animation:noteup 1s ease-out forwards;}
+  @keyframes noteup{0%{opacity:0;transform:translateY(4px) scale(.5);}
+    20%{opacity:1;}100%{opacity:0;transform:translate(var(--nx,0),-48px) rotate(var(--nr,0)) scale(1.1);}}
   #ov .stemchar.off .charname{color:var(--dim);}
   #ov .stemexit{font-size:12px;}
   #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;animation:float 7s ease-in-out infinite;}
@@ -563,7 +568,7 @@ function deckInitViz(){
 const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'};
 const STEM_ICON  = {drums:'🥁', bass:'🎸', other:'🎹', vocals:'🎤'};
 const STEM_COLOR = {drums:'#f0663f', bass:'#9b6cf0', other:'#f0c64a', vocals:'#43c9b0'};
-let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0;
+let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0, stemNoteAt = {};
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
   if(stemMode) return;
@@ -582,7 +587,7 @@ async function enterStems(){
       buffers[part] = await dactx.decodeAudioData(ab);
     }));
     audioEl.pause();
-    stemSources = []; stemGains = {}; stemOn = {}; stemAnalysers = {}; stemData = {};
+    stemSources = []; stemGains = {}; stemOn = {}; stemAnalysers = {}; stemData = {}; stemNoteAt = {};
     const startAt = dactx.currentTime + 0.15;  // all stems on one clock → locked in sync
     r.parts.forEach(part => {
       const src = dactx.createBufferSource(); src.buffer = buffers[part]; src.loop = true;
@@ -627,7 +632,7 @@ function charSVG(part){
     + '<path d="M28 30 Q32 33.5 36 30" stroke="#0d0d10" stroke-width="2" fill="none" stroke-linecap="round"/>'
     + acc + '</svg>';
 }
-function stemBounce(){  // each mascot bobs, sways + glows to its own stem's energy
+function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music notes — to its own stem
   if(!stemMode) return;
   const now = (window.performance && performance.now) ? performance.now() : Date.now();
   let k = 0;
@@ -636,18 +641,34 @@ function stemBounce(){  // each mascot bobs, sways + glows to its own stem's ene
     an.getByteFrequencyData(buf);
     let e = 0; for(let i=0;i<buf.length;i++) e += buf[i]; e /= buf.length*255;
     const fig = document.querySelector('.stemchar[data-part="'+part+'"] .charfig');
-    if(fig){
-      if(stemOn[part]){
-        const sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5);        // a gentle dance, busier when loud
-        const bob = -Math.min(15, e*72);                              // jump on hits
-        const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);  // stretch up
-        fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx+','+sy+')';
-        fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
-      } else { fig.style.transform = ''; fig.style.filter = ''; }
+    if(!fig){ k++; continue; }
+    const arms = fig.querySelectorAll('.arm');
+    if(stemOn[part]){
+      const sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5), bob = -Math.min(15, e*72);
+      const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);
+      fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx+','+sy+')';
+      fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
+      const swing = Math.sin(now*0.007 + k*1.3) * (6 + e*10), raise = Math.min(46, e*60);  // arms dance + raise on hits
+      if(arms[0]) arms[0].style.transform = 'rotate('+(-raise - swing).toFixed(1)+'deg)';
+      if(arms[1]) arms[1].style.transform = 'rotate('+(raise + swing).toFixed(1)+'deg)';
+      if(e > 0.52 && now - (stemNoteAt[part]||0) > 260) spawnNote(fig.parentNode, part, now);  // pop a note on hits
+    } else {
+      fig.style.transform = ''; fig.style.filter = '';
+      if(arms[0]) arms[0].style.transform = ''; if(arms[1]) arms[1].style.transform = '';
     }
     k++;
   }
   _stemRaf = requestAnimationFrame(stemBounce);
+}
+function spawnNote(stage, part, now){
+  stemNoteAt[part] = now;
+  const note = document.createElement('span'); note.className = 'note';
+  note.textContent = ['♪','♫','♩'][Math.floor(Math.random()*3)];
+  note.style.left = (24 + Math.random()*20).toFixed(0) + 'px';
+  note.style.setProperty('--nx', (Math.random()*30-15).toFixed(0)+'px');
+  note.style.setProperty('--nr', (Math.random()*44-22).toFixed(0)+'deg');
+  stage.appendChild(note);
+  setTimeout(()=>note.remove(), 1000);
 }
 function toggleStem(part){
   if(!stemGains[part] || !dactx) return;
