@@ -80,10 +80,8 @@
   #ov .stemchar{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
     user-select:none;width:76px;transition:opacity .2s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
-  #ov .charface{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    font-size:29px;background:radial-gradient(circle at 38% 32%,var(--cc),#000 150%);
-    box-shadow:0 0 0 3px rgba(255,255,255,.08);will-change:transform;}
-  #ov .stemchar.off .charface{background:#26262f;box-shadow:0 0 0 2px var(--line);}
+  #ov .charfig{width:60px;height:76px;display:block;will-change:transform,filter;transform-origin:50% 92%;}
+  #ov .charstage{height:80px;display:flex;align-items:flex-end;justify-content:center;}
   #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
   #ov .stemchar.off .charname{color:var(--dim);}
   #ov .stemexit{font-size:12px;}
@@ -597,7 +595,7 @@ async function enterStems(){
     });
     document.getElementById('stemcrew').innerHTML = r.parts.map(p =>
       `<div class="stemchar" data-part="${p}" style="--cc:${STEM_COLOR[p]||'#c9a227'}" onclick="toggleStem('${p}')">`
-      + `<div class="charface">${STEM_ICON[p]||'🎵'}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
+      + `<div class="charstage">${charSVG(p)}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
     document.getElementById('stembar').classList.add('show');
     stemMode = true; window.__stemPlaying = true;
     deckSetPlaying(true);
@@ -609,18 +607,45 @@ async function enterStems(){
     toast('Stems failed: ' + e.message, true);
   }
 }
-function stemBounce(){  // each character bobs + glows to its own stem's energy
+// little original mascots (NOT Incredibox's art) — a round buddy per stem with a
+// distinguishing prop, coloured by the stem; built once, animated by stemBounce().
+function charSVG(part){
+  const acc = {
+    drums:  '<path d="M18 15 a14 13 0 0 1 28 0 l0 1 -28 0 z" fill="rgba(255,255,255,.92)"/>',  // beanie
+    bass:   '<rect x="20" y="20" width="24" height="6.5" rx="3" fill="#0d0d10"/>',              // shades
+    other:  '<path d="M16 24 a16 16 0 0 1 32 0" stroke="#0d0d10" stroke-width="3.5" fill="none"/><rect x="12" y="22" width="7" height="13" rx="3.5" fill="#0d0d10"/><rect x="45" y="22" width="7" height="13" rx="3.5" fill="#0d0d10"/>',  // headphones
+    vocals: '<rect x="46.5" y="29" width="3.4" height="15" rx="1.7" fill="#0d0d10"/><circle cx="48.2" cy="28" r="4.6" fill="#0d0d10"/>',  // mic
+  }[part] || '';
+  const eyes = part === 'bass' ? '' :
+    '<circle cx="26.5" cy="23" r="2.7" fill="#0d0d10"/><circle cx="37.5" cy="23" r="2.7" fill="#0d0d10"/>';
+  return '<svg class="charfig" viewBox="0 0 64 80">'
+    + '<rect class="arm" x="7" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
+    + '<rect class="arm" x="49" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
+    + '<rect x="17" y="36" width="30" height="40" rx="13" fill="var(--cc)"/>'
+    + '<circle cx="32" cy="24" r="15" fill="var(--cc)"/>'
+    + eyes
+    + '<path d="M28 30 Q32 33.5 36 30" stroke="#0d0d10" stroke-width="2" fill="none" stroke-linecap="round"/>'
+    + acc + '</svg>';
+}
+function stemBounce(){  // each mascot bobs, sways + glows to its own stem's energy
   if(!stemMode) return;
+  const now = (window.performance && performance.now) ? performance.now() : Date.now();
+  let k = 0;
   for(const part in stemAnalysers){
     const an = stemAnalysers[part], buf = stemData[part];
     an.getByteFrequencyData(buf);
     let e = 0; for(let i=0;i<buf.length;i++) e += buf[i]; e /= buf.length*255;
-    const face = document.querySelector('.stemchar[data-part="'+part+'"] .charface');
-    if(!face) continue;
-    if(stemOn[part]){
-      face.style.transform = 'translateY('+(-Math.min(13, e*65)).toFixed(1)+'px) scale('+(1+Math.min(0.34, e*1.9)).toFixed(3)+')';
-      face.style.boxShadow = '0 0 '+(7+e*30).toFixed(0)+'px var(--cc),0 0 0 3px rgba(255,255,255,.08)';
-    } else { face.style.transform = ''; face.style.boxShadow = ''; }
+    const fig = document.querySelector('.stemchar[data-part="'+part+'"] .charfig');
+    if(fig){
+      if(stemOn[part]){
+        const sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5);        // a gentle dance, busier when loud
+        const bob = -Math.min(15, e*72);                              // jump on hits
+        const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);  // stretch up
+        fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx+','+sy+')';
+        fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
+      } else { fig.style.transform = ''; fig.style.filter = ''; }
+    }
+    k++;
   }
   _stemRaf = requestAnimationFrame(stemBounce);
 }
