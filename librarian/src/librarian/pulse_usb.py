@@ -293,15 +293,56 @@ def _crates_from(sessions: list[list[str]], meta: dict, *, last_n: int = 50, top
 
     openers = collections.Counter(_norm(s[0]) for s in recent if s)
     closers = collections.Counter(_norm(s[-1]) for s in recent if s)
+
+    # Average position-in-set (0 = opener … 1 = closer) → Peak-Time = mid-to-late.
+    pos: dict[str, list[float]] = collections.defaultdict(list)
+    for s in sessions:
+        if len(s) < 2:
+            continue
+        for i, t in enumerate(s):
+            pos[_norm(t)].append(i / (len(s) - 1))
+    avg_pos = {k: sum(v) / len(v) for k, v in pos.items()}
+    peak = [k for k in sorted(avg_pos, key=lambda k: -plays[k])
+            if len(pos[k]) >= 2 and 0.55 <= avg_pos[k] <= 0.9][:top]
+
+    # Rising = played faster in the recent window than its all-time pace.
+    frac = len(recent) / max(1, len(sessions))
+    rising = sorted((k for k in recent_plays
+                     if recent_plays[k] >= 2 and recent_plays[k] > plays[k] * frac * 1.4),
+                    key=lambda k: recent_plays[k] - plays[k] * frac, reverse=True)[:top]
+
+    # Workhorses = high volume AND spread across many sets.
+    workhorses = sorted((k for k in plays if plays[k] >= 3 and all_sets[k] >= 2),
+                        key=lambda k: plays[k] * all_sets[k], reverse=True)[:top]
+
+    # Forgotten Gems = a real favourite (3+ plays) that's gone quiet lately.
+    gems = [k for k, n in plays.most_common() if n >= 3 and k not in recent_ids][:top]
+
     spec = [
         ("⭐ Most Played", [k for k, _ in plays.most_common(top)]),
         ("🔥 Hot Right Now", [k for k, _ in recent_plays.most_common(top)]),
-        ("❄️ Going Cold", [k for k, _ in plays.most_common() if k not in recent_ids][:top]),
+        ("📈 Rising", rising),
+        ("🛡 Workhorses", workhorses),
         ("🏆 Crowd-Pleasers", [k for k, _ in all_sets.most_common(top)]),
+        ("🚀 Peak-Time", peak),
+        ("❄️ Going Cold", [k for k, _ in plays.most_common() if k not in recent_ids][:top]),
+        ("💎 Forgotten Gems", gems),
         ("▶ Openers", [k for k, _ in openers.most_common(20)]),
         ("⏹ Closers", [k for k, _ in closers.most_common(20)]),
     ]
-    return [{"name": name, "tracks": [trk(k) for k in keys]} for name, keys in spec if keys]
+    crates = [{"name": name, "tracks": [trk(k) for k in keys]} for name, keys in spec if keys]
+
+    # Signature Runs = your repeated 3-track sequences, each a tiny ordered crate.
+    grams: collections.Counter = collections.Counter()
+    for s in sessions:
+        ks = [_norm(t) for t in s]
+        for i in range(len(ks) - 2):
+            grams[(ks[i], ks[i + 1], ks[i + 2])] += 1
+    runs = [g for g, n in grams.most_common(5) if n > 1]
+    for i, run in enumerate(runs, 1):
+        crates.append({"name": f"🔗 Signature Run {i}", "tracks": [trk(k) for k in run]})
+
+    return crates
 
 
 def usb_crates(vol: Path, *, last_n: int = 50, top: int = 40) -> list[dict]:

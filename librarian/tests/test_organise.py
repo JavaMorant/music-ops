@@ -32,6 +32,30 @@ def test_crates_from_empty_is_empty():
     assert pulse_usb._crates_from([], {}) == []
 
 
+def test_extra_crates_appear_with_rich_history():
+    A, B, C, G, R, W = "Alpha", "Beta", "Cee", "Gem", "Rise", "Dub"
+    X, Y, Z = "Ex", "Why", "Zed"
+    sessions = [
+        [A, B, C], [A, B, C],          # "A B C" repeated -> a Signature Run
+        [G, A, X], [G, Y, A], [G, Z, A],  # G played 3x, all in older sets
+        [W, A, B],                      # A turns up almost everywhere
+        [R, A, C], [R, A, B],           # recent window (last 2): R surges, G absent
+    ]
+    crates = pulse_usb._crates_from(sessions, {}, last_n=2, top=20)
+    names = " | ".join(c["name"] for c in crates)
+    assert "Forgotten Gems" in names
+    assert "Workhorses" in names
+    assert "Rising" in names
+    assert "Signature Run" in names
+
+    gem = next(c for c in crates if "Forgotten Gems" in c["name"])
+    assert any(t["label"] == G for t in gem["tracks"])         # G resurfaced
+    rising = next(c for c in crates if "Rising" in c["name"])
+    assert any(t["label"] == R for t in rising["tracks"])      # R is accelerating
+    run = next(c for c in crates if "Signature Run" in c["name"])
+    assert [t["label"] for t in run["tracks"]] == [A, B, C]    # the run is in order
+
+
 def test_write_crates_emits_m3u8_and_readme(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(pulse_organise, "DIR", tmp_path / "usb-crates")
     crates = [
