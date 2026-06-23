@@ -77,13 +77,17 @@
   #ov .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
     padding:5px 11px;font-size:12px;cursor:pointer;}
   #ov .fxchip.off{color:var(--dim);border-color:var(--line);}
-  /* stem remix — a crew of characters; each bounces/glows to its own layer, tap to drop/add */
+  /* stem remix — a crew of characters RINGED AROUND the turntable; each bounces/glows
+     to its own layer. tap to drop/add, right-click to solo. */
   #ov .stembar{display:none;flex-direction:column;align-items:center;gap:12px;
     margin-bottom:16px;position:relative;z-index:3;}
   #ov .stembar.show{display:flex;}
-  #ov #stemcrew{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;}
-  #ov .stemchar{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
-    user-select:none;width:76px;transition:opacity .2s;}
+  #ov #stemcrew{display:none;position:absolute;inset:0;z-index:9;pointer-events:none;}
+  #ov.remix #stemcrew{display:block;}
+  #ov.remix.clean #stemcrew,#ov.remix.reel #stemcrew{display:none;}  /* clear the deck for recording */
+  #ov .stemchar{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;
+    display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+    user-select:none;width:84px;transition:opacity .25s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
   #ov .charfig{width:60px;height:90px;display:block;will-change:transform,filter;transform-origin:50% 96%;}
   #ov .charfig .arm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder */
@@ -277,8 +281,8 @@
     <span class="bpmdot" id="ovbpmdot"></span>
     <div class="ovinfo"><div class="nt" id="ovnt">—</div><div class="nm" id="ovnm"></div></div>
   </div>
+  <div id="stemcrew"></div>
   <div class="stembar" id="stembar">
-    <div id="stemcrew"></div>
     <button class="stemexit" onclick="exitStems()">✕ exit remix</button>
   </div>
   <ol class="ovlist" id="ovlist"></ol>
@@ -587,6 +591,7 @@ const STEM_DANCE = {drums:0, bass:1, other:2, vocals:3};  // each gets a distinc
 let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0, stemNoteAt = {};
 let stemStartAt = 0, stemLoopDur = 0, stemStartOffset = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
 let stemSolo = null;  // right-click solos a layer (mutes the rest); right-click it again restores everyone
+let stemBpm = 0;      // the beat's BPM → the crew dances on the beat (falls back to ~120 if unknown)
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
   if(stemMode) return;
@@ -609,6 +614,7 @@ async function enterStems(){
     const startAt = dactx.currentTime + 0.15;  // all stems on one clock → locked in sync
     stemStartAt = startAt;
     stemLoopDur = Math.max(...r.parts.map(p => buffers[p].duration)) || 0;  // longest stem = the loop length
+    stemBpm = (t && t.bpm) ? Number(t.bpm) : 0;  // dance on the beat
     // pick up roughly where the beat was playing so entering remix doesn't jump to 0:00
     stemStartOffset = (stemLoopDur && audioEl && isFinite(audioEl.currentTime)) ? (audioEl.currentTime % stemLoopDur) : 0;
     r.parts.forEach(part => {
@@ -625,9 +631,11 @@ async function enterStems(){
       + ` onclick="toggleStem('${p}')" oncontextmenu="soloStem('${p}');return false;">`
       + `<div class="charstage">${charSVG(p)}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
     document.getElementById('stembar').classList.add('show');
+    document.getElementById('ov').classList.add('remix');  // shows the crew ringed around the deck
     stemSolo = null;
     stemMode = true; window.__stemPlaying = true;
     deckSetPlaying(true);
+    layoutCrew();      // place the characters around the turntable
     stemBounce();  // start the character animation loop
     btn.textContent = '🎛 Remixing'; btn.disabled = false;
     toast('Remix on — tap a character to drop its layer, right-click to solo it');
@@ -650,8 +658,9 @@ function charSVG(part){
   return '<svg class="charfig" viewBox="0 0 64 96">'
     + '<rect class="leg" x="22" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
     + '<rect class="leg" x="33.5" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
-    + '<rect class="arm" x="7" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
-    + '<rect class="arm" x="49" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
+    // arm + hand grouped so the hand swings on the end of the arm
+    + '<g class="arm"><rect x="7" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="11" cy="62" r="5.4" fill="var(--cc)"/></g>'
+    + '<g class="arm"><rect x="49" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="53" cy="62" r="5.4" fill="var(--cc)"/></g>'
     + '<rect x="17" y="36" width="30" height="34" rx="13" fill="var(--cc)"/>'
     + '<circle cx="32" cy="24" r="15" fill="var(--cc)"/>'
     + eyes
@@ -671,29 +680,31 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
     if(!fig){ k++; continue; }
     const arms = fig.querySelectorAll('.arm'), legs = fig.querySelectorAll('.leg');
     if(stemOn[part]){
-      // each character has its OWN dance — a distinct, recognisable move, not lockstep
-      let bob = -Math.min(15, e*72), sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5);
+      // dance ON THE BEAT: phase comes from the track BPM (fallback ~120). Energy (e)
+      // still scales the size of each move, so loud sections hit harder.
+      const beatMs = stemBpm > 0 ? 60000/stemBpm : 500, beat = now / beatMs, PI = Math.PI;
+      const half = Math.sin(beat*PI), full = Math.sin(beat*2*PI);  // half = per-2-beats, full = per-beat
+      let bob = -Math.min(15, e*72), sway = 0;
       let sx = 1 + Math.min(0.10, e*0.45), sy = 1 + Math.min(0.18, e*0.7);
       let armA = 0, armB = 0, legA = 0, legB = 0;
       const style = (STEM_DANCE[part] != null) ? STEM_DANCE[part] : (k % 4);
-      if(style === 0){            // drums — FIST PUMP (punches the air on the beat)
-        const pump = Math.max(0, Math.sin(now*0.011 + k));
-        armA = -22 - pump*74; armB = 14 + Math.sin(now*0.006)*10;     // left fist drives up; right arm loose
-        const st = Math.sin(now*0.009 + k) * (3 + e*8); legA = st; legB = -st;
-        bob = -Math.min(14, e*34) - pump*5;
-      } else if(style === 1){     // bass — SPONGEBOB leg cross / uncross (feet scissor over each other)
-        const cross = Math.sin(now*0.0065 + k) * (14 + e*22);
-        legA = cross; legB = -cross;                                   // swing both feet inward → cross, then open out
-        armA = -12 + Math.sin(now*0.006)*7; armB = 12 - Math.sin(now*0.006)*7;
-        sway = Math.sin(now*0.0065 + k) * 4;
-      } else if(style === 2){     // melody — JUMP (hops up and down, knees tuck at the top)
-        const hop = Math.abs(Math.sin(now*0.006 + k));                 // 0..1 each hop
-        bob = -hop*(22 + e*36); sy = 1 + hop*0.05; sx = 1 - hop*0.04;
+      if(style === 0){            // drums — FIST PUMP, one punch per beat
+        const pump = Math.max(0, Math.sin((beat % 1) * PI));          // 0→1→0 each beat
+        armA = -24 - pump*80; armB = 16 + half*8;                     // left fist drives up; right arm loose
+        legA = full*(3 + e*7); legB = -legA; bob = -Math.min(12, e*28) - pump*7;
+      } else if(style === 1){     // bass — SPONGEBOB leg cross/uncross (feet scissor over each other)
+        const cross = half * (15 + e*22);
+        legA = cross; legB = -cross;                                   // both feet swing inward → cross, then open out
+        armA = -12 + half*7; armB = 12 - half*7; sway = half*4;
+      } else if(style === 2){     // melody — JUMP, one hop per beat
+        const hop = Math.abs(Math.sin(beat*PI));                       // hop per beat
+        bob = -hop*(20 + e*38); sy = 1 + hop*0.05; sx = 1 - hop*0.04;
         const tuck = hop*(12 + e*8); legA = tuck; legB = -tuck;
         const raise = (0.4 + hop*0.6) * Math.min(58, 22 + e*48); armA = -raise; armB = raise;
-      } else {                    // vocals — TWO-STEP side shuffle (sways and steps side to side)
-        const sh = Math.sin(now*0.005 + k); sway = sh*7;
-        legA = sh*11 + 3; legB = sh*11 - 3; armA = sh*22 - 6; armB = sh*22 + 6;
+      } else {                    // vocals — PEANUT BUTTER JELLY: both hands up, waving side to side together
+        const wave = half * 30;
+        armA = 162 + wave; armB = 162 + wave;                          // both arms up, sweeping the SAME way (in sync)
+        sway = -half * 6; legA = half*8; legB = half*8;                // body counter-sways; feet side-step together
       }
       fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
       fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
@@ -721,9 +732,11 @@ function spawnNote(stage, part, now){
   stage.appendChild(note);
   setTimeout(()=>note.remove(), 1000);
 }
-function applyStem(part){  // push stemOn[part] to its gain (smooth, no click) + grey the character
+function applyStem(part){  // fade stemOn[part] in/out over ~0.25s (not instant) + grey the character
   if(!stemGains[part] || !dactx) return;
-  stemGains[part].gain.setTargetAtTime(stemOn[part] ? 1 : 0, dactx.currentTime, 0.015);
+  const g = stemGains[part].gain, t = dactx.currentTime;
+  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(stemOn[part] ? 1 : 0, t + 0.25);  // 0.25s crossfade
   const ch = document.querySelector('.stemchar[data-part="'+part+'"]');
   if(ch) ch.classList.toggle('off', !stemOn[part]);
 }
