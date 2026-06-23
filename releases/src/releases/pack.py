@@ -139,7 +139,7 @@ function ttRun(opts){
       fxw=fx.width; fxh=fx.height; ref=(dr.width||W)*sclx; fxLeft=fr.left; fxTop=fr.top;
       rcx=(dr.left+dr.width/2-fr.left)*sclx; rcy=(dr.top+dr.height/2-fr.top)*scly;
     }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;sclx=1;scly=1;}
-    var playing=!!(opts.audio&&!opts.audio.paused);
+    var playing=opts.isPlaying?opts.isPlaying():!!(opts.audio&&!opts.audio.paused);  // stem remix loops while the <audio> is paused
     fxSmoke=on('smoke');fxParticles=on('particles');fxShake=on('shake');fxHeat=on('heat');
     var an=opts.getAnalyser(), bass=0, energy=0;
     if(an){if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}

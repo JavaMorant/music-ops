@@ -72,6 +72,16 @@
   #ov .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
     padding:5px 11px;font-size:12px;cursor:pointer;}
   #ov .fxchip.off{color:var(--dim);border-color:var(--line);}
+  /* stem remix bar — toggle drums/bass/melody/vocals live (Incredibox-style) */
+  #ov .stembar{display:none;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap;
+    margin-bottom:16px;position:relative;z-index:3;}
+  #ov .stembar.show{display:flex;}
+  #ov .stemlabel{color:var(--dim);font-size:11px;letter-spacing:.16em;font-weight:600;}
+  #ov #stempills{display:flex;gap:8px;flex-wrap:wrap;}
+  #ov .stempill{background:var(--accent);color:#10100a;border:1px solid var(--accent);border-radius:20px;
+    padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;}
+  #ov .stempill.off{background:#20202a;color:var(--dim);border-color:var(--line);}
+  #ov .stemexit{font-size:12px;}
   #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;animation:float 7s ease-in-out infinite;}
   @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
   #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
@@ -224,6 +234,7 @@
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
+    <button id="remixbtn" onclick="remixToggle()">🎛 Remix</button>
     <button id="exportbtn" onclick="exportReel()">● Record reel</button>
     <button id="cleantgl" onclick="deckClean()">⛶ Clean</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
@@ -251,6 +262,11 @@
     <button class="ovplay" id="ovplay" onclick="deckTogglePlay()">&#9654;</button>
     <span class="bpmdot" id="ovbpmdot"></span>
     <div class="ovinfo"><div class="nt" id="ovnt">—</div><div class="nm" id="ovnm"></div></div>
+  </div>
+  <div class="stembar" id="stembar">
+    <span class="stemlabel">REMIX</span>
+    <div id="stempills"></div>
+    <button class="stemexit" onclick="exitStems()">✕ exit</button>
   </div>
   <ol class="ovlist" id="ovlist"></ol>
 </div>
@@ -500,6 +516,7 @@ function openDeck(){
   deckSize(); deckSelect(0);
 }
 function deckSelect(i){
+  if(stemMode) _teardownStems();  // leaving remix when picking another beat
   deckCur=i; const t=DECK[i];
   audioEl.src='/api/audio?id='+encodeURIComponent(t.id);
   document.getElementById('ovnt').textContent=t.name;
@@ -520,7 +537,7 @@ function deckSetPlaying(p){
   document.getElementById('ovarm').classList.toggle('on',p);
   document.getElementById('ovplay').innerHTML=p?'&#10074;&#10074;':'&#9654;';
 }
-function closeDeck(){ document.getElementById('ov').classList.remove('show'); }
+function closeDeck(){ if(stemMode) _teardownStems(); document.getElementById('ov').classList.remove('show'); }
 function deckReel(){ const on=document.getElementById('ov').classList.toggle('reel');
   document.getElementById('reeltgl').textContent=on?'✕ Exit':'⤢ Reel'; deckSize(); }
 function deckClean(){ const on=document.getElementById('ov').classList.toggle('clean');
@@ -538,6 +555,65 @@ function deckInitViz(){
     src.connect(danalyser); danalyser.connect(dactx.destination);
   }catch(e){/* unsupported — vinyl still spins, audio still plays */}
 }
+
+// ---- stem remix: separate the beat into drums/bass/melody/vocals, loop them in
+// sync through the visualizer's analyser, and toggle each layer live. ----
+const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'};
+let stemMode = false, stemSources = [], stemGains = {}, stemOn = {};
+function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
+async function enterStems(){
+  if(stemMode) return;
+  if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
+  const t = DECK[deckCur], btn = document.getElementById('remixbtn');
+  btn.disabled = true; btn.textContent = '⏳ Separating…';
+  toast('Separating stems (first time can take ~a minute)…');
+  try{
+    deckInitViz();
+    if(!dactx || !danalyser){ throw new Error('audio not ready — press play once first'); }
+    if(dactx.state === 'suspended') await dactx.resume();
+    const r = await api('/api/stems', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: t.id})});
+    const buffers = {};
+    await Promise.all(r.parts.map(async part => {
+      const resp = await fetch(r.stems[part]); const ab = await resp.arrayBuffer();
+      buffers[part] = await dactx.decodeAudioData(ab);
+    }));
+    audioEl.pause();
+    stemSources = []; stemGains = {}; stemOn = {};
+    const startAt = dactx.currentTime + 0.15;  // start all stems on the same clock → locked in sync
+    r.parts.forEach(part => {
+      const src = dactx.createBufferSource(); src.buffer = buffers[part]; src.loop = true;
+      const g = dactx.createGain(); g.gain.value = 1;
+      src.connect(g); g.connect(danalyser);  // → analyser → destination (already wired)
+      src.start(startAt);
+      stemSources.push(src); stemGains[part] = g; stemOn[part] = true;
+    });
+    document.getElementById('stempills').innerHTML = r.parts
+      .map(p => `<button class="stempill" data-part="${p}" onclick="toggleStem('${p}')">${STEM_LABEL[p]||p}</button>`).join('');
+    document.getElementById('stembar').classList.add('show');
+    stemMode = true; window.__stemPlaying = true;
+    deckSetPlaying(true);
+    btn.textContent = '🎛 Remixing'; btn.disabled = false;
+    toast('Remix on — tap a layer to drop/bring it back');
+  }catch(e){
+    btn.textContent = '🎛 Remix'; btn.disabled = false;
+    toast('Stems failed: ' + e.message, true);
+  }
+}
+function toggleStem(part){
+  if(!stemGains[part] || !dactx) return;
+  stemOn[part] = !stemOn[part];
+  stemGains[part].gain.setTargetAtTime(stemOn[part] ? 1 : 0, dactx.currentTime, 0.015);  // smooth, no click
+  const pill = document.querySelector('.stempill[data-part="'+part+'"]');
+  if(pill) pill.classList.toggle('off', !stemOn[part]);
+}
+function _teardownStems(){  // stop the stem graph + reset UI, WITHOUT touching normal playback
+  stemSources.forEach(s => { try{ s.stop(); }catch(e){} try{ s.disconnect(); }catch(e){} });
+  Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
+  stemSources = []; stemGains = {}; stemMode = false; window.__stemPlaying = false;
+  document.getElementById('stembar').classList.remove('show');
+  const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
+}
+function exitStems(){ if(!stemMode) return; _teardownStems(); if(deckCur >= 0) deckSelect(deckCur); }
 
 // ---- one-click reel export: capture THIS tab (getDisplayMedia) in Clean mode so
 // the recording is EXACTLY the live web render with no UI chrome, + tab audio, then
@@ -606,6 +682,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
+  isPlaying:()=>window.__stemPlaying || !!(audioEl && !audioEl.paused),
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });

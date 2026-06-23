@@ -238,6 +238,41 @@ def create_app(config: AppConfig) -> FastAPI:
                  ".ogg": "audio/ogg"}.get(suffix, "application/octet-stream")
         return FileResponse(abspath, media_type=media)  # Starlette handles Range for seeking
 
+    @app.post("/api/stems", dependencies=[Depends(guard_origin)])
+    async def make_stems(body: MarkBody):
+        """Separate the beat into stems (drums/bass/melody/vocals) for the remix
+        player, caching outside the library. Slow on first run (Demucs); instant
+        after. Returns the per-stem URLs."""
+        from .. import stems as stemsmod
+        if not stemsmod.has_demucs():
+            raise HTTPException(400, "stem remix needs Demucs (pip install demucs)")
+        c = conn()
+        abspath = _resolve(c, body.id)
+        src = Path(abspath)
+        if src.suffix.lower() not in orgmod.AUDIO_EXTS:
+            raise HTTPException(404, "not an audio file")
+        if stemsmod.cached_stems(src, config.stems_dir) is None:
+            try:  # heavy — run off the event loop
+                await run_in_threadpool(stemsmod.separate, src, config.stems_dir)
+            except stemsmod.StemError as e:
+                raise HTTPException(500, str(e))
+        return {"id": body.id, "parts": list(stemsmod.STEMS),
+                "stems": {p: f"/api/stem?id={body.id}&part={p}" for p in stemsmod.STEMS}}
+
+    @app.get("/api/stem")
+    def stem_file(id: str, part: str):
+        """Serve one cached stem mp3. ``part`` is whitelisted and the file path is
+        derived server-side from the (re-validated) id — never client input."""
+        from .. import stems as stemsmod
+        if part not in stemsmod.STEMS:
+            raise HTTPException(404, "unknown stem")
+        c = conn()
+        abspath = _resolve(c, id)
+        cached = stemsmod.cached_stems(Path(abspath), config.stems_dir)
+        if cached is None or not cached[part].is_file():
+            raise HTTPException(404, "stem not separated yet")
+        return FileResponse(cached[part], media_type="audio/mpeg")
+
     @app.get("/api/organize/preview")
     def preview():
         c = conn()

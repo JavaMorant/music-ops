@@ -30,6 +30,7 @@ class AppConfig:
     producer: str = "Dibs"   # stamped on exported packs
     contact: str = ""
     cover_src: Path | None = None  # default cover art for exported pack labels
+    stems_dir: Path | None = None  # where separated stems are cached (default: beside the db)
 
     def __post_init__(self) -> None:
         # .resolve() to match scan(), which stores resolved absolute paths in the
@@ -37,6 +38,7 @@ class AppConfig:
         self.library_root = self.library_root.resolve()
         self.db_path = self.db_path.absolute()
         self.runs_dir = self.runs_dir.absolute()
+        self.stems_dir = (self.stems_dir or self.db_path.parent / "stems").absolute()
 
     @property
     def track_list_dir(self) -> Path:
