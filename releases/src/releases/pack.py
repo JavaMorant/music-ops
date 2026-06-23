@@ -616,15 +616,18 @@ def is_image(path: Path) -> bool:
 
 def build_pack(
     tracks: list[PackTrack], out_dir: Path, meta: PackMeta, cover_src: Path | None = None,
-    clean: bool = False,
+    clean: bool = False, preview: bool = False, preview_seconds: int = 40,
 ) -> list[str]:
-    """Write the pack into ``out_dir`` (created): clean-named audio copies +
-    index.html + tracklist.txt. ``cover_src``, if an image, is copied in as the
-    vinyl-label cover art. Returns the list of audio filenames written. Read-only
-    on the sources (copy only).
+    """Write the pack into ``out_dir`` (created): clean-named audio + index.html +
+    tracklist.txt. ``cover_src``, if an image, is copied in as the vinyl-label cover
+    art. Returns the list of audio filenames written. Read-only on the sources.
 
     If ``clean``, an existing ``out_dir`` is wiped first so a rebuilt pack never
-    carries stale beats from a previous run (a re-zip would otherwise ship them)."""
+    carries stale beats from a previous run (a re-zip would otherwise ship them).
+
+    If ``preview``, each beat is exported as a protected preview (trimmed to
+    ``preview_seconds`` with a quiet periodic tag tone) instead of the full file,
+    so the pack can't be ripped. Requires ffmpeg (raises PreviewError otherwise)."""
     if clean and out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -632,13 +635,19 @@ def build_pack(
     used: dict[str, int] = {}
     for i, t in enumerate(tracks, 1):
         fn = clean_track_filename(i, t)
+        if preview:
+            fn = str(Path(fn).with_suffix(".mp3"))  # previews are re-encoded to mp3
         if fn in used:
             used[fn] += 1
             s = Path(fn)
             fn = f"{s.stem} ({used[fn]}){s.suffix}"
         else:
             used[fn] = 0
-        shutil.copy2(t.src, out_dir / fn)
+        if preview:
+            from . import preview as preview_mod
+            preview_mod.make_preview(t.src, out_dir / fn, seconds=preview_seconds)
+        else:
+            shutil.copy2(t.src, out_dir / fn)
         filenames.append(fn)
     cover_name = None
     if cover_src is not None and cover_src.is_file() and is_image(cover_src):

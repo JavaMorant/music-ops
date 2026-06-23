@@ -3,9 +3,31 @@ that the library (sources) is never modified."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+import pytest
+
 from releases import pack as packmod
+from releases import preview as previewmod
+
+
+def _real_audio(path: Path, seconds: int = 20) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi",
+         "-i", f"sine=frequency=200:duration={seconds}", "-y", str(path)],
+        check=True,
+    )
+    return path
+
+
+def _dur(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    return float(out)
 
 
 def _track(tmp_path, fname, title, bpm=None, key=None, genre="unknown", artists="",
@@ -93,6 +115,28 @@ def test_clean_rebuild_drops_stale_beats_from_zip(tmp_path):
     packmod.zip_pack(out, z)
     with zipfile.ZipFile(z) as zf:
         assert sum(n.endswith(".mp3") for n in zf.namelist()) == 1
+
+
+@pytest.mark.skipif(not previewmod.has_ffmpeg(), reason="ffmpeg not installed")
+def test_make_preview_trims_tags_and_keeps_source(tmp_path):
+    src = _real_audio(tmp_path / "beat.wav", 20)
+    before = src.stat().st_size
+    dest = tmp_path / "prev.mp3"
+    previewmod.make_preview(src, dest, seconds=8)
+    assert dest.exists() and 7.0 <= _dur(dest) <= 9.0      # trimmed to ~8s
+    assert src.exists() and src.stat().st_size == before    # source untouched (read-only)
+
+
+@pytest.mark.skipif(not previewmod.has_ffmpeg(), reason="ffmpeg not installed")
+def test_build_pack_preview_is_mp3_and_short(tmp_path):
+    src = _real_audio(tmp_path / "lib" / "x.wav", 20)
+    t = packmod.PackTrack(src=src, title="Beat", bpm=140, key="Fm", genre="trap", artists="")
+    out = tmp_path / "out" / "p"
+    names = packmod.build_pack([t], out, _meta(), preview=True, preview_seconds=6)
+    assert names == ["01 - Beat [140 Fm].mp3"]              # re-encoded to mp3, not the .wav
+    assert (out / names[0]).exists() and _dur(out / names[0]) <= 7.5
+    assert "01 - Beat [140 Fm].mp3" in (out / "index.html").read_text()  # wired into the player
+    assert src.read_bytes()                                 # source still there, untouched
 
 
 def test_build_pack_does_not_touch_sources(tmp_path):

@@ -329,9 +329,15 @@ def create_app(config: AppConfig) -> FastAPI:
         )
 
     @app.get("/api/pack", dependencies=[Depends(guard_origin)])
-    def pack(genre: str | None = None, month: str | None = None, name: str | None = None):
+    def pack(genre: str | None = None, month: str | None = None, name: str | None = None,
+             preview: bool = False, preview_seconds: int = 40):
         """Build a polished pack (clean-named audio + player + tracklist) from the
-        filter and return it zipped. Read-only on the library."""
+        filter and return it zipped. Read-only on the library. With ``preview``,
+        beats are trimmed + tagged so the pack can't be ripped (needs ffmpeg)."""
+        from .. import preview as previewmod
+        if preview and not previewmod.has_ffmpeg():
+            raise HTTPException(400, "previews need ffmpeg installed on this machine")
+        preview_seconds = max(10, min(preview_seconds, 120))
         c = conn()
         projs = _matching_projects(c, genre, month)
         if not projs:
@@ -351,7 +357,8 @@ def create_app(config: AppConfig) -> FastAPI:
         os.close(fd)
         try:
             root = Path(workdir) / folder
-            packmod.build_pack(tracks, root, meta, cover_src=config.cover_src)
+            packmod.build_pack(tracks, root, meta, cover_src=config.cover_src,
+                               preview=preview, preview_seconds=preview_seconds)
             packmod.zip_pack(root, Path(zpath))
         except Exception:
             if os.path.exists(zpath):

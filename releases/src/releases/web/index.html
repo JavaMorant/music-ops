@@ -330,11 +330,14 @@ async function buildPack() {
   const suggested = fg ? (fg[0].toUpperCase()+fg.slice(1)+' Pack') : (fm ? 'Pack '+fm : 'Beat Pack');
   const name = prompt('Pack name (clean-named audio + a player page + tracklist):', suggested);
   if (name === null) return;
+  const prev = confirm('Protect the beats?\n\nOK = previews (trimmed to a hook + tag tone, can\'t be ripped)\nCancel = full beats');
   const params = new URLSearchParams();
   if (fg) params.set('genre', fg);
   if (fm) params.set('month', fm);
   if (name.trim()) params.set('name', name.trim());
+  if (prev) params.set('preview', '1');
   try {
+    if (prev) toast('Building protected previews (re-encoding)…');
     const r = await fetch('/api/pack?' + params.toString());
     if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
     const blob = await r.blob();
@@ -344,7 +347,7 @@ async function buildPack() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = fn; a.click();
     URL.revokeObjectURL(url);
-    toast('Built ' + fn + ' — unzip → open index.html, or drop the folder on Netlify Drop for a link');
+    toast('Built ' + fn + (prev ? ' (previews)' : '') + ' — unzip → open index.html, or drop the folder on Netlify Drop for a link');
   } catch(e){ toast(e.message, true); }
 }
 

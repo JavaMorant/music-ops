@@ -898,10 +898,13 @@ def pack_cmd(
     artist: Annotated[str, typer.Option("--artist", help="Your name/alias")] = "Dibs",
     contact: Annotated[str, typer.Option("--contact", help="Contact line")] = "",
     cover: Annotated[Optional[Path], typer.Option("--cover", exists=True, dir_okay=False, help="Cover image for the vinyl label")] = None,
+    preview: Annotated[bool, typer.Option("--preview/--full", help="Ship protected previews (trimmed + tag tone) instead of full beats")] = False,
+    preview_seconds: Annotated[int, typer.Option("--preview-seconds", help="Preview hook length")] = 40,
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
     """Export a polished beat pack (clean-named audio + player page + tracklist)
-    from the Track List filter. Read-only on the library — exports copies."""
+    from the Track List filter. Read-only on the library — exports copies.
+    With --preview, beats are trimmed + tagged so the pack can't be ripped."""
     from . import pack as packmod
     conn = _open(db)
     tl = DEFAULT_ROOT / "Beats" / "Tracks" / "Track List"
@@ -930,10 +933,18 @@ def pack_cmd(
     if dest.exists() and not (dest / "index.html").exists() and not (dest / "tracklist.txt").exists():
         typer.secho(f"{dest} exists and isn't a pack folder — pick another name or --out.", fg="red", err=True)
         raise typer.Exit(1)
-    packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None, clean=True)
+    if preview:
+        from .preview import has_ffmpeg
+        if not has_ffmpeg():
+            typer.secho("--preview needs ffmpeg (brew install ffmpeg).", fg="red", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"Building {len(tracks)} protected previews (this re-encodes)…")
+    packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None,
+                       clean=True, preview=preview, preview_seconds=preview_seconds)
     zpath = dest.with_name(dest.name + ".zip")
     packmod.zip_pack(dest, zpath)  # auto-zip — ready to send out
-    typer.secho(f"Built pack: {dest}  ({len(tracks)} beats)", fg="green")
+    kind = f"{len(tracks)} preview{'s' if len(tracks)!=1 else ''}" if preview else f"{len(tracks)} beats"
+    typer.secho(f"Built pack: {dest}  ({kind})", fg="green")
     typer.secho(f"Ready to send: {zpath}", fg="green")
     typer.echo("Email the .zip, or drag the folder to Netlify Drop for an instant player link.")
 
