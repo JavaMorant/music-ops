@@ -74,7 +74,7 @@
 
   /* in-app turntable (plays the filtered tracks live; no files created) */
   #ov{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;
-    overflow:auto;padding:16px 16px 40px;text-align:center;
+    overflow:auto;padding:16px 16px 40px;text-align:center;will-change:transform;backface-visibility:hidden;
     background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,#0b0b0e);}
   #ov.show{display:flex;}
   .ovhead{width:100%;max-width:560px;display:flex;align-items:center;gap:10px;margin-bottom:8px;}

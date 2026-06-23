@@ -159,11 +159,13 @@ function ttRun(opts){
     if(lbl){var ls=1+Math.min(0.2,kick*1.4)+punch*0.06+(playing?0:breath*0.02);
       lbl.style.transform='scale('+ls.toFixed(3)+')';}
     if(opts.scene){var sx=fxShake?(Math.random()*2-1)*shake:0,sy=fxShake?(Math.random()*2-1)*shake:0;
-      if(opts.reelGet&&opts.reelGet()){
-        opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.0+Math.min(0.03,energy*0.04)+punch*0.06).toFixed(3)+')';}  // gentle — keep the whole deck in frame
-      else if(shake>0.25||punch>0.01){  // shake the whole view on kicks here too, not just in reel mode
+      // ALWAYS set a transform (identity when idle) — never clear it to ''. Toggling
+      // the overlay's transform on/off churns its GPU layer, which momentarily flashes
+      // the page behind it. A constant transform keeps the layer stable.
+      if(opts.reelGet&&opts.reelGet())
+        opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1.0+Math.min(0.03,energy*0.04)+punch*0.06).toFixed(3)+')';  // gentle — keep the whole deck in frame
+      else
         opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1+punch*0.04).toFixed(3)+')';}
-      else{opts.scene.style.transform='';}}
     if(opts.flash){opts.flash.style.opacity=Math.min(0.7,flash).toFixed(3);
       if(flash>0.02)opts.flash.style.background='radial-gradient(circle at 50% 45%,hsla('+hue.toFixed(0)+',90%,75%,.9),transparent 70%)';}
     if(playing&&fxParticles)ambient(energy);  // embers only while music plays — idle stays clean
@@ -400,7 +402,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   *{box-sizing:border-box;}
   body{margin:0;background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,var(--bg));color:var(--txt);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
-  .wrap{max-width:540px;margin:0 auto;padding:32px 20px 80px;text-align:center;}
+  .wrap{max-width:540px;margin:0 auto;padding:32px 20px 80px;text-align:center;will-change:transform;backface-visibility:hidden;}
   h1{font-size:24px;letter-spacing:.02em;margin:0 0 4px;}
   .by{color:var(--dim);margin:0 0 18px;letter-spacing:.03em;}
   .by b{color:var(--accent);font-weight:600;}

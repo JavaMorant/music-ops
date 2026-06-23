@@ -241,7 +241,7 @@ def test_fullscreen_particles_and_shake(tmp_path):
     assert "fx.width/fr.width" in idx                            # coords account for a scaled scene (reel mode)
     assert "function drawFX" in idx and "opts.fxCanvas" in idx   # particles draw on the full-screen field
     assert "rcx=(dr.left" in idx                                 # burst emanates from the record's on-screen centre
-    assert "shake>0.25||punch>0.01" in idx                       # screen shakes on kicks in the normal view too
+    assert "sx=fxShake?(Math.random()" in idx                    # screen shakes on kicks (gated by the Shake toggle)
 
 
 def test_brake_heat_and_smoke_present(tmp_path):
