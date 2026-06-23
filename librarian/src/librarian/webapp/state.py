@@ -48,5 +48,7 @@ class AppState:
 
     config: AppConfig
     plans: dict[str, Plan] = field(default_factory=dict)
+    # Cached metadata-dedupe analysis (slow to build); invalidated after an apply.
+    dedupe: dict | None = None
     # Serializes apply/undo so two overlapping calls can't race the journal.
     apply_lock: threading.Lock = field(default_factory=threading.Lock)

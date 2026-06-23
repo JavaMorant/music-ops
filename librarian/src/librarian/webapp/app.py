@@ -66,6 +66,16 @@ class IngestRequest(BaseModel):
     apply: bool = False
 
 
+class DedupeDecision(BaseModel):
+    keep: str
+    drop: list[str]
+
+
+class DedupeApplyRequest(BaseModel):
+    decisions: list[DedupeDecision]
+    backup: bool = True
+
+
 class SetLabelRequest(BaseModel):
     key: str
     name: str | None = None
@@ -340,6 +350,41 @@ def create_app(config: AppConfig) -> FastAPI:
         if req.apply and plan["survivors"]:
             out["applied"] = ingest.apply_ingest(lib, plan)
         return out
+
+    @app.get("/api/dedupe/plan")
+    def get_dedupe(rescan: int = 0, st: AppState = Depends(state)) -> dict:
+        """Metadata-dedupe buckets (auto-merge / manual-review / mixed). Cached;
+        pass ``rescan=1`` to rebuild after files change."""
+        from .. import dedupe
+        if st.dedupe is None or rescan:
+            pl = dedupe.rekordbox_playlist_counts()
+            st.dedupe = dedupe.analyze(st.config.library_root, pl_counts=pl)
+        return st.dedupe
+
+    @app.post("/api/dedupe/apply", dependencies=[Depends(guard_origin)])
+    def post_dedupe_apply(req: DedupeApplyRequest, st: AppState = Depends(state)) -> dict:
+        """Quarantine the chosen duplicates (never deleted; rekordbox repointed at
+        each kept copy) through the reversible engine. Undo via /api/undo."""
+        from .. import dedupe
+        cfg = st.config
+        # Constrain client input to the server's own authoritative groups: every
+        # keep+drop must belong to a real duplicate group (never a crafted pair).
+        if st.dedupe is None:
+            pl = dedupe.rekordbox_playlist_counts()
+            st.dedupe = dedupe.analyze(cfg.library_root, pl_counts=pl)
+        decisions = dedupe.valid_decisions(st.dedupe, [d.model_dump() for d in req.decisions])
+        plan = dedupe.build_plan(cfg.library_root, decisions, rekordbox_xml=cfg.rekordbox_xml)
+        if not plan.actions:
+            raise HTTPException(status_code=400, detail="no valid duplicate groups selected")
+        with st.apply_lock:
+            journal = apply_plan(plan, cfg.runs_dir, backup=req.backup)
+            st.dedupe = None  # files moved — force a rescan next time
+        applied = sum(1 for a in journal.actions if a.status == DONE)
+        return {
+            "run_id": journal.run_id,
+            "applied": applied,
+            "rekordbox_rewritten": bool(journal.rekordbox and journal.rekordbox.get("rewritten")),
+        }
 
     @app.get("/api/pulse/sets")
     def get_sets(stick: str = "", limit: int = 40) -> dict:

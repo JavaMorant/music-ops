@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>duplicates — librarian</title>
+<style>
+  :root { --bg:#0e0f12; --panel:#16181d; --line:#262a31; --text:#e7e9ee; --dim:#8b909b;
+    --accent:#7aa2ff; --warm:#e0a85b; --ok:#5fd08a; --bad:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; padding-bottom:80px; }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:14px; }
+  header h1 { margin:0; font-size:18px; letter-spacing:.06em; font-weight:600; }
+  header .sub { color:var(--dim); font-size:12px; } .spacer { flex:1; }
+  a.nav { color:var(--dim); text-decoration:none; font-size:12px; } a.nav:hover { color:var(--text); }
+  button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px; padding:8px 16px;
+    font-weight:600; cursor:pointer; font-size:13px; } button.ghost { background:#2a2f39; color:var(--text); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { max-width:1000px; margin:0 auto; padding:24px; }
+  h2 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; margin:26px 0 12px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:8px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .stat .n { font-size:26px; font-weight:700; } .stat .l { color:var(--dim); font-size:12px; }
+  .stat.accent .n{color:var(--accent)} .stat.warm .n{color:var(--warm)} .stat.ok .n{color:var(--ok)}
+  .grp { background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:12px 14px; margin-bottom:10px; }
+  .grp.off { opacity:.5; }
+  .ghead { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .ghead b { font-size:14px; text-transform:capitalize; }
+  .ghead .muted { color:var(--dim); font-size:12px; }
+  .frow { display:flex; align-items:center; gap:10px; padding:5px 8px; border-radius:7px; font-size:13px; cursor:pointer; }
+  .frow:hover { background:#1c1f25; }
+  .frow.keep { background:rgba(95,208,138,.10); }
+  .frow .frel { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .frow.keep .frel { color:var(--ok); font-weight:600; }
+  .frow:not(.keep) .frel { color:var(--dim); text-decoration:line-through; text-decoration-color:#3a3f49; }
+  .frow .fq { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tag { font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; margin-left:4px; }
+  .tag.keep { background:rgba(95,208,138,.18); color:var(--ok); }
+  .muted { color:var(--dim); } .skel { color:var(--dim); padding:18px 0; }
+  .banner { padding:11px 14px; border-radius:9px; margin:10px 0; font-size:13px; }
+  .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
+  .banner.ok { background:rgba(95,208,138,.12); color:var(--ok); border:1px solid rgba(95,208,138,.3); }
+  .hint { color:var(--dim); font-size:12px; margin:-4px 0 12px; }
+  .bar { position:fixed; bottom:0; left:0; right:0; background:#121419; border-top:1px solid var(--line);
+    padding:12px 24px; display:flex; align-items:center; gap:14px; }
+  .bar .cnt { font-size:13px; } .bar .cnt b { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>duplicates</h1>
+  <span class="sub">same song, different files — what fingerprinting can't catch</span>
+  <span class="spacer"></span>
+  <a class="nav" href="/pulse.html">pulse ›</a>
+  <a class="nav" href="/">‹ review app</a>
+  <button id="rescan" class="ghost">↻ rescan</button>
+</header>
+<main>
+  <div id="stats"></div>
+  <div id="out"><div class="skel">analysing the library for duplicate songs… (reads tags + quality, ~10s)</div></div>
+</main>
+<div class="bar">
+  <span class="cnt" id="cnt">—</span>
+  <span class="spacer"></span>
+  <span id="result" class="muted"></span>
+  <button id="apply" disabled>Apply merges</button>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+let PLAN = null;
+
+function stat(n,l,cls){ return `<div class="stat ${cls||""}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`; }
+
+function groupCard(g, gid, opts){
+  const files = g.files.map(f => {
+    const isKeep = opts.review ? false : f.keep;
+    return `<label class="frow ${isKeep?'keep':''}">
+      <input type="radio" name="keep-${gid}" value="${esc(f.rel)}" ${isKeep?'checked':''} ${opts.mixed?'disabled':''}>
+      <span class="frel">${esc(f.rel)}</span>
+      <span class="fq">${esc(f.quality)}${f.pl?` · ${f.pl} playlist${f.pl>1?'s':''}`:''}</span>
+      ${isKeep?'<span class="tag keep">KEEP</span>':''}</label>`;
+  }).join("");
+  const inc = opts.mixed ? "" :
+    `<input type="checkbox" class="inc" ${opts.review?'':'checked'}>`;
+  const note = opts.mixed ? '<span class="muted">kept separate — these are different versions</span>'
+    : `<span class="muted">${g.files.length} copies → keep 1, quarantine ${g.files.length-1}</span>`;
+  return `<div class="grp ${opts.review?'off':''}" data-gid="${gid}" data-mixed="${opts.mixed?1:0}">
+    <div class="ghead"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">${inc}<b>${esc(g.key)}</b></label>
+      ${note}</div>
+    <div class="files">${files}</div></div>`;
+}
+
+function render(){
+  const s = PLAN.stats;
+  $("stats").innerHTML = `<div class="cards">
+    ${stat(s.auto_groups,"auto-merge groups","accent")}
+    ${stat(s.to_quarantine,"copies to quarantine")}
+    ${stat(s.reclaim_mb+" MB","space reclaimed","ok")}
+    ${stat(s.review_groups,"need your review","warm")}
+    ${stat(s.mixed_groups,"version variants (kept)")}
+  </div>${s.rekordbox ? '' : '<div class="banner bad">rekordbox not read — playlist-safety off; still safe to quarantine.</div>'}`;
+
+  let html = "";
+  html += `<h2>Auto-merge — same length, pure source-noise</h2>`;
+  html += `<div class="hint">Best copy kept (green), the rest quarantined — nothing deleted, fully undoable. Untick a group to skip it, or pick a different keeper.</div>`;
+  html += PLAN.auto.map((g,i)=>groupCard(g,"a"+i,{})).join("") || '<div class="muted">none 🎉</div>';
+
+  html += `<h2>Manual review — different lengths (radio vs full?)</h2>`;
+  html += `<div class="hint">Off by default. Pick a keeper only if these really are the same cut; otherwise leave them — your call.</div>`;
+  html += PLAN.review.map((g,i)=>groupCard(g,"r"+i,{review:true})).join("") || '<div class="muted">none</div>';
+
+  html += `<h2>Version variants — left intact</h2>`;
+  html += `<div class="hint">Clean / Dirty / Intro / Remix etc. — never auto-merged.</div>`;
+  html += PLAN.mixed.map((g,i)=>groupCard(g,"m"+i,{mixed:true})).join("") || '<div class="muted">none</div>';
+  $("out").innerHTML = html;
+
+  $("out").addEventListener("change", onChange);
+  recount();
+}
+
+function onChange(e){
+  const grp = e.target.closest(".grp");
+  if (!grp) return;
+  if (e.target.classList.contains("inc")) grp.classList.toggle("off", !e.target.checked);
+  if (e.target.type === "radio"){            // chose a keeper
+    grp.querySelectorAll(".frow").forEach(r=>{
+      const on = r.querySelector("input").checked;
+      r.classList.toggle("keep", on);
+      const tag = r.querySelector(".tag");
+      if (on && !tag){ r.insertAdjacentHTML("beforeend",'<span class="tag keep">KEEP</span>'); }
+      if (!on && tag) tag.remove();
+    });
+    const inc = grp.querySelector(".inc");     // picking a keeper opts a review group in
+    if (inc && !inc.checked){ inc.checked = true; grp.classList.remove("off"); }
+  }
+  recount();
+}
+
+function collect(){
+  const out = [];
+  document.querySelectorAll(".grp").forEach(grp=>{
+    if (grp.dataset.mixed === "1") return;
+    const inc = grp.querySelector(".inc");
+    if (!inc || !inc.checked) return;
+    const keepEl = grp.querySelector("input[type=radio]:checked");
+    if (!keepEl) return;
+    const keep = keepEl.value;
+    const drop = [...grp.querySelectorAll("input[type=radio]")].map(r=>r.value).filter(v=>v!==keep);
+    if (drop.length) out.push({keep, drop});
+  });
+  return out;
+}
+
+function recount(){
+  const d = collect();
+  const copies = d.reduce((a,x)=>a+x.drop.length,0);
+  $("cnt").innerHTML = `<b>${d.length}</b> groups · <b>${copies}</b> copies will be quarantined`;
+  $("apply").disabled = copies === 0;
+}
+
+async function apply(){
+  const decisions = collect();
+  if (!decisions.length) return;
+  if (!confirm(`Quarantine ${decisions.reduce((a,x)=>a+x.drop.length,0)} duplicate files? Nothing is deleted — undoable from the review app.`)) return;
+  $("apply").disabled = true; $("result").textContent = "applying…";
+  try {
+    const r = await fetch("/api/dedupe/apply", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ decisions }) });
+    const j = await r.json();
+    if (!r.ok){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(j.detail||"error")}</span>`; $("apply").disabled=false; return; }
+    $("out").innerHTML = `<div class="banner ok">✓ Quarantined ${j.applied} duplicates · run <code>${esc(j.run_id)}</code>`
+      + (j.rekordbox_rewritten ? ' · rekordbox XML updated' : '')
+      + ` — undo anytime from the review app.</div>`;
+    $("stats").innerHTML = ""; $("cnt").textContent = "done"; $("result").textContent = "";
+  } catch(e){ $("result").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; $("apply").disabled=false; }
+}
+
+async function load(rescan){
+  $("out").innerHTML = '<div class="skel">analysing the library for duplicate songs… (~10s)</div>';
+  try {
+    const r = await fetch("/api/dedupe/plan" + (rescan?"?rescan=1":""));
+    PLAN = await r.json();
+    if (!r.ok){ $("out").innerHTML = `<div class="banner bad">${esc(PLAN.detail||"error")}</div>`; return; }
+    render();
+  } catch(e){ $("out").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+$("apply").onclick = apply;
+$("rescan").onclick = () => load(true);
+load(false);
+</script>
+</body>
+</html>
