@@ -229,7 +229,7 @@ function ttRun(opts){
     var bars=cassette?80:96, half=bars/2, envAmp=playing?0.05:0.14, ringRot=idleT*0.08;
     if(!smoothV||smoothV.length!==bars){smoothV=new Float32Array(bars);}
     ctx.save();ctx.shadowBlur=W*0.006;ctx.lineCap='round';  // smaller blur = much cheaper per frame (96 bars)
-    if(cassette){var baseY=W*0.85,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;
+    if(cassette){var baseY=W*0.885,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;  // sits in the gap below the cassette (bottom ~76%), not crowding it
       var prc=curProg;
       for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;
         var raw=dataArr?dataArr[Math.floor(idx/half*dataArr.length*0.7)]/255:0;
