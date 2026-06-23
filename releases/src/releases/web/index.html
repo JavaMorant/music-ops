@@ -572,7 +572,7 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=documen
   if(ov.classList.contains('clean') && !_recording){ ov.classList.remove('clean');
     document.getElementById('cleantgl').textContent='⛶ Clean'; deckSize(); } } });
 const ocanvas=document.getElementById('oviz');
-function deckSize(){ const d=document.querySelector('#ov .deck'); if(!d)return; const s=d.clientWidth||320; ocanvas.width=s*2; ocanvas.height=s*2; }
+function deckSize(){ const d=document.querySelector('#ov .deck'); if(!d)return; const s=d.clientWidth||320; ocanvas.width=s*2; ocanvas.height=s*2; layoutCrew(); }
 function deckInitViz(){
   if(dactx){ if(dactx.state==='suspended')dactx.resume(); return; }
   try{ dactx=new (window.AudioContext||window.webkitAudioContext)();
@@ -667,6 +667,21 @@ function charSVG(part){
     + '<path d="M28 30 Q32 33.5 36 30" stroke="#0d0d10" stroke-width="2" fill="none" stroke-linecap="round"/>'
     + acc + '</svg>';
 }
+function layoutCrew(){  // place each character on a ring around the deck (positions scroll with #ov)
+  if(!stemMode) return;
+  const ov = document.getElementById('ov'), deck = document.querySelector('#ov .deck');
+  if(!ov || !deck) return;
+  const dr = deck.getBoundingClientRect(), orr = ov.getBoundingClientRect();
+  const cx = dr.left - orr.left + ov.scrollLeft + dr.width/2;
+  const cy = dr.top  - orr.top  + ov.scrollTop  + dr.height/2;
+  const R = dr.width*0.5 + 60;
+  const ANG = [145, 35, 215, 325];  // lower-left, lower-right, upper-left, upper-right (deg)
+  document.querySelectorAll('#stemcrew .stemchar').forEach((ch, i) => {
+    const a = ANG[i % ANG.length] * Math.PI/180;
+    ch.style.left = (cx + Math.cos(a)*R).toFixed(0) + 'px';
+    ch.style.top  = (cy + Math.sin(a)*R).toFixed(0) + 'px';
+  });
+}
 function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music notes — to its own stem
   if(!stemMode) return;
   if(!window.__stemPlaying){ _stemRaf = requestAnimationFrame(stemBounce); return; }  // paused — hold poses, don't keep dancing silently
@@ -757,8 +772,10 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
   Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
   Object.values(stemAnalysers).forEach(a => { try{ a.disconnect(); }catch(e){} });
   stemSources = []; stemGains = {}; stemAnalysers = {}; stemData = {}; stemMode = false; window.__stemPlaying = false;
-  stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null;
+  stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null; stemBpm = 0;
+  if(dactx && dactx.state === 'suspended') dactx.resume();  // in case it was paused mid-remix
   document.getElementById('stembar').classList.remove('show');
+  document.getElementById('ov').classList.remove('remix');
   const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
 }
 function exitStems(){ if(!stemMode) return; _teardownStems(); if(deckCur >= 0) deckSelect(deckCur); }
@@ -846,6 +863,7 @@ audioEl.addEventListener('ended',()=>{
   else deckSetPlaying(false);
 });
 addEventListener('resize',deckSize);
+document.getElementById('ov').addEventListener('scroll',layoutCrew);  // keep the crew pinned around the deck while scrolling
 
 async function preview() {
   try {
