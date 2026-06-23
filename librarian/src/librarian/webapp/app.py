@@ -15,7 +15,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -399,6 +399,28 @@ def create_app(config: AppConfig) -> FastAPI:
         fname = re.sub(r"[^\w .-]", "_", name)[:60] or "set"
         return PlainTextResponse("\n".join(md) + "\n",
                                  headers={"Content-Disposition": f'attachment; filename="{fname}.md"'})
+
+    @app.get("/api/pulse/sets/card")
+    def get_set_card(key: str, download: int = 0):
+        """A named set as a self-contained, shareable HTML card — each track links
+        out to a Spotify / SoundCloud / Bandcamp search. Opens inline; ``download``
+        forces a .html attachment to drop on the EPK site."""
+        from .. import pulse_usb, setcard, setlog
+        stick = key.split("|")[0]
+        vols = [v for v in pulse_usb.find_usbs() if v.name == stick]
+        if not vols:
+            return PlainTextResponse("set not found (stick not mounted)", status_code=404)
+        detail = pulse_usb.set_detail(vols[0], key)
+        if not detail:
+            return PlainTextResponse("set not found", status_code=404)
+        log = setlog.load().get(key, {})
+        name = log.get("name") or detail["auto_name"]
+        doc = setcard.render_card(detail, name, recording=log.get("recording", ""), stick=stick)
+        headers = {}
+        if download:
+            fname = re.sub(r"[^\w .-]", "_", name)[:60] or "set"
+            headers["Content-Disposition"] = f'attachment; filename="{fname}.html"'
+        return HTMLResponse(doc, headers=headers)
 
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

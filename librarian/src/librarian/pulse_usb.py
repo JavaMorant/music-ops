@@ -269,6 +269,21 @@ def follows(vol: Path, query: str, *, last_n: int = 80) -> list[dict]:
     return [{"label": disp.get(k, k), "count": n} for k, n in nxt.most_common(10)]
 
 
+def set_detail(vol: Path, key: str) -> dict | None:
+    """One set by its stable key, with per-track genre + BPM (for a share card)."""
+    sess, meta, _fmts = read_stick(vol)
+    for s in sess:
+        if f"{vol.name}|{s['fmt']}|{s['id']}" == key:
+            tracks = []
+            for t in s["tracks"]:
+                m = meta.get(_norm(t), {})
+                tracks.append({"label": t, "genre": m.get("genre", ""),
+                               "bpm": round(m.get("bpm", 0) or 0)})
+            return {"key": key, "fmt": s["fmt"], "auto_name": s["name"],
+                    "n": len(s["tracks"]), "tracks": tracks}
+    return None
+
+
 def stick_sets(vol: Path, *, limit: int = 60) -> list[dict]:
     """Most-recent sets on a stick, each with its tracklist in play order and a
     stable key (for naming / linking a recording in a sidecar)."""
