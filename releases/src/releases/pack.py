@@ -103,7 +103,7 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
 TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
-  var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, bloom=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
+  var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], smoothV=null, idleT=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe)
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, curProg=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
@@ -116,9 +116,9 @@ function ttRun(opts){
       c2.drawImage(img,0,0,14,14);var px=c2.getImageData(0,0,14,14).data,r=0,g=0,b=0,n=0;
       for(var i=0;i<px.length;i+=4){if(px[i+3]>10){r+=px[i];g+=px[i+1];b+=px[i+2];n++;}}
       if(n)hue=rgbHue(r/n,g/n,b/n);}catch(e){}};img.src=url;}
-  // beat-drop: a gentle pulse + a soft bloom of light behind the disc. (The old
-  // explosive spark-burst + shockwave "collision" was removed — to be replaced later.)
-  function onDrop(energy){flash=0.4;punch=0.45;shake=6;bloom=0.85;}
+  // beat-drop: just a gentle motion pulse now. (The explosive spark-burst +
+  // shockwave AND the coloured flash/bloom blasts were removed — to be replaced later.)
+  function onDrop(energy){punch=0.4;shake=6;}
   function frame(){
     requestAnimationFrame(frame);
     idleT+=0.016;
@@ -149,7 +149,7 @@ function ttRun(opts){
     var kick=Math.max(0,bass-bassAvg-0.05);
     if(energy>eLong*1.45+0.12 && energy>0.30 && nowMs()-lastDrop>1400){lastDrop=nowMs();onDrop(energy);}
     hue=(hue+0.04+energy*0.45)%360;  // a touch slower so the colour drift reads as calm, not strobing
-    flash*=0.86; punch*=0.9; shake*=0.82; bloom*=0.9;
+    flash*=0.86; punch*=0.9; shake*=0.82;
     if(kick>0.05){shake=Math.max(shake,Math.min(11,kick*34)); if(opts.sparksOn&&fxParticles)spawn(kick);}  // bass/kick → screen shake
     var breath=0.5+0.5*Math.sin(idleT*0.9);  // gentle idle pulse, ~7s cycle
     var lbl=opts.getLabel?opts.getLabel():opts.label;
@@ -284,12 +284,6 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
-    if(bloom>0.01){c.save();c.globalCompositeOperation='lighter';  // drop bloom: a soft glow that expands as it fades
-      var brad=ref*(0.5+(1-bloom)*1.1),bgr=c.createRadialGradient(rcx,rcy,0,rcx,rcy,brad);
-      bgr.addColorStop(0,'hsla('+hue.toFixed(0)+',95%,74%,'+(bloom*0.32).toFixed(3)+')');
-      bgr.addColorStop(0.45,'hsla('+hue.toFixed(0)+',95%,64%,'+(bloom*0.1).toFixed(3)+')');
-      bgr.addColorStop(1,'hsla('+hue.toFixed(0)+',95%,60%,0)');
-      c.fillStyle=bgr;c.beginPath();c.arc(rcx,rcy,brad,0,6.2832);c.fill();c.restore();}
     if(bokeh.length){c.save();c.globalCompositeOperation='lighter';  // additive → overlapping orbs glow brighter
       for(var bi=bokeh.length-1;bi>=0;bi--){var bo=bokeh[bi];bo.t+=bo.dt;
         if(bo.t>=1){bokeh.splice(bi,1);continue;}

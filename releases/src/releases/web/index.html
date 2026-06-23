@@ -86,13 +86,16 @@
      to a stretched overlay; each char is absolutely placed on a ring by layoutCrew(). */
   #ov #stemcrew{display:none;}
   #ov.remix #stemcrew{display:block;}
-  #ov.remix.clean #stemcrew,#ov.remix.reel #stemcrew{display:none;}  /* clear the deck for recording */
+  #ov.remix.clean #stemcrew{display:none;}                          /* clean mode always clears the deck */
+  #ov.remix.reel:not(.crewreel) #stemcrew{display:none;}            /* reel hides the crew UNLESS opted in */
+  #ov #crewreeltgl{display:none;}                                    /* the toggle only matters in reel mode */
+  #ov.remix.reel #crewreeltgl{display:inline-block;}
   #ov .stemchar{position:absolute;z-index:9;transform:translate(-50%,-50%);pointer-events:auto;
     display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
     user-select:none;width:84px;transition:opacity .25s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
-  #ov .charfig{width:60px;height:90px;display:block;will-change:transform,filter;transform-origin:50% 96%;}
-  #ov .charfig .arm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder */
+  #ov .charfig{width:60px;height:90px;display:block;overflow:visible;will-change:transform,filter;transform-origin:50% 96%;}
+  #ov .charfig .charm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder (NB: .charm, not .arm — see tonearm) */
   #ov .charfig .leg{transform-box:fill-box;transform-origin:50% 8%;}   /* step from the hip */
   #ov .charstage{height:96px;display:flex;align-items:flex-end;justify-content:center;position:relative;}
   #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
@@ -259,6 +262,7 @@
     <button id="cleantgl" onclick="deckClean()">⛶ Clean</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
+    <button id="crewreeltgl" onclick="toggleCrewReel()">👥 Show crew</button>
     <button onclick="closeDeck()">✕ Close</button>
   </div>
   <div class="fxbar" id="fxbar">
@@ -570,6 +574,8 @@ function deckReel(){ const on=document.getElementById('ov').classList.toggle('re
   document.getElementById('reeltgl').textContent=on?'✕ Exit':'⤢ Reel'; deckSize(); }
 function deckClean(){ const on=document.getElementById('ov').classList.toggle('clean');
   document.getElementById('cleantgl').textContent=on?'⛶ Exit clean':'⛶ Clean'; deckSize(); }
+function toggleCrewReel(){ const on=document.getElementById('ov').classList.toggle('crewreel');  // show/hide the dancers while in reel mode
+  document.getElementById('crewreeltgl').textContent=on?'👥 Hide crew':'👥 Show crew'; layoutCrew(); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=document.getElementById('ov');
   if(ov.classList.contains('clean') && !_recording){ ov.classList.remove('clean');
     document.getElementById('cleantgl').textContent='⛶ Clean'; deckSize(); } } });
@@ -635,7 +641,7 @@ async function enterStems(){
       + `<div class="charstage">${charSVG(p)}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
     stemCrewEls = r.parts.map(p => {  // cache nodes once so the rAF loop does no DOM lookups
       const ch = document.querySelector('.stemchar[data-part="'+p+'"]'), fig = ch.querySelector('.charfig');
-      return {part:p, ch, fig, stage:ch.querySelector('.charstage'), arms:fig.querySelectorAll('.arm'), legs:fig.querySelectorAll('.leg'), glow:-1};
+      return {part:p, ch, fig, stage:ch.querySelector('.charstage'), arms:fig.querySelectorAll('.charm'), legs:fig.querySelectorAll('.leg'), glow:-1};
     });
     document.getElementById('stembar').classList.add('show');
     document.getElementById('ov').classList.add('remix');  // shows the crew ringed around the deck
@@ -665,9 +671,10 @@ function charSVG(part){
   return '<svg class="charfig" viewBox="0 0 64 96">'
     + '<rect class="leg" x="22" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
     + '<rect class="leg" x="33.5" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
-    // arm + hand grouped so the hand swings on the end of the arm
-    + '<g class="arm"><rect x="7" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="11" cy="62" r="5.4" fill="var(--cc)"/></g>'
-    + '<g class="arm"><rect x="49" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="53" cy="62" r="5.4" fill="var(--cc)"/></g>'
+    // arm + hand grouped so the hand swings on the end of the arm. NB: class is "charm"
+    // (NOT "arm") — "arm" collides with the turntable tonearm's #ov .arm styles.
+    + '<g class="charm"><rect x="7" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="11" cy="63" r="6.2" fill="var(--cc)"/></g>'
+    + '<g class="charm"><rect x="49" y="40" width="8" height="20" rx="4" fill="var(--cc)"/><circle cx="53" cy="63" r="6.2" fill="var(--cc)"/></g>'
     + '<rect x="17" y="36" width="30" height="34" rx="13" fill="var(--cc)"/>'
     + '<circle cx="32" cy="24" r="15" fill="var(--cc)"/>'
     + eyes
@@ -778,7 +785,8 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
   stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null; stemBpm = 0; stemCrewEls = [];
   if(dactx && dactx.state === 'suspended') dactx.resume();  // in case it was paused mid-remix
   document.getElementById('stembar').classList.remove('show');
-  document.getElementById('ov').classList.remove('remix');
+  document.getElementById('ov').classList.remove('remix', 'crewreel');
+  const ct = document.getElementById('crewreeltgl'); if(ct) ct.textContent = '👥 Show crew';
   const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
 }
 function exitStems(){ if(!stemMode) return; _teardownStems(); if(deckCur >= 0) deckSelect(deckCur); }
