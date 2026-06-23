@@ -10,6 +10,7 @@ operating summary.
 ```
 clipper/      # content engine: set recordings → short clips (Python CLI)
 librarian/    # DJ library organiser + intelligence (Python CLI + local web app)
+releases/     # FL Studio projects → ship schedule + beat-pack player (Python CLI + web app)
 outreach/     # booking CRM (Python CLI + SQLite)
 site/         # EPK / music site (Astro or Next.js static export → Vercel)
 ```
