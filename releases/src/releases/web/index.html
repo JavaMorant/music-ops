@@ -8,7 +8,9 @@
   :root {
     --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
     --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    color-scheme: dark;  /* dark native <audio> controls + scrollbars — no light-grey strip at the bottom */
   }
+  html { background:var(--bg); }  /* also covers overscroll/rubber-band so it never flashes white */
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding-bottom:84px; }
@@ -569,6 +571,7 @@ function deckInitViz(){
 const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'};
 const STEM_ICON  = {drums:'🥁', bass:'🎸', other:'🎹', vocals:'🎤'};
 const STEM_COLOR = {drums:'#f0663f', bass:'#9b6cf0', other:'#f0c64a', vocals:'#43c9b0'};
+const STEM_DANCE = {drums:0, bass:1, other:2, vocals:3};  // each gets a distinct dance style
 let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0, stemNoteAt = {};
 let stemStartAt = 0, stemLoopDur = 0, stemStartOffset = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
 let stemSolo = null;  // right-click solos a layer (mutes the rest); right-click it again restores everyone
@@ -659,12 +662,26 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
       const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);
       fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx+','+sy+')';
       fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
-      const swing = Math.sin(now*0.007 + k*1.3) * (6 + e*10), raise = Math.min(46, e*60);  // arms dance + raise on hits
-      if(arms[0]) arms[0].style.transform = 'rotate('+(-raise - swing).toFixed(1)+'deg)';
-      if(arms[1]) arms[1].style.transform = 'rotate('+(raise + swing).toFixed(1)+'deg)';
-      const step = Math.sin(now*0.008 + k*1.1) * (4 + e*16);  // legs step in alternation, livelier with energy
-      if(legs[0]) legs[0].style.transform = 'rotate('+step.toFixed(1)+'deg)';
-      if(legs[1]) legs[1].style.transform = 'rotate('+(-step).toFixed(1)+'deg)';
+      // each character has its OWN dance (legs + arms) so the crew isn't in lockstep
+      const style = (STEM_DANCE[part] != null) ? STEM_DANCE[part] : (k % 4);
+      let armA, armB, legA, legB;
+      if(style === 0){            // drums — high-step + alternating arm pump
+        const s = Math.sin(now*0.009 + k) * (6 + e*22), raise = Math.min(46, e*60);
+        legA = s; legB = -s; armA = -raise - s; armB = raise + s;
+      } else if(style === 1){     // bass — side shuffle, legs + arms lean together
+        const s = Math.sin(now*0.006 + k) * (6 + e*14);
+        legA = s; legB = s*0.55; armA = s*1.4 - 8; armB = s*1.4 + 8;
+      } else if(style === 2){     // melody — bounce, knees splay out/in, arms thrown up
+        const sp = Math.abs(Math.sin(now*0.008 + k)) * (5 + e*18), raise = Math.min(64, 18 + e*70);
+        legA = -sp; legB = sp; armA = -raise; armB = raise;
+      } else {                    // vocals — one-leg kick/tap, free hand up
+        const kick = Math.max(0, Math.sin(now*0.009 + k)) * (8 + e*30);
+        legA = kick; legB = -kick*0.12; armA = -Math.min(70, 30 + e*60); armB = Math.sin(now*0.008)*(6 + e*8);
+      }
+      if(arms[0]) arms[0].style.transform = 'rotate('+armA.toFixed(1)+'deg)';
+      if(arms[1]) arms[1].style.transform = 'rotate('+armB.toFixed(1)+'deg)';
+      if(legs[0]) legs[0].style.transform = 'rotate('+legA.toFixed(1)+'deg)';
+      if(legs[1]) legs[1].style.transform = 'rotate('+legB.toFixed(1)+'deg)';
       if(e > 0.52 && now - (stemNoteAt[part]||0) > 260) spawnNote(fig.parentNode, part, now);  // pop a note on hits
     } else {
       fig.style.transform = ''; fig.style.filter = '';
@@ -787,9 +804,12 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
-audioEl.addEventListener('play',()=>{ deckInitViz(); deckSetPlaying(true); });
-audioEl.addEventListener('pause',()=>deckSetPlaying(false));
+// In remix mode the <audio> is deliberately paused while the stems loop, so its
+// pause/ended events must NOT brake the deck — stemMode keeps the disk spinning.
+audioEl.addEventListener('play',()=>{ if(stemMode)return; deckInitViz(); deckSetPlaying(true); });
+audioEl.addEventListener('pause',()=>{ if(!stemMode) deckSetPlaying(false); });
 audioEl.addEventListener('ended',()=>{
+  if(stemMode) return;
   if(document.getElementById('ov').classList.contains('show') && deckCur>=0 && deckCur<DECK.length-1) deckSelect(deckCur+1);
   else deckSetPlaying(false);
 });

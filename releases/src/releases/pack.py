@@ -104,7 +104,7 @@ TURNTABLE_JS = r"""
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
-  var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
+  var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], smoothV=null, idleT=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe)
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, curProg=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
   function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
@@ -168,7 +168,7 @@ function ttRun(opts){
         opts.scene.style.transform='translate('+sx.toFixed(1)+'px,'+sy.toFixed(1)+'px) scale('+(1+punch*0.04).toFixed(3)+')';}
     if(opts.flash){opts.flash.style.opacity=Math.min(0.7,flash).toFixed(3);
       if(flash>0.02)opts.flash.style.background='radial-gradient(circle at 50% 45%,hsla('+hue.toFixed(0)+',90%,75%,.9),transparent 70%)';}
-    if(playing&&fxParticles)ambient(energy);  // embers only while music plays — idle stays clean
+    if(playing&&fxParticles){ambient(energy);bokehSpawn(energy);}  // embers + a lush field of floating lights — only while music plays; idle stays clean
     // brake-disc heat: builds toward the end of the track; drives the cassette
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
@@ -202,6 +202,15 @@ function ttRun(opts){
   function ambient(energy){var cap=10+Math.floor(energy*60), n=1+Math.floor(energy*4);
     for(var q=0;q<n;q++){ if(embers.length<cap && Math.random()<0.5){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
+  // soft, slow, glowing orbs drifting across the whole field — the Trap-Nation bokeh
+  // look. They fade in and out (t:0->1), sway gently, and are tinted around the hue.
+  function bokehSpawn(energy){var cap=38+Math.floor(energy*78), n=1+Math.floor(energy*4);
+    for(var q=0;q<n;q++){ if(bokeh.length<cap && Math.random()<0.7){
+      bokeh.push({x:Math.random()*fxw,y:fxh*(0.15+Math.random()*1.05),
+        vx:(Math.random()*2-1)*fxw*0.00018,vy:-(fxh*0.00055)*(0.4+Math.random()*1.3),
+        t:0,dt:0.0026+Math.random()*0.004,sz:ref*(0.008+Math.random()*0.034),
+        ph:Math.random()*6.2832,amp:ref*(0.05+Math.random()*0.12),
+        hoff:(Math.random()*70-35),peak:0.14+Math.random()*0.22+energy*0.1});}}}
   // a thin thread of smoke like the wisp off a match: rises in a wavering line and
   // barely widens; hotter = redder
   function puff(x,y,heat){if(smoke.length>120)return;
@@ -277,6 +286,17 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
+    if(bokeh.length){c.save();c.globalCompositeOperation='lighter';  // additive → overlapping orbs glow brighter
+      for(var bi=bokeh.length-1;bi>=0;bi--){var bo=bokeh[bi];bo.t+=bo.dt;
+        if(bo.t>=1){bokeh.splice(bi,1);continue;}
+        bo.y+=bo.vy;bo.x+=bo.vx+Math.sin(bo.t*6.2832+bo.ph)*bo.amp*0.012;
+        var ba=Math.sin(bo.t*3.14159)*bo.peak,bh=(hue+bo.hoff+360)%360;
+        var bg=c.createRadialGradient(bo.x,bo.y,0,bo.x,bo.y,bo.sz);
+        bg.addColorStop(0,'hsla('+bh.toFixed(0)+',90%,72%,'+ba.toFixed(3)+')');
+        bg.addColorStop(0.4,'hsla('+bh.toFixed(0)+',88%,62%,'+(ba*0.45).toFixed(3)+')');
+        bg.addColorStop(1,'hsla('+bh.toFixed(0)+',88%,60%,0)');
+        c.fillStyle=bg;c.beginPath();c.arc(bo.x,bo.y,bo.sz,0,6.2832);c.fill();}
+      c.restore();}
     for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.y+=pf.vy;pf.vy*=0.997;
       var age=1-pf.life;pf.x=pf.bx+Math.sin(age*9+pf.ph)*pf.amp*age;pf.r=ref*0.003+age*ref*0.013;pf.life-=0.006;
       if(pf.life<=0){smoke.splice(z,1);continue;}
