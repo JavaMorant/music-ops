@@ -147,6 +147,7 @@ async function loadUsb() {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
           <span class="stickname">🎛 ${esc(s.name)}</span>
           ${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}
+          ${s.live ? "" : '<span class="pill" style="background:rgba(224,168,91,.16);color:var(--warm)">📼 archived</span>'}
           <span class="muted">${s.sessions} sets · avg ${s.avg_per_set}/set (${s.set_lengths.min}–${s.set_lengths.max})${bpm}</span></div>
         <div class="cards" style="margin:14px 0">
           ${stat(s.distinct_played.toLocaleString(),"distinct tracks played")}

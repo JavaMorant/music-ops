@@ -49,7 +49,10 @@ def find_usbs():
 
 # --- Device Library (export.pdb, via rekordcrate) -------------------------
 def _pdb_sessions(pdb: Path):
-    txt = subprocess.run([RC, "dump-pdb", str(pdb)], capture_output=True, text=True).stdout
+    return _parse_pdb_text(subprocess.run([RC, "dump-pdb", str(pdb)], capture_output=True, text=True).stdout)
+
+
+def _parse_pdb_text(txt: str):
     artists, genres = {}, {}
     for m in re.finditer(r"Artist\(Artist \{(.*?)\}\)", txt):
         b = m.group(1)
@@ -128,20 +131,25 @@ def _dlplus_sessions(db_path: Path):
 
 
 def read_stick(vol: Path):
-    """Combined sessions (DL first/older, DL+ last/newer) + per-track meta."""
+    """Live sessions (DL + DL+) auto-snapshotted to the laptop archive so a format
+    can't wipe history. Returns the archive-backed set (recovered + all-time)."""
     rb = vol / "PIONEER" / "rekordbox"
-    sessions, meta = [], {}
-    fmts = []
+    live, meta = [], {}
     if (rb / "export.pdb").exists():
         s, m = _pdb_sessions(rb / "export.pdb")
-        sessions += s
+        live += s
         meta.update(m)
-        fmts.append("DL")
     if (rb / "exportLibrary.db").exists() and dlplus_available():
         s, m = _dlplus_sessions(rb / "exportLibrary.db")
-        sessions += s
+        live += s
         meta.update(m)
-        fmts.append("DL+")
+    from . import history_archive
+    history_archive.snapshot(vol.name, live, meta)   # persist live history every read
+    arch = history_archive.load(vol.name)            # recovered + all-time accumulated
+    for k, v in arch["meta"].items():
+        meta.setdefault(k, v)
+    sessions = arch["sessions"] or live
+    fmts = sorted({s.get("fmt", "DL") for s in sessions}) or ["DL"]
     return sessions, meta, fmts
 
 
@@ -217,6 +225,7 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
         "name": vol.name,
         "formats": fmts,
         "source": source,
+        "live": (vol / "PIONEER" / "rekordbox").exists(),
         "loaded": _loaded_count(vol),
         "tracks": len(plays),
         "plays": sum(plays.values()),

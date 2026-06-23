@@ -307,11 +307,17 @@ def create_app(config: AppConfig) -> FastAPI:
     def get_pulse_usb(source: str = "all") -> dict:
         """Per-stick play history off mounted CDJ USBs. ``source`` filters the
         export format: all (DL + DL+ combined), DL, or DL+."""
-        from .. import pulse_usb
+        from .. import pulse_usb, history_archive
         if not pulse_usb.available():
             return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed (cargo install rekordcrate)"})
+        vols = list(pulse_usb.find_usbs())
+        names = {v.name for v in vols}
+        if history_archive.DIR.exists():  # archived sticks that aren't plugged in
+            for f in sorted(history_archive.DIR.glob("*.json")):
+                if f.stem not in names:
+                    vols.append(Path("/Volumes") / f.stem)
         sticks = []
-        for vol in pulse_usb.find_usbs():
+        for vol in vols:
             try:
                 sticks.append(pulse_usb.usb_insights(vol, source=source))
             except Exception as exc:
