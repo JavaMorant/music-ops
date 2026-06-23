@@ -88,48 +88,56 @@ def _nclean(fp: Path) -> int:
             + (0 if " - " in bn else 1))
 
 
-def rekordbox_playlist_counts() -> dict[str, int]:
-    """``{normalised abspath: number of playlists the track is in}`` — best effort.
-    Empty dict if rekordbox/pyrekordbox is unavailable. Used so a survivor that is
-    already woven into your playlists is preferred over an orphan copy."""
+_SKIP_PLAYLISTS = {"CUE Analysis Playlist"}  # rekordbox-internal, not user playlists
+
+
+def rekordbox_playlists_by_path() -> dict[str, list[str]]:
+    """``{normalised abspath: [playlist names the track is in]}`` — best effort.
+    Empty dict if rekordbox/pyrekordbox is unavailable. Lets the UI show *which*
+    playlists each copy belongs to, and prefers a playlist-connected survivor."""
     import collections
     try:
         from pyrekordbox import Rekordbox6Database
         from pyrekordbox.db6 import tables as T
         db = Rekordbox6Database()
-        counts = collections.Counter()
+        names = {str(pl.ID): pl.Name for pl in db.get_playlist()
+                 if getattr(pl, "Attribute", 0) == 0 and pl.Name not in _SKIP_PLAYLISTS}
+        by_content: dict[str, set[str]] = collections.defaultdict(set)
         for r in db.session.query(T.DjmdSongPlaylist):
-            counts[str(r.ContentID)] += 1
-        out: dict[str, int] = {}
+            nm = names.get(str(r.PlaylistID))
+            if nm:
+                by_content[str(r.ContentID)].add(nm)
+        out: dict[str, list[str]] = {}
         for c in db.get_content():
             p = c.FolderPath or ""
             if p:
-                out[norm_key(Path(p))] = counts[str(c.ID)]  # same key the engine uses
+                out[norm_key(Path(p))] = sorted(by_content.get(str(c.ID), ()))  # engine key
         return out
     except Exception:
         return {}
 
 
-def _file_row(fp: Path, root: Path, pl_counts: dict[str, int]) -> dict:
+def _file_row(fp: Path, root: Path, pl_map: dict[str, list[str]]) -> dict:
     pr = _probe(fp)
     qual = " · ".join(x for x in [
         fp.suffix.lstrip(".") if pr["lossless"] else "",
         f"{pr['br']}kbps" if pr["br"] else "",
         f"{int(pr['dur'])}s" if pr["dur"] else "",
     ] if x) or "unreadable"
+    playlists = pl_map.get(norm_key(fp), [])
     return {
         "rel": str(fp.relative_to(root)),
         "br": pr["br"], "dur": round(pr["dur"]), "lossless": pr["lossless"],
         "size": fp.stat().st_size if fp.exists() else 0,
-        "pl": pl_counts.get(norm_key(fp), 0),
+        "pl": len(playlists), "playlists": playlists,
         "quality": qual, "nclean": _nclean(fp),
     }
 
 
-def analyze(library_root: Path, *, pl_counts: dict[str, int] | None = None) -> dict:
+def analyze(library_root: Path, *, pl_map: dict[str, list[str]] | None = None) -> dict:
     """Group the library into auto-merge / manual-review / mixed buckets."""
     root = library_root.absolute()
-    pl_counts = pl_counts or {}
+    pl_map = pl_map or {}
     groups: dict[str, list[Path]] = {}
     for fp in audio_files(root):
         if _STEM.search(fp.stem):
@@ -144,9 +152,9 @@ def analyze(library_root: Path, *, pl_counts: dict[str, int] | None = None) -> d
             continue
         if any(_KEEP.search(p.name) for p in paths):
             mixed.append({"key": key, "kind": "mixed",
-                          "files": [_file_row(p, root, pl_counts) for p in sorted(paths)]})
+                          "files": [_file_row(p, root, pl_map) for p in sorted(paths)]})
             continue
-        rows = [_file_row(p, root, pl_counts) for p in paths]
+        rows = [_file_row(p, root, pl_map) for p in paths]
         durs = [r["dur"] for r in rows if r["dur"] > 30]
         med = statistics.median(durs or [r["dur"] for r in rows] or [0])
         good = [r for r in rows if r["br"] >= 128 and r["dur"] > 30]
@@ -180,7 +188,7 @@ def analyze(library_root: Path, *, pl_counts: dict[str, int] | None = None) -> d
         "stats": {
             "auto_groups": len(auto), "review_groups": len(review), "mixed_groups": len(mixed),
             "to_quarantine": drop_n, "reclaim_mb": round(reclaim / 1e6),
-            "rekordbox": bool(pl_counts),
+            "rekordbox": bool(pl_map),
         },
     }
 

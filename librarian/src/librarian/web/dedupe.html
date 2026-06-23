@@ -35,6 +35,9 @@
   .frow.keep .frel { color:var(--ok); font-weight:600; }
   .frow:not(.keep) .frel { color:var(--dim); text-decoration:line-through; text-decoration-color:#3a3f49; }
   .frow .fq { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .frow .plct { color:var(--accent); cursor:help; }
+  .plnames { display:none; font-size:11px; color:var(--dim); padding:1px 8px 6px 32px; line-height:1.4; }
+  body.shownames .plnames { display:block; }
   .tag { font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; margin-left:4px; }
   .tag.keep { background:rgba(95,208,138,.18); color:var(--ok); }
   .muted { color:var(--dim); } .skel { color:var(--dim); padding:18px 0; }
@@ -54,6 +57,7 @@
   <span class="spacer"></span>
   <a class="nav" href="/pulse.html">pulse ›</a>
   <a class="nav" href="/">‹ review app</a>
+  <button id="plsBtn" class="ghost">playlist names: off</button>
   <button id="rescan" class="ghost">↻ rescan</button>
 </header>
 <main>
@@ -77,11 +81,16 @@ function stat(n,l,cls){ return `<div class="stat ${cls||""}"><div class="n">${es
 function groupCard(g, gid, opts){
   const files = g.files.map(f => {
     const isKeep = opts.review ? false : f.keep;
-    return `<label class="frow ${isKeep?'keep':''}">
-      <input type="radio" name="keep-${gid}" value="${esc(f.rel)}" ${isKeep?'checked':''} ${opts.mixed?'disabled':''}>
-      <span class="frel">${esc(f.rel)}</span>
-      <span class="fq">${esc(f.quality)}${f.pl?` · ${f.pl} playlist${f.pl>1?'s':''}`:''}</span>
-      ${isKeep?'<span class="tag keep">KEEP</span>':''}</label>`;
+    const pls = (f.playlists && f.playlists.length) ? f.playlists : null;
+    const tip = pls ? ` title="In: ${esc(f.playlists.join(', '))}"` : '';
+    const badge = f.pl ? ` · <span class="plct">${f.pl} playlist${f.pl>1?'s':''}</span>` : '';
+    return `<div class="fitem">
+      <label class="frow ${isKeep?'keep':''}"${tip}>
+        <input type="radio" name="keep-${gid}" value="${esc(f.rel)}" ${isKeep?'checked':''} ${opts.mixed?'disabled':''}>
+        <span class="frel">${esc(f.rel)}</span>
+        <span class="fq">${esc(f.quality)}${badge}</span>
+        ${isKeep?'<span class="tag keep">KEEP</span>':''}</label>
+      ${pls?`<div class="plnames">↳ ${esc(f.playlists.join(' · '))}</div>`:''}</div>`;
   }).join("");
   const inc = opts.mixed ? "" :
     `<input type="checkbox" class="inc" ${opts.review?'':'checked'}>`;
@@ -188,6 +197,10 @@ async function load(rescan){
   } catch(e){ $("out").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 $("apply").onclick = apply;
+$("plsBtn").onclick = () => {
+  const on = document.body.classList.toggle("shownames");
+  $("plsBtn").textContent = "playlist names: " + (on ? "on" : "off");
+};
 $("rescan").onclick = () => load(true);
 load(false);
 </script>

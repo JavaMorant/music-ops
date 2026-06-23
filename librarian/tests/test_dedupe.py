@@ -27,7 +27,7 @@ def _make(root: Path) -> None:
 def test_buckets(tmp_path: Path):
     root = tmp_path / "lib"
     _make(root)
-    res = dedupe.analyze(root, pl_counts={})
+    res = dedupe.analyze(root, pl_map={})
 
     assert res["stats"]["auto_groups"] == 1
     auto = res["auto"][0]
@@ -71,7 +71,7 @@ def test_build_plan_rejects_paths_outside_library(tmp_path: Path):
 
 
 def test_apply_is_reversible_and_never_deletes(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(dedupe, "rekordbox_playlist_counts", lambda: {})
+    monkeypatch.setattr(dedupe, "rekordbox_playlists_by_path", lambda: {})
     root = tmp_path / "lib"
     root.mkdir()
     _make(root)
@@ -101,7 +101,7 @@ def test_apply_is_reversible_and_never_deletes(tmp_path: Path, monkeypatch):
 
 def test_apply_rejects_crafted_unrelated_pair(tmp_path: Path, monkeypatch):
     """A crafted POST can't quarantine a file that isn't in a real dup group."""
-    monkeypatch.setattr(dedupe, "rekordbox_playlist_counts", lambda: {})
+    monkeypatch.setattr(dedupe, "rekordbox_playlists_by_path", lambda: {})
     root = tmp_path / "lib"
     root.mkdir()
     _make(root)

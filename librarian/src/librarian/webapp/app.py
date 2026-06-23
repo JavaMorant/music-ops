@@ -357,8 +357,8 @@ def create_app(config: AppConfig) -> FastAPI:
         pass ``rescan=1`` to rebuild after files change."""
         from .. import dedupe
         if st.dedupe is None or rescan:
-            pl = dedupe.rekordbox_playlist_counts()
-            st.dedupe = dedupe.analyze(st.config.library_root, pl_counts=pl)
+            pl = dedupe.rekordbox_playlists_by_path()
+            st.dedupe = dedupe.analyze(st.config.library_root, pl_map=pl)
         return st.dedupe
 
     @app.post("/api/dedupe/apply", dependencies=[Depends(guard_origin)])
@@ -370,8 +370,8 @@ def create_app(config: AppConfig) -> FastAPI:
         # Constrain client input to the server's own authoritative groups: every
         # keep+drop must belong to a real duplicate group (never a crafted pair).
         if st.dedupe is None:
-            pl = dedupe.rekordbox_playlist_counts()
-            st.dedupe = dedupe.analyze(cfg.library_root, pl_counts=pl)
+            pl = dedupe.rekordbox_playlists_by_path()
+            st.dedupe = dedupe.analyze(cfg.library_root, pl_map=pl)
         decisions = dedupe.valid_decisions(st.dedupe, [d.model_dump() for d in req.decisions])
         plan = dedupe.build_plan(cfg.library_root, decisions, rekordbox_xml=cfg.rekordbox_xml)
         if not plan.actions:

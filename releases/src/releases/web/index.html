@@ -72,15 +72,20 @@
   #ov .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
     padding:5px 11px;font-size:12px;cursor:pointer;}
   #ov .fxchip.off{color:var(--dim);border-color:var(--line);}
-  /* stem remix bar — toggle drums/bass/melody/vocals live (Incredibox-style) */
-  #ov .stembar{display:none;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap;
+  /* stem remix — a crew of characters; each bounces/glows to its own layer, tap to drop/add */
+  #ov .stembar{display:none;flex-direction:column;align-items:center;gap:12px;
     margin-bottom:16px;position:relative;z-index:3;}
   #ov .stembar.show{display:flex;}
-  #ov .stemlabel{color:var(--dim);font-size:11px;letter-spacing:.16em;font-weight:600;}
-  #ov #stempills{display:flex;gap:8px;flex-wrap:wrap;}
-  #ov .stempill{background:var(--accent);color:#10100a;border:1px solid var(--accent);border-radius:20px;
-    padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;}
-  #ov .stempill.off{background:#20202a;color:var(--dim);border-color:var(--line);}
+  #ov #stemcrew{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;}
+  #ov .stemchar{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+    user-select:none;width:76px;transition:opacity .2s;}
+  #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
+  #ov .charface{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:29px;background:radial-gradient(circle at 38% 32%,var(--cc),#000 150%);
+    box-shadow:0 0 0 3px rgba(255,255,255,.08);will-change:transform;}
+  #ov .stemchar.off .charface{background:#26262f;box-shadow:0 0 0 2px var(--line);}
+  #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
+  #ov .stemchar.off .charname{color:var(--dim);}
   #ov .stemexit{font-size:12px;}
   #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;animation:float 7s ease-in-out infinite;}
   @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
@@ -264,9 +269,8 @@
     <div class="ovinfo"><div class="nt" id="ovnt">—</div><div class="nm" id="ovnm"></div></div>
   </div>
   <div class="stembar" id="stembar">
-    <span class="stemlabel">REMIX</span>
-    <div id="stempills"></div>
-    <button class="stemexit" onclick="exitStems()">✕ exit</button>
+    <div id="stemcrew"></div>
+    <button class="stemexit" onclick="exitStems()">✕ exit remix</button>
   </div>
   <ol class="ovlist" id="ovlist"></ol>
 </div>
@@ -559,7 +563,9 @@ function deckInitViz(){
 // ---- stem remix: separate the beat into drums/bass/melody/vocals, loop them in
 // sync through the visualizer's analyser, and toggle each layer live. ----
 const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'};
-let stemMode = false, stemSources = [], stemGains = {}, stemOn = {};
+const STEM_ICON  = {drums:'🥁', bass:'🎸', other:'🎹', vocals:'🎤'};
+const STEM_COLOR = {drums:'#f0663f', bass:'#9b6cf0', other:'#f0c64a', vocals:'#43c9b0'};
+let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0;
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
   if(stemMode) return;
@@ -578,38 +584,59 @@ async function enterStems(){
       buffers[part] = await dactx.decodeAudioData(ab);
     }));
     audioEl.pause();
-    stemSources = []; stemGains = {}; stemOn = {};
-    const startAt = dactx.currentTime + 0.15;  // start all stems on the same clock → locked in sync
+    stemSources = []; stemGains = {}; stemOn = {}; stemAnalysers = {}; stemData = {};
+    const startAt = dactx.currentTime + 0.15;  // all stems on one clock → locked in sync
     r.parts.forEach(part => {
       const src = dactx.createBufferSource(); src.buffer = buffers[part]; src.loop = true;
       const g = dactx.createGain(); g.gain.value = 1;
-      src.connect(g); g.connect(danalyser);  // → analyser → destination (already wired)
+      const an = dactx.createAnalyser(); an.fftSize = 128; an.smoothingTimeConstant = 0.55;
+      src.connect(g); g.connect(an); an.connect(danalyser);  // per-stem analyser → its character bounces to ITS sound
       src.start(startAt);
       stemSources.push(src); stemGains[part] = g; stemOn[part] = true;
+      stemAnalysers[part] = an; stemData[part] = new Uint8Array(an.frequencyBinCount);
     });
-    document.getElementById('stempills').innerHTML = r.parts
-      .map(p => `<button class="stempill" data-part="${p}" onclick="toggleStem('${p}')">${STEM_LABEL[p]||p}</button>`).join('');
+    document.getElementById('stemcrew').innerHTML = r.parts.map(p =>
+      `<div class="stemchar" data-part="${p}" style="--cc:${STEM_COLOR[p]||'#c9a227'}" onclick="toggleStem('${p}')">`
+      + `<div class="charface">${STEM_ICON[p]||'🎵'}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
     document.getElementById('stembar').classList.add('show');
     stemMode = true; window.__stemPlaying = true;
     deckSetPlaying(true);
+    stemBounce();  // start the character animation loop
     btn.textContent = '🎛 Remixing'; btn.disabled = false;
-    toast('Remix on — tap a layer to drop/bring it back');
+    toast('Remix on — tap a character to drop or bring back its layer');
   }catch(e){
     btn.textContent = '🎛 Remix'; btn.disabled = false;
     toast('Stems failed: ' + e.message, true);
   }
 }
+function stemBounce(){  // each character bobs + glows to its own stem's energy
+  if(!stemMode) return;
+  for(const part in stemAnalysers){
+    const an = stemAnalysers[part], buf = stemData[part];
+    an.getByteFrequencyData(buf);
+    let e = 0; for(let i=0;i<buf.length;i++) e += buf[i]; e /= buf.length*255;
+    const face = document.querySelector('.stemchar[data-part="'+part+'"] .charface');
+    if(!face) continue;
+    if(stemOn[part]){
+      face.style.transform = 'translateY('+(-Math.min(13, e*65)).toFixed(1)+'px) scale('+(1+Math.min(0.34, e*1.9)).toFixed(3)+')';
+      face.style.boxShadow = '0 0 '+(7+e*30).toFixed(0)+'px var(--cc),0 0 0 3px rgba(255,255,255,.08)';
+    } else { face.style.transform = ''; face.style.boxShadow = ''; }
+  }
+  _stemRaf = requestAnimationFrame(stemBounce);
+}
 function toggleStem(part){
   if(!stemGains[part] || !dactx) return;
   stemOn[part] = !stemOn[part];
   stemGains[part].gain.setTargetAtTime(stemOn[part] ? 1 : 0, dactx.currentTime, 0.015);  // smooth, no click
-  const pill = document.querySelector('.stempill[data-part="'+part+'"]');
-  if(pill) pill.classList.toggle('off', !stemOn[part]);
+  const ch = document.querySelector('.stemchar[data-part="'+part+'"]');
+  if(ch) ch.classList.toggle('off', !stemOn[part]);
 }
-function _teardownStems(){  // stop the stem graph + reset UI, WITHOUT touching normal playback
+function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHOUT touching normal playback
+  cancelAnimationFrame(_stemRaf); _stemRaf = 0;
   stemSources.forEach(s => { try{ s.stop(); }catch(e){} try{ s.disconnect(); }catch(e){} });
   Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
-  stemSources = []; stemGains = {}; stemMode = false; window.__stemPlaying = false;
+  Object.values(stemAnalysers).forEach(a => { try{ a.disconnect(); }catch(e){} });
+  stemSources = []; stemGains = {}; stemAnalysers = {}; stemData = {}; stemMode = false; window.__stemPlaying = false;
   document.getElementById('stembar').classList.remove('show');
   const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
 }
