@@ -327,6 +327,33 @@ def sends(db: DbOpt = dbmod.DEFAULT_DB) -> None:
 
 
 @app.command()
+def stems(
+    project: Annotated[str, typer.Argument(help="Beat name/path substring")],
+    cache: Annotated[Path, typer.Option("--cache", help="Where to cache the stems")] = Path.home() / ".releases" / "stems",
+    db: DbOpt = dbmod.DEFAULT_DB,
+) -> None:
+    """Separate a beat into stems (drums/bass/melody/vocals) with Demucs, for the
+    interactive stem player. Cached outside the library; read-only on the source."""
+    from . import stems as stemsmod
+    if not stemsmod.has_demucs():
+        typer.secho("Demucs not installed — run: pip install demucs", fg="red", err=True)
+        raise typer.Exit(1)
+    conn = _open(db)
+    p = _resolve_project_or_exit(conn, project)
+    src = Path(p.path)
+    if not src.is_file() or src.suffix.lower() not in orgmod.AUDIO_EXTS:
+        typer.secho(f"{p.name} isn't a standalone audio file to separate.", fg="red", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Separating {p.name} into stems (Demucs — can take a minute)…")
+    try:
+        out = stemsmod.separate(src, cache.resolve())
+    except stemsmod.StemError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1)
+    typer.secho(f"Stems ({', '.join(out)}) → {cache.resolve() / stemsmod.cache_key(src)}", fg="green")
+
+
+@app.command()
 def dashboard(db: DbOpt = dbmod.DEFAULT_DB) -> None:
     """Counts by stage, what's scheduled, what's overdue."""
     conn = _open(db)

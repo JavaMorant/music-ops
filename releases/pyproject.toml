@@ -17,6 +17,9 @@ tags = ["mutagen>=1.47"]
 # The local Track List web app (releases web) is an opt-in extra.
 web = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "mutagen>=1.47"]
 ai = ["anthropic>=0.39"]
+# Auto stem separation (the interactive stem player) needs Demucs + PyTorch —
+# heavy and slow on CPU, so it's a clearly-optional extra.
+stems = ["demucs>=4.0"]
 
 [project.scripts]
 releases = "releases.cli:app"
