@@ -105,7 +105,7 @@ function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
-  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
+  var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, curProg=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
   function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
@@ -173,8 +173,12 @@ function ttRun(opts){
     // reels' red glow (via the --heat CSS var) and the smoke colour.
     var dur=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.duration:0;
     var ct=opts.audio?(opts.audio.currentTime||0):0;
-    var pr=dur?ct/dur:0, heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
-    curHeat=dur?Math.min(1,Math.max(0,((ct-20)/dur)*3)):0;  // vinyl groove stays cold for the first ~20s, then ramps
+    // stem remix loops while the <audio> is paused — drive progress off the loop
+    // position (getProgress) so the tonearm/ring/heat stay in sync with what's heard.
+    var pg=opts.getProgress?opts.getProgress():null, hasPg=(pg!=null&&isFinite(pg));
+    var pr=hasPg?Math.max(0,Math.min(1,pg)):(dur?ct/dur:0), heat=Math.min(1,pr*3);  // cassette reels reach full red by ~a third in
+    curProg=pr;
+    curHeat=hasPg?Math.min(1,Math.max(0,(pr-0.12)*3.4)):(dur?Math.min(1,Math.max(0,((ct-20)/dur)*3)):0);  // vinyl groove stays cold early, then ramps
     var build=Math.max(0,energy-eLong*1.05);  // energy rising above its running average = a build-up
     if(opts.scene)opts.scene.style.setProperty('--heat',(fxHeat?heat:0).toFixed(3));  // heat toggle → reels' red glow
     if(opts.scene)opts.scene.style.setProperty('--prog',pr.toFixed(4));  // tonearm tracks inward with track progress
@@ -219,7 +223,7 @@ function ttRun(opts){
     if(!smoothV||smoothV.length!==bars){smoothV=new Float32Array(bars);}
     ctx.save();ctx.shadowBlur=W*0.006;ctx.lineCap='round';  // smaller blur = much cheaper per frame (96 bars)
     if(cassette){var baseY=W*0.85,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;
-      var prc=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.currentTime/opts.audio.duration:0;
+      var prc=curProg;
       for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;
         var raw=dataArr?dataArr[Math.floor(idx/half*dataArr.length*0.7)]/255:0;
         var env=envAmp*(0.5+0.5*Math.sin(idleT*1.7+idx*0.5));
@@ -236,7 +240,7 @@ function ttRun(opts){
         var k2='hsl('+((hue+j2/half*40)%360).toFixed(0)+','+(72+w2*25).toFixed(0)+'%,'+(52+w2*20).toFixed(0)+'%)';
         ctx.strokeStyle=k2;ctx.shadowColor=k2;ctx.beginPath();ctx.moveTo(cx+c2*R0,cy+s2*R0);ctx.lineTo(cx+c2*(R0+l2),cy+s2*(R0+l2));ctx.stroke();}}
     ctx.restore();
-    if(!cassette && opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration)){var pr=opts.audio.currentTime/opts.audio.duration;
+    if(!cassette && (curProg>0 || playing)){var pr=curProg;
       ctx.save();ctx.strokeStyle='hsla('+hue.toFixed(0)+',90%,66%,.9)';ctx.lineCap='round';
       ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();
       ctx.restore();}  // cassette progress is shown by the lit portion of its waveform

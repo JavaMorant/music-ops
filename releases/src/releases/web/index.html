@@ -80,9 +80,10 @@
   #ov .stemchar{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
     user-select:none;width:76px;transition:opacity .2s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
-  #ov .charfig{width:60px;height:76px;display:block;will-change:transform,filter;transform-origin:50% 92%;}
+  #ov .charfig{width:60px;height:90px;display:block;will-change:transform,filter;transform-origin:50% 96%;}
   #ov .charfig .arm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder */
-  #ov .charstage{height:80px;display:flex;align-items:flex-end;justify-content:center;position:relative;}
+  #ov .charfig .leg{transform-box:fill-box;transform-origin:50% 8%;}   /* step from the hip */
+  #ov .charstage{height:96px;display:flex;align-items:flex-end;justify-content:center;position:relative;}
   #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
   #ov .note{position:absolute;bottom:46px;font-size:16px;pointer-events:none;color:var(--cc);
     text-shadow:0 0 8px var(--cc);animation:noteup 1s ease-out forwards;}
@@ -569,6 +570,8 @@ const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'}
 const STEM_ICON  = {drums:'🥁', bass:'🎸', other:'🎹', vocals:'🎤'};
 const STEM_COLOR = {drums:'#f0663f', bass:'#9b6cf0', other:'#f0c64a', vocals:'#43c9b0'};
 let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0, stemNoteAt = {};
+let stemStartAt = 0, stemLoopDur = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
+let stemSolo = null;  // right-click solos a layer (mutes the rest); right-click it again restores everyone
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
   if(stemMode) return;
@@ -589,6 +592,8 @@ async function enterStems(){
     audioEl.pause();
     stemSources = []; stemGains = {}; stemOn = {}; stemAnalysers = {}; stemData = {}; stemNoteAt = {};
     const startAt = dactx.currentTime + 0.15;  // all stems on one clock → locked in sync
+    stemStartAt = startAt;
+    stemLoopDur = Math.max(...r.parts.map(p => buffers[p].duration)) || 0;  // longest stem = the loop length
     r.parts.forEach(part => {
       const src = dactx.createBufferSource(); src.buffer = buffers[part]; src.loop = true;
       const g = dactx.createGain(); g.gain.value = 1;
@@ -599,14 +604,16 @@ async function enterStems(){
       stemAnalysers[part] = an; stemData[part] = new Uint8Array(an.frequencyBinCount);
     });
     document.getElementById('stemcrew').innerHTML = r.parts.map(p =>
-      `<div class="stemchar" data-part="${p}" style="--cc:${STEM_COLOR[p]||'#c9a227'}" onclick="toggleStem('${p}')">`
+      `<div class="stemchar" data-part="${p}" style="--cc:${STEM_COLOR[p]||'#c9a227'}" title="tap: drop layer · right-click: solo"`
+      + ` onclick="toggleStem('${p}')" oncontextmenu="soloStem('${p}');return false;">`
       + `<div class="charstage">${charSVG(p)}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
     document.getElementById('stembar').classList.add('show');
+    stemSolo = null;
     stemMode = true; window.__stemPlaying = true;
     deckSetPlaying(true);
     stemBounce();  // start the character animation loop
     btn.textContent = '🎛 Remixing'; btn.disabled = false;
-    toast('Remix on — tap a character to drop or bring back its layer');
+    toast('Remix on — tap a character to drop its layer, right-click to solo it');
   }catch(e){
     btn.textContent = '🎛 Remix'; btn.disabled = false;
     toast('Stems failed: ' + e.message, true);
@@ -623,10 +630,12 @@ function charSVG(part){
   }[part] || '';
   const eyes = part === 'bass' ? '' :
     '<circle cx="26.5" cy="23" r="2.7" fill="#0d0d10"/><circle cx="37.5" cy="23" r="2.7" fill="#0d0d10"/>';
-  return '<svg class="charfig" viewBox="0 0 64 80">'
+  return '<svg class="charfig" viewBox="0 0 64 96">'
+    + '<rect class="leg" x="22" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
+    + '<rect class="leg" x="33.5" y="64" width="8.5" height="29" rx="4.2" fill="var(--cc)"/>'
     + '<rect class="arm" x="7" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
     + '<rect class="arm" x="49" y="40" width="8" height="21" rx="4" fill="var(--cc)"/>'
-    + '<rect x="17" y="36" width="30" height="40" rx="13" fill="var(--cc)"/>'
+    + '<rect x="17" y="36" width="30" height="34" rx="13" fill="var(--cc)"/>'
     + '<circle cx="32" cy="24" r="15" fill="var(--cc)"/>'
     + eyes
     + '<path d="M28 30 Q32 33.5 36 30" stroke="#0d0d10" stroke-width="2" fill="none" stroke-linecap="round"/>'
@@ -642,7 +651,7 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
     let e = 0; for(let i=0;i<buf.length;i++) e += buf[i]; e /= buf.length*255;
     const fig = document.querySelector('.stemchar[data-part="'+part+'"] .charfig');
     if(!fig){ k++; continue; }
-    const arms = fig.querySelectorAll('.arm');
+    const arms = fig.querySelectorAll('.arm'), legs = fig.querySelectorAll('.leg');
     if(stemOn[part]){
       const sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5), bob = -Math.min(15, e*72);
       const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);
@@ -651,10 +660,14 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
       const swing = Math.sin(now*0.007 + k*1.3) * (6 + e*10), raise = Math.min(46, e*60);  // arms dance + raise on hits
       if(arms[0]) arms[0].style.transform = 'rotate('+(-raise - swing).toFixed(1)+'deg)';
       if(arms[1]) arms[1].style.transform = 'rotate('+(raise + swing).toFixed(1)+'deg)';
+      const step = Math.sin(now*0.008 + k*1.1) * (4 + e*16);  // legs step in alternation, livelier with energy
+      if(legs[0]) legs[0].style.transform = 'rotate('+step.toFixed(1)+'deg)';
+      if(legs[1]) legs[1].style.transform = 'rotate('+(-step).toFixed(1)+'deg)';
       if(e > 0.52 && now - (stemNoteAt[part]||0) > 260) spawnNote(fig.parentNode, part, now);  // pop a note on hits
     } else {
       fig.style.transform = ''; fig.style.filter = '';
       if(arms[0]) arms[0].style.transform = ''; if(arms[1]) arms[1].style.transform = '';
+      if(legs[0]) legs[0].style.transform = ''; if(legs[1]) legs[1].style.transform = '';
     }
     k++;
   }
@@ -670,12 +683,22 @@ function spawnNote(stage, part, now){
   stage.appendChild(note);
   setTimeout(()=>note.remove(), 1000);
 }
-function toggleStem(part){
+function applyStem(part){  // push stemOn[part] to its gain (smooth, no click) + grey the character
   if(!stemGains[part] || !dactx) return;
-  stemOn[part] = !stemOn[part];
-  stemGains[part].gain.setTargetAtTime(stemOn[part] ? 1 : 0, dactx.currentTime, 0.015);  // smooth, no click
+  stemGains[part].gain.setTargetAtTime(stemOn[part] ? 1 : 0, dactx.currentTime, 0.015);
   const ch = document.querySelector('.stemchar[data-part="'+part+'"]');
   if(ch) ch.classList.toggle('off', !stemOn[part]);
+}
+function toggleStem(part){  // left-click: drop / bring back one layer (manual override exits solo)
+  if(!stemGains[part] || !dactx) return;
+  stemSolo = null;
+  stemOn[part] = !stemOn[part];
+  applyStem(part);
+}
+function soloStem(part){  // right-click: only this layer plays; right-click the soloed one again to restore all
+  if(!stemGains[part] || !dactx) return;
+  if(stemSolo === part){ stemSolo = null; for(const p in stemGains){ stemOn[p] = true; applyStem(p); } }
+  else { stemSolo = part; for(const p in stemGains){ stemOn[p] = (p === part); applyStem(p); } }
 }
 function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHOUT touching normal playback
   cancelAnimationFrame(_stemRaf); _stemRaf = 0;
@@ -683,6 +706,7 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
   Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
   Object.values(stemAnalysers).forEach(a => { try{ a.disconnect(); }catch(e){} });
   stemSources = []; stemGains = {}; stemAnalysers = {}; stemData = {}; stemMode = false; window.__stemPlaying = false;
+  stemStartAt = 0; stemLoopDur = 0; stemSolo = null;
   document.getElementById('stembar').classList.remove('show');
   const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
 }
@@ -756,6 +780,8 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
   isPlaying:()=>window.__stemPlaying || !!(audioEl && !audioEl.paused),
+  getProgress:()=>{ if(!stemMode || !dactx || !stemLoopDur) return null;  // stem mode: tonearm/ring/heat follow the loop, not the paused <audio>
+    const el = dactx.currentTime - stemStartAt; return el < 0 ? 0 : (el % stemLoopDur) / stemLoopDur; },
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
