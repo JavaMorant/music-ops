@@ -8,11 +8,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27"]  # httpx powers FastAPI's TestClient
 # Ambition-tier research step (enriches a draft with real, specific detail before
 # it is written — still drafts only, still never sends). Opt-in so the core CLI
 # stays dependency-light (stdlib sqlite3 + csv + tomllib + typer).
 ai = ["anthropic>=0.40"]
+# Local CRM web app (outreach web): a single-page board over the pipeline engine.
+web = ["fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.scripts]
 outreach = "outreach.cli:app"
@@ -25,4 +27,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-outreach = ["templates/*.md"]
+outreach = ["templates/*.md", "web_static/*.html"]

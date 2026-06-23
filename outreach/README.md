@@ -61,6 +61,20 @@ outreach export backup.csv          # back the pipeline up
 Every command has `--help`. The database defaults to `./outreach.db` (`--db` to
 override); drafts go to `./drafts/`.
 
+## Web app
+
+A local single-page CRM over the same engine — a drag-between-stages pipeline
+board, add/log/draft in the browser, and a viewer for the drafts on disk. Still
+drafts only; there is no send route anywhere.
+
+```bash
+pip install -e '.[web]'
+outreach web --profile outreach-profile.toml   # → http://127.0.0.1:8011
+```
+
+Bound to localhost; it shares the same `--db` and `--out` (drafts dir) as the
+CLI, so the board and `outreach list` are the same pipeline.
+
 ## Drafting
 
 Templates are plain markdown with a leading `Subject:` line and `{{ slot }}`

@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>outreach CRM</title>
+<style>
+  :root {
+    --bg: #0c0d10; --panel: #15171c; --panel2: #1c1f26; --line: #2a2e38;
+    --ink: #e8e9ec; --muted: #8b90a0; --accent: #ff5c7a; --accent2: #5cc8ff;
+    --ok: #51d88a; --warn: #ffcf5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent2); }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .12em; text-transform: uppercase; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header .due { color: var(--warn); font-size: 12px; }
+  main { padding: 18px 22px; }
+  button {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0410; font-weight: 600; }
+  button.primary:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: transparent; }
+  button.sm { padding: 5px 10px; font-size: 12px; }
+  input[type=text], input[type=number], textarea, select {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 8px 10px; font: inherit; width: 100%;
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  label.fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .status { color: var(--muted); min-height: 18px; }
+  .status.err { color: var(--accent); }
+  .status.ok { color: var(--ok); }
+
+  /* board */
+  .board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+  .col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    min-width: 230px; max-width: 260px; flex: 1 0 230px; padding: 12px; }
+  .col.drop { border-color: var(--accent2); background: #15191f; }
+  .col .ch { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .col .ch .nm { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--muted); }
+  .col .ch .ct { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .col.terminal .ch .nm { color: #5d6273; }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 10px; cursor: grab; }
+  .card:hover { border-color: var(--muted); }
+  .card.dragging { opacity: .4; }
+  .card .nm { font-weight: 600; }
+  .card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .card .foot { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .pill.due { color: #1a0410; background: var(--warn); border-color: var(--warn); font-weight: 600; }
+  .col .empty { color: #4f5466; font-size: 12px; padding: 6px 2px; }
+
+  /* drawer */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10; }
+  .overlay.show { display: block; }
+  .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(520px, 94vw);
+    background: var(--panel); border-left: 1px solid var(--line); z-index: 11;
+    transform: translateX(100%); transition: transform .18s ease; overflow-y: auto;
+    display: flex; flex-direction: column; }
+  .drawer.show { transform: translateX(0); }
+  .drawer .dh { padding: 16px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; gap: 12px; }
+  .drawer .dh h2 { margin: 0; font-size: 18px; }
+  .drawer .dh .x { margin-left: auto; }
+  .drawer .body { padding: 18px 20px; }
+  .sect { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
+  .sect:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .sect h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kv { font-size: 13px; margin: 3px 0; }
+  .kv b { color: var(--muted); font-weight: 500; }
+  .touch { border-left: 2px solid var(--line); padding: 4px 0 4px 10px; margin: 8px 0; font-size: 13px; }
+  .touch .t { color: var(--muted); font-size: 12px; }
+  .preview { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; white-space: pre-wrap; font: 12px/1.55 ui-monospace, Menlo, monospace; max-height: 320px; overflow: auto; }
+  .preview .fill { background: rgba(255,207,92,.18); color: var(--warn); border-radius: 3px; padding: 0 2px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .chip { font-size: 11px; color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 1px 8px; }
+  .note { color: var(--muted); font-size: 12px; }
+  .never { color: var(--ok); font-size: 12px; }
+
+  /* modal (add contact / draft list) */
+  .modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 12; }
+  .modal.show { display: flex; }
+  .modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    width: min(560px, 94vw); max-height: 86vh; overflow: auto; }
+  .modal .mh { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; }
+  .modal .mh h2 { margin: 0; font-size: 16px; }
+  .modal .mh .x { margin-left: auto; }
+  .modal .mb { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .draftrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .draftrow:hover { background: var(--panel2); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Outreach</h1>
+  <span class="sub">booking CRM</span>
+  <span class="never">· drafts only — never sends</span>
+  <span class="spacer"></span>
+  <span class="due" id="dueLine"></span>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button class="primary" id="addBtn">+ Add contact</button>
+    <button id="draftsBtn">Drafts</button>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div class="board" id="board"></div>
+</main>
+
+<!-- detail drawer -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh">
+    <div>
+      <h2 id="dName">—</h2>
+      <div class="note" id="dWhere"></div>
+    </div>
+    <button class="ghost x" id="dClose">✕</button>
+  </div>
+  <div class="body" id="dBody"></div>
+</aside>
+
+<!-- add-contact modal -->
+<div class="modal" id="addModal">
+  <div class="box">
+    <div class="mh"><h2>Add contact</h2><button class="ghost x" id="addClose">✕</button></div>
+    <div class="mb">
+      <label class="fld">Name *<input type="text" id="f_name" placeholder="Booker / promoter name" /></label>
+      <div class="grid2">
+        <label class="fld">Org<input type="text" id="f_org" placeholder="Venue / agency" /></label>
+        <label class="fld">Role<input type="text" id="f_role" placeholder="talent buyer" /></label>
+        <label class="fld">City<input type="text" id="f_city" /></label>
+        <label class="fld">Capacity<input type="number" id="f_capacity" min="0" /></label>
+      </div>
+      <label class="fld">Genre fit<input type="text" id="f_genre_fit" placeholder="why your sound fits them" /></label>
+      <label class="fld">Source<input type="text" id="f_source" placeholder="where you found them" /></label>
+      <label class="fld">Notes<textarea id="f_notes"></textarea></label>
+      <label class="fld">Reach out in (days from now)<input type="number" id="f_followup_in" value="0" min="0" /></label>
+      <div class="toolbar" style="margin:0">
+        <button class="primary" id="addSave">Add as lead</button>
+        <span class="status" id="addStatus"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- drafts modal -->
+<div class="modal" id="draftsModal">
+  <div class="box">
+    <div class="mh"><h2 id="draftsTitle">Drafts</h2><button class="ghost x" id="draftsClose">✕</button></div>
+    <div class="mb" id="draftsBody"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let STATE = { stages: [], terminal: [], contacts: [], today: "", profile_loaded: false };
+let TEMPLATES = { templates: [], default: "cold" };
+
+function esc(s) {
+  return (s ?? "").toString().replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function setStatus(el, msg, cls = "") { el.className = "status " + cls; el.textContent = msg; }
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+// ---- board ---------------------------------------------------------------
+async function load() {
+  setStatus($("status"), "Loading…");
+  STATE = await api("/api/pipeline");
+  TEMPLATES = await api("/api/templates");
+  renderBoard();
+  const n = STATE.due_ids.length;
+  $("dueLine").textContent = n ? `${n} follow-up${n > 1 ? "s" : ""} due` : "nothing due ✦";
+  setStatus($("status"), "");
+}
+
+function renderBoard() {
+  const board = $("board");
+  board.innerHTML = "";
+  const byStage = Object.fromEntries(STATE.stages.map(s => [s, []]));
+  for (const c of STATE.contacts) (byStage[c.stage] ||= []).push(c);
+  for (const stage of STATE.stages) {
+    const col = document.createElement("div");
+    col.className = "col" + (STATE.terminal.includes(stage) ? " terminal" : "");
+    col.dataset.stage = stage;
+    const list = byStage[stage] || [];
+    col.innerHTML = `<div class="ch"><span class="nm">${esc(stage)}</span><span class="ct">${list.length}</span></div>`;
+    if (!list.length) {
+      const e = document.createElement("div");
+      e.className = "empty"; e.textContent = "—"; col.appendChild(e);
+    }
+    for (const c of list) col.appendChild(cardEl(c));
+    wireDrop(col);
+    board.appendChild(col);
+  }
+}
+
+function cardEl(c) {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.draggable = true;
+  el.dataset.id = c.id;
+  const where = [c.org, c.city].filter(Boolean).join(" · ") || "—";
+  const bits = [];
+  if (c.due) bits.push(`<span class="pill due">due ${esc(c.next_followup)}</span>`);
+  else if (c.next_followup) bits.push(`<span class="pill">next ${esc(c.next_followup)}</span>`);
+  if (c.role) bits.push(`<span class="pill">${esc(c.role)}</span>`);
+  el.innerHTML = `<div class="nm">${esc(c.name)}</div><div class="meta">${esc(where)}</div>
+    <div class="foot">${bits.join("")}</div>`;
+  el.addEventListener("click", () => openDrawer(c.id));
+  el.addEventListener("dragstart", (e) => {
+    el.classList.add("dragging");
+    e.dataTransfer.setData("text/plain", c.id);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  return el;
+}
+
+function wireDrop(col) {
+  col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drop"); });
+  col.addEventListener("dragleave", () => col.classList.remove("drop"));
+  col.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    col.classList.remove("drop");
+    const id = e.dataTransfer.getData("text/plain");
+    const stage = col.dataset.stage;
+    const c = STATE.contacts.find(x => String(x.id) === String(id));
+    if (!c || c.stage === stage) return;
+    try {
+      await api(`/api/contact/${id}/stage`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage }),
+      });
+      await load();
+      setStatus($("status"), `Moved ${c.name} → ${stage}`, "ok");
+    } catch (err) { setStatus($("status"), err.message, "err"); }
+  });
+}
+
+// ---- drawer (detail) -----------------------------------------------------
+function closeDrawer() { $("drawer").classList.remove("show"); $("overlay").classList.remove("show"); }
+function openModal(id) { $(id).classList.add("show"); }
+function closeModal(id) { $(id).classList.remove("show"); }
+
+async function openDrawer(id) {
+  $("overlay").classList.add("show");
+  $("drawer").classList.add("show");
+  $("dName").textContent = "…"; $("dWhere").textContent = ""; $("dBody").innerHTML = "";
+  let data;
+  try { data = await api(`/api/contact/${id}`); }
+  catch (err) { $("dBody").innerHTML = `<div class="status err">${esc(err.message)}</div>`; return; }
+  const c = data.contact;
+  $("dName").textContent = c.name;
+  $("dWhere").textContent = [c.org, c.role, c.city].filter(Boolean).join(" · ") || "—";
+
+  const meta = [
+    ["Stage", c.stage], ["Capacity", c.venue_capacity], ["Genre fit", c.genre_fit],
+    ["Source", c.source], ["Last touch", c.last_touch],
+    ["Next follow-up", c.due ? `${c.next_followup} (due)` : c.next_followup], ["Added", c.created_at],
+  ].filter(([, v]) => v != null && v !== "");
+  const stageOpts = STATE.stages.map(s => `<option value="${s}"${s === c.stage ? " selected" : ""}>${s}</option>`).join("");
+  const tplOpts = TEMPLATES.templates.map(t => `<option value="${t}"${t === TEMPLATES.default ? " selected" : ""}>${t}</option>`).join("");
+  const touches = data.touches.length
+    ? data.touches.map(t => `<div class="touch"><div>${esc(t.note)}</div>
+        <div class="t">${esc(t.ts)}${t.channel ? " · " + esc(t.channel) : ""}</div></div>`).join("")
+    : `<div class="note">No touches logged yet.</div>`;
+
+  $("dBody").innerHTML = `
+    <div class="sect">
+      ${meta.map(([k, v]) => `<div class="kv"><b>${esc(k)}:</b> ${esc(v)}</div>`).join("")}
+      ${c.notes ? `<div class="kv"><b>Notes:</b> ${esc(c.notes)}</div>` : ""}
+    </div>
+
+    <div class="sect">
+      <h3>Log a touch</h3>
+      <label class="fld">What happened<textarea id="l_note" placeholder="sent intro email…"></textarea></label>
+      <div class="grid2" style="margin-top:10px">
+        <label class="fld">Channel<input type="text" id="l_channel" placeholder="email / DM / call" /></label>
+        <label class="fld">Advance to<select id="l_stage">${stageOpts}</select></label>
+        <label class="fld">Next nudge in (days)<input type="number" id="l_followup_in" value="7" min="0" /></label>
+        <label class="fld" style="justify-content:flex-end"><span><input type="checkbox" id="l_nofollow" /> No follow-up</span></label>
+      </div>
+      <div class="toolbar" style="margin:10px 0 0">
+        <button class="primary" id="logBtn">Log touch</button>
+        <span class="status" id="logStatus"></span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Draft email</h3>
+      <div class="toolbar" style="margin:0 0 10px">
+        <label class="fld" style="flex:1">Template<select id="d_template">${tplOpts}</select></label>
+        <button class="primary" id="draftBtn" style="align-self:flex-end">Write draft</button>
+      </div>
+      ${STATE.profile_loaded ? "" : `<div class="note">No sender profile loaded — your name/links will show as FILL markers. Launch with <code>--profile</code>.</div>`}
+      <div class="never">Writes a file for you to review and send by hand. Outreach never sends.</div>
+      <div id="draftOut"></div>
+    </div>
+
+    <div class="sect">
+      <h3>Recent touches</h3>
+      ${touches}
+    </div>`;
+
+  $("logBtn").addEventListener("click", () => doLog(id));
+  $("draftBtn").addEventListener("click", () => doDraft(id));
+}
+
+async function doLog(id) {
+  const note = $("l_note").value.trim();
+  if (!note) { setStatus($("logStatus"), "a touch needs a note", "err"); return; }
+  const body = {
+    note, channel: $("l_channel").value.trim() || null,
+    stage: $("l_stage").value,
+    followup_in: parseInt($("l_followup_in").value || "7", 10),
+    no_followup: $("l_nofollow").checked,
+  };
+  try {
+    const r = await api(`/api/contact/${id}/log`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    setStatus($("logStatus"), `Logged → ${r.stage}` + (r.next_followup ? `, next ${r.next_followup}` : ", no follow-up"), "ok");
+    await load();
+    openDrawer(id);
+  } catch (err) { setStatus($("logStatus"), err.message, "err"); }
+}
+
+function renderDraft(d) {
+  let body = esc(d.text).replace(/\[\[ FILL: (.+?) \]\]/g, '<span class="fill">[[ FILL: $1 ]]</span>');
+  const chips = d.unfilled.length
+    ? `<div class="chips">${d.unfilled.map(u => `<span class="chip">${esc(u)}</span>`).join("")}</div>` : "";
+  $("draftOut").innerHTML = `
+    <div class="note" style="margin:8px 0 4px">Written to <code>${esc(d.path)}</code></div>
+    ${d.unfilled.length ? `<div class="note">Fill before sending (${d.unfilled.length}):</div>${chips}` : ""}
+    <div class="preview">${body}</div>`;
+}
+
+async function doDraft(id) {
+  $("draftOut").innerHTML = `<div class="note">Drafting…</div>`;
+  try {
+    const d = await api(`/api/contact/${id}/draft`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template: $("d_template").value }),
+    });
+    renderDraft(d);
+  } catch (err) { $("draftOut").innerHTML = `<div class="status err">${esc(err.message)}</div>`; }
+}
+
+// ---- add contact ---------------------------------------------------------
+async function addContact() {
+  const name = $("f_name").value.trim();
+  if (!name) { setStatus($("addStatus"), "a contact needs a name", "err"); return; }
+  const numOrNull = (v) => v.trim() === "" ? null : parseInt(v, 10);
+  const body = {
+    name,
+    org: $("f_org").value.trim() || null,
+    role: $("f_role").value.trim() || null,
+    city: $("f_city").value.trim() || null,
+    venue_capacity: numOrNull($("f_capacity").value),
+    genre_fit: $("f_genre_fit").value.trim() || null,
+    source: $("f_source").value.trim() || null,
+    notes: $("f_notes").value.trim() || null,
+    followup_in: parseInt($("f_followup_in").value || "0", 10),
+  };
+  try {
+    await api("/api/contact", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    for (const f of ["name", "org", "role", "city", "capacity", "genre_fit", "source", "notes"]) $("f_" + f).value = "";
+    $("f_followup_in").value = "0";
+    closeModal("addModal");
+    await load();
+    setStatus($("status"), `Added ${name} as a lead`, "ok");
+  } catch (err) { setStatus($("addStatus"), err.message, "err"); }
+}
+
+// ---- drafts list ---------------------------------------------------------
+async function openDrafts() {
+  openModal("draftsModal");
+  $("draftsBody").innerHTML = `<div class="note">Loading…</div>`;
+  try {
+    const d = await api("/api/drafts");
+    $("draftsTitle").textContent = `Drafts (${d.drafts.length})`;
+    if (!d.drafts.length) { $("draftsBody").innerHTML = `<div class="note">No drafts written yet — open a contact and "Write draft".</div>`; return; }
+    $("draftsBody").innerHTML = d.drafts.map(f =>
+      `<div class="draftrow" data-path="${esc(f.path)}">📄 ${esc(f.name)}</div>`).join("") +
+      `<div class="preview hidden" id="draftView"></div>`;
+    $("draftsBody").querySelectorAll(".draftrow").forEach(row =>
+      row.addEventListener("click", () => viewDraft(row.dataset.path)));
+  } catch (err) { $("draftsBody").innerHTML = `<div class="status err">${esc(err.message)}</div>`; }
+}
+
+async function viewDraft(path) {
+  const v = $("draftView");
+  v.classList.remove("hidden");
+  v.textContent = "Loading…";
+  try {
+    const d = await api(`/api/draft?path=${encodeURIComponent(path)}`);
+    v.innerHTML = esc(d.text).replace(/\[\[ FILL: (.+?) \]\]/g, '<span class="fill">[[ FILL: $1 ]]</span>');
+  } catch (err) { v.textContent = err.message; }
+}
+
+// ---- wiring --------------------------------------------------------------
+$("addBtn").addEventListener("click", () => { openModal("addModal"); $("f_name").focus(); });
+$("addClose").addEventListener("click", () => closeModal("addModal"));
+$("addSave").addEventListener("click", addContact);
+$("draftsBtn").addEventListener("click", openDrafts);
+$("draftsClose").addEventListener("click", () => closeModal("draftsModal"));
+$("refreshBtn").addEventListener("click", load);
+$("dClose").addEventListener("click", closeDrawer);
+$("overlay").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeDrawer(); closeModal("addModal"); closeModal("draftsModal"); }
+});
+[ "addModal", "draftsModal" ].forEach(m =>
+  $(m).addEventListener("click", (e) => { if (e.target === $(m)) closeModal(m); }));
+
+load();
+</script>
+</body>
+</html>
