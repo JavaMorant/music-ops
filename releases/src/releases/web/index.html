@@ -566,6 +566,7 @@ async function exportReel(){
       try{ await cover.decode(); }catch(e){ cover = null; } }
     const ec = document.createElement('canvas'); ec.width = 1080; ec.height = 1920;
     const ectx = ec.getContext('2d', {alpha:false});
+    ectx.imageSmoothingEnabled = true; ectx.imageSmoothingQuality = 'high';
     const vstream = ec.captureStream(30);
     const stream = new MediaStream([...vstream.getVideoTracks(), ..._adest.stream.getAudioTracks()]);
     // record straight to mp4 if the browser can (avoids the lossy webm→mp4 re-encode)
@@ -576,7 +577,7 @@ async function exportReel(){
     const mime = mp4mime || webmmime;
     if(!mime){ throw new Error('this browser can’t record video (try Chrome)'); }
     const direct = !!mp4mime;
-    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 128_000});
+    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 24_000_000, audioBitsPerSecond: 160_000});
     const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     let hue = 42, raf = 0;
     const dd = new Uint8Array(danalyser.frequencyBinCount);
