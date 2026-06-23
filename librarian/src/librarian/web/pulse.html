@@ -12,8 +12,16 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
     font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex;
-    align-items:baseline; gap:14px; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex;
+    align-items:center; gap:16px; }
+  .brand { font-size:14px; font-weight:700; letter-spacing:.02em; color:var(--dim); }
+  .tabs { display:flex; gap:4px; }
+  .tab { display:inline-flex; align-items:center; gap:7px; text-decoration:none; color:var(--dim);
+    font-size:13px; font-weight:600; padding:6px 13px; border-radius:8px; border:1px solid transparent; line-height:1; }
+  .tab:hover { color:var(--text); background:#1c1f25; }
+  .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
+  .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
+  .tab.active .dot { opacity:1; }
   header h1 { margin:0; font-size:18px; letter-spacing:.06em; font-weight:600; }
   header .sub { color:var(--dim); font-size:12px; }
   header .spacer { flex:1; }
@@ -57,11 +65,14 @@
 </head>
 <body>
 <header>
-  <h1>pulse</h1>
-  <span class="sub">library intelligence</span>
+  <span class="brand">librarian</span>
+  <nav class="tabs">
+    <a class="tab" href="/"><span class="dot" style="background:#7aa2ff"></span>Review</a>
+    <a class="tab active" href="/pulse.html"><span class="dot" style="background:#5fd08a"></span>Pulse</a>
+    <a class="tab" href="/dedupe.html"><span class="dot" style="background:#e0a85b"></span>Duplicates</a>
+  </nav>
   <span class="spacer"></span>
-  <a class="nav" href="/dedupe.html">duplicates ›</a>
-  <a class="nav" href="/">‹ review app</a>
+  <span class="sub">library intelligence</span>
   <button id="refresh" class="ghost">↻ refresh</button>
 </header>
 <main>

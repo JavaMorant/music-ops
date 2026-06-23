@@ -12,10 +12,18 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
     font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex;
-    align-items:baseline; gap:16px; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex;
+    align-items:center; gap:16px; }
   header h1 { margin:0; font-size:18px; letter-spacing:.04em; font-weight:600; }
   header .root { color:var(--dim); font-size:12px; font-family:ui-monospace,monospace; }
+  .brand { font-size:14px; font-weight:700; letter-spacing:.02em; color:var(--dim); }
+  .tabs { display:flex; gap:4px; }
+  .tab { display:inline-flex; align-items:center; gap:7px; text-decoration:none; color:var(--dim);
+    font-size:13px; font-weight:600; padding:6px 13px; border-radius:8px; border:1px solid transparent; line-height:1; }
+  .tab:hover { color:var(--text); background:#1c1f25; }
+  .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
+  .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
+  .tab.active .dot { opacity:1; }
   main { max-width:1100px; margin:0 auto; padding:24px; }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
     padding:16px 18px; margin-bottom:18px; }
@@ -81,6 +89,19 @@ function append(el, kid) {
   if (kid == null || kid === false || kid === true) return;
   if (Array.isArray(kid)) { kid.forEach((k) => append(el, k)); return; }
   el.appendChild(kid.nodeType ? kid : document.createTextNode(String(kid)));
+}
+
+// Shared 3-way nav (Review · Pulse · Duplicates), current section highlighted.
+function navTabs(active) {
+  const tabs = [
+    ["review", "/", "#7aa2ff", "Review"],
+    ["pulse", "/pulse.html", "#5fd08a", "Pulse"],
+    ["dupes", "/dedupe.html", "#e0a85b", "Duplicates"],
+  ];
+  return h("nav", { class: "tabs" },
+    tabs.map(([k, href, color, label]) =>
+      h("a", { class: "tab" + (k === active ? " active" : ""), href },
+        h("span", { class: "dot", style: { background: color } }), label)));
 }
 
 // --- API -------------------------------------------------------------------
@@ -210,7 +231,9 @@ function render() {
   const root = document.getElementById("root");
   root.replaceChildren(
     h("header", null,
-      h("h1", null, "librarian"),
+      h("span", { class: "brand" }, "librarian"),
+      navTabs("review"),
+      h("span", { class: "spacer" }),
       h("span", { class: "root" }, s.cfg ? s.cfg.library_root : "…")),
     h("main", null,
       s.msg && h("div", { class: "banner " + s.msg.kind }, s.msg.text),
