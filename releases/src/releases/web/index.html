@@ -570,7 +570,7 @@ const STEM_LABEL = {drums:'Drums', bass:'Bass', other:'Melody', vocals:'Vocals'}
 const STEM_ICON  = {drums:'🥁', bass:'🎸', other:'🎹', vocals:'🎤'};
 const STEM_COLOR = {drums:'#f0663f', bass:'#9b6cf0', other:'#f0c64a', vocals:'#43c9b0'};
 let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalysers = {}, stemData = {}, _stemRaf = 0, stemNoteAt = {};
-let stemStartAt = 0, stemLoopDur = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
+let stemStartAt = 0, stemLoopDur = 0, stemStartOffset = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
 let stemSolo = null;  // right-click solos a layer (mutes the rest); right-click it again restores everyone
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
@@ -594,12 +594,14 @@ async function enterStems(){
     const startAt = dactx.currentTime + 0.15;  // all stems on one clock → locked in sync
     stemStartAt = startAt;
     stemLoopDur = Math.max(...r.parts.map(p => buffers[p].duration)) || 0;  // longest stem = the loop length
+    // pick up roughly where the beat was playing so entering remix doesn't jump to 0:00
+    stemStartOffset = (stemLoopDur && audioEl && isFinite(audioEl.currentTime)) ? (audioEl.currentTime % stemLoopDur) : 0;
     r.parts.forEach(part => {
       const src = dactx.createBufferSource(); src.buffer = buffers[part]; src.loop = true;
       const g = dactx.createGain(); g.gain.value = 1;
       const an = dactx.createAnalyser(); an.fftSize = 128; an.smoothingTimeConstant = 0.55;
       src.connect(g); g.connect(an); an.connect(danalyser);  // per-stem analyser → its character bounces to ITS sound
-      src.start(startAt);
+      src.start(startAt, Math.min(stemStartOffset, Math.max(0, src.buffer.duration - 0.05)));
       stemSources.push(src); stemGains[part] = g; stemOn[part] = true;
       stemAnalysers[part] = an; stemData[part] = new Uint8Array(an.frequencyBinCount);
     });
@@ -706,7 +708,7 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
   Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
   Object.values(stemAnalysers).forEach(a => { try{ a.disconnect(); }catch(e){} });
   stemSources = []; stemGains = {}; stemAnalysers = {}; stemData = {}; stemMode = false; window.__stemPlaying = false;
-  stemStartAt = 0; stemLoopDur = 0; stemSolo = null;
+  stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null;
   document.getElementById('stembar').classList.remove('show');
   const rb = document.getElementById('remixbtn'); if(rb) rb.textContent = '🎛 Remix';
 }
@@ -781,7 +783,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
   isPlaying:()=>window.__stemPlaying || !!(audioEl && !audioEl.paused),
   getProgress:()=>{ if(!stemMode || !dactx || !stemLoopDur) return null;  // stem mode: tonearm/ring/heat follow the loop, not the paused <audio>
-    const el = dactx.currentTime - stemStartAt; return el < 0 ? 0 : (el % stemLoopDur) / stemLoopDur; },
+    const pos = Math.max(0, dactx.currentTime - stemStartAt) + stemStartOffset; return (pos % stemLoopDur) / stemLoopDur; },
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
