@@ -241,6 +241,32 @@ class TestSends:
         assert c.post("/api/sent", json={"contact": "X", "genre": "nope-genre"}).status_code == 404
 
 
+class TestExport:
+    def test_tomp4_transcodes_webm_to_mp4(self, client, tmp_path):
+        import shutil
+        import subprocess
+        if not shutil.which("ffmpeg"):
+            pytest.skip("ffmpeg not installed")
+        c, _ = client
+        webm = tmp_path / "in.webm"
+        subprocess.run(
+            ["ffmpeg", "-v", "error",
+             "-f", "lavfi", "-i", "testsrc2=size=180x320:duration=1",
+             "-f", "lavfi", "-i", "sine=frequency=200:duration=1",
+             "-c:v", "libvpx", "-c:a", "libopus", "-shortest", "-y", str(webm)],
+            check=True,
+        )
+        r = c.post("/api/tomp4", content=webm.read_bytes(),
+                   headers={"Content-Type": "video/webm"})
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "video/mp4"
+        assert b"ftyp" in r.content[:32]  # a real mp4 container
+
+    def test_tomp4_rejects_empty(self, client):
+        c, _ = client
+        assert c.post("/api/tomp4", content=b"", headers={"Content-Type": "video/webm"}).status_code == 400
+
+
 class TestDeck:
     def test_tracks_expose_producer_and_no_cover_by_default(self, client):
         c, _ = client

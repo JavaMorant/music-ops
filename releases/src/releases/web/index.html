@@ -218,6 +218,7 @@
   <div class="ovhead">
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
+    <button id="exportbtn" onclick="exportReel()">⬇ Export reel</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
     <button onclick="closeDeck()">✕ Close</button>
@@ -524,6 +525,75 @@ function deckInitViz(){
     danalyser=dactx.createAnalyser(); danalyser.fftSize=256; danalyser.smoothingTimeConstant=.6;
     src.connect(danalyser); danalyser.connect(dactx.destination);
   }catch(e){/* unsupported — vinyl still spins, audio still plays */}
+}
+
+// ---- one-click reel export: render the deck onto a 1080x1920 canvas, capture it
+// + the audio, record to webm, then transcode to mp4 server-side. Records in real
+// time (plays the beat from the top, stops at the end). ----
+let _recording = false, _adest = null;
+async function exportReel(){
+  if(_recording) return;
+  if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
+  if(typeof window.ttExportFrame !== 'function'){ toast('Export renderer not loaded — refresh', true); return; }
+  const btn = document.getElementById('exportbtn');
+  _recording = true; btn.textContent = '● Recording…'; btn.disabled = true;
+  try{
+    deckInitViz();
+    if(!dactx || !danalyser){ throw new Error('audio not ready — press play once, then export'); }
+    if(dactx.state === 'suspended') await dactx.resume();
+    if(!_adest){ _adest = dactx.createMediaStreamDestination(); danalyser.connect(_adest); }
+    let cover = null;
+    if(COVER){ cover = new Image(); cover.crossOrigin='anonymous'; cover.src = COVER;
+      try{ await cover.decode(); }catch(e){ cover = null; } }
+    const ec = document.createElement('canvas'); ec.width = 1080; ec.height = 1920;
+    const ectx = ec.getContext('2d');
+    const vstream = ec.captureStream(30);
+    const stream = new MediaStream([...vstream.getVideoTracks(), ..._adest.stream.getAudioTracks()]);
+    const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+      .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+    if(!mime){ throw new Error('this browser can’t record video (try Chrome)'); }
+    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 8_000_000});
+    const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    let hue = 42, raf = 0;
+    const dd = new Uint8Array(danalyser.frequencyBinCount);
+    const skin = () => document.getElementById('ov').classList.contains('cassette-mode') ? 'cassette' : 'vinyl';
+    function frame(){
+      danalyser.getByteFrequencyData(dd);
+      let en = 0; for(let i=0;i<dd.length;i++) en += dd[i]; en /= dd.length*255;
+      hue = (hue + 0.04 + en*0.45) % 360;
+      const dur = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : 0;
+      const pr = dur ? audioEl.currentTime/dur : 0;
+      const curHeat = dur ? Math.min(1, Math.max(0, ((audioEl.currentTime-20)/dur)*3)) : 0;
+      ttExportFrame(ectx, 1080, 1920, {skin: skin(), hue, data: dd, energy: en, pr,
+        curHeat, armDeg: -21 - pr*14, label: COVER ? '' : PRODUCER, cover});
+      raf = requestAnimationFrame(frame);
+    }
+    rec.onstop = async () => {
+      cancelAnimationFrame(raf);
+      btn.textContent = '⬇ Export reel'; btn.disabled = false; _recording = false;
+      const blob = new Blob(chunks, {type: 'video/webm'});
+      toast('Transcoding to mp4…');
+      try{
+        const r = await fetch('/api/tomp4', {method:'POST', headers:{'Content-Type':'video/webm'}, body: blob});
+        if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
+        const mp4 = await r.blob(); const url = URL.createObjectURL(mp4);
+        const a = document.createElement('a'); a.href = url;
+        a.download = ((DECK[deckCur] && DECK[deckCur].name) || 'reel').replace(/[\\/]/g,'_') + '.mp4'; a.click();
+        URL.revokeObjectURL(url);
+        toast('Reel exported — check your downloads');
+      }catch(e){ toast('mp4 failed: ' + e.message, true); }
+    };
+    audioEl.currentTime = 0;
+    await audioEl.play();
+    rec.start(); frame();
+    toast('Recording the reel in real time — it stops at the end of the beat');
+    const dur = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : 60;
+    const guard = setTimeout(() => { if(rec.state !== 'inactive') rec.stop(); }, Math.min(120000, dur*1000 + 800));
+    audioEl.addEventListener('ended', () => { clearTimeout(guard); if(rec.state !== 'inactive') rec.stop(); }, {once:true});
+  }catch(e){
+    btn.textContent = '⬇ Export reel'; btn.disabled = false; _recording = false;
+    toast('Export failed: ' + e.message, true);
+  }
 }
 // shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
 function ovCenterOf(el){const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}

@@ -13,16 +13,18 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from .. import db as dbmod
 from .. import organize as orgmod
@@ -405,6 +407,46 @@ def create_app(config: AppConfig) -> FastAPI:
             for r in dbmod.list_sends(c)
         ]
         return {"sends": out}
+
+    def _transcode_to_mp4(data: bytes) -> str:
+        """ffmpeg webm → mp4 (runs in a threadpool). Returns the mp4 path."""
+        fdw, webm = tempfile.mkstemp(suffix=".webm"); os.close(fdw)
+        fdm, mp4 = tempfile.mkstemp(suffix=".mp4"); os.close(fdm)
+        Path(webm).write_bytes(data)
+        try:
+            subprocess.run(
+                ["ffmpeg", "-v", "error", "-i", webm,
+                 "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", mp4],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            for f in (webm, mp4):
+                if os.path.exists(f):
+                    os.unlink(f)
+            raise HTTPException(500, f"ffmpeg transcode failed: {e.stderr.strip()[-600:]}")
+        finally:
+            if os.path.exists(webm):
+                os.unlink(webm)
+        return mp4
+
+    @app.post("/api/tomp4", dependencies=[Depends(guard_origin)])
+    async def to_mp4(request: Request):
+        """Transcode a recorded webm reel (raw request body) to a real mp4 (h264/aac)
+        via ffmpeg, so it's ready to post. The browser records the canvas + audio."""
+        from .. import preview as previewmod
+        if not previewmod.has_ffmpeg():
+            raise HTTPException(400, "ffmpeg required to make an mp4")
+        data = await request.body()
+        if not data:
+            raise HTTPException(400, "empty upload")
+        if len(data) > 300 * 1024 * 1024:
+            raise HTTPException(413, "recording too large (max 300 MB)")
+        mp4 = await run_in_threadpool(_transcode_to_mp4, data)
+        return FileResponse(
+            mp4, media_type="video/mp4", filename="reel.mp4",
+            background=BackgroundTask(lambda: os.path.exists(mp4) and os.unlink(mp4)),
+        )
 
     @app.get("/api/runs")
     def runs():
