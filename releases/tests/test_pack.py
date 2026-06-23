@@ -139,6 +139,26 @@ def test_build_pack_preview_is_mp3_and_short(tmp_path):
     assert src.read_bytes()                                 # source still there, untouched
 
 
+def test_inquire_button_when_contact_has_email(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Encara", bpm=140, key="Fm")], out,
+                       packmod.PackMeta(name="Trap Pack", producer="Dibs",
+                                        made_on="2026-06-23", contact="hit me: dibs@beats.com"))
+    idx = (out / "index.html").read_text()
+    assert "function inquire" in idx and "'mailto:'+INQ.contact" in idx   # per-beat mailto
+    assert '"contact": "dibs@beats.com"' in idx                          # email pulled from the contact line
+    assert "className='inq'" in idx and "e.stopPropagation()" in idx     # button doesn't trigger play
+
+
+def test_inquire_hidden_without_email(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Encara", bpm=140)], out,
+                       packmod.PackMeta(name="Trap Pack", producer="Dibs",
+                                        made_on="2026-06-23", contact="@dibshandle"))
+    idx = (out / "index.html").read_text()
+    assert '"contact": ""' in idx   # no email → INQ.contact falsy → no Inquire buttons rendered
+
+
 def test_build_pack_does_not_touch_sources(tmp_path):
     t = _track(tmp_path, "x.mp3", "Encara", bpm=129, key="F")
     before = t.src.read_bytes()

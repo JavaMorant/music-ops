@@ -45,6 +45,13 @@ class PackMeta:
 
 _SEP = re.compile(r"[\\/\r\n\x00-\x1f]+")
 _TIDY = re.compile(r"\s+")
+_EMAIL = re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+")
+
+
+def _email_in(s: str | None) -> str:
+    """Pull an email address out of a free-text contact line ("" if none)."""
+    m = _EMAIL.search(s or "")
+    return m.group(0) if m else ""
 
 
 def safe_filename(name: str) -> str:
@@ -455,6 +462,9 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   ol.list .nt2:empty{display:none;}
   ol.list .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
+  ol.list .inq{margin-left:10px;background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;flex:none;}
+  ol.list .inq:hover{border-color:var(--accent);color:var(--accent);}
   .contact{color:var(--dim);margin-top:24px;}
   footer{color:var(--dim);font-size:12px;margin-top:30px;}
   /* 9:16 reel mode — fill the frame for a vertical screen-record */
@@ -505,6 +515,11 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
 __VIZ_JS__
 const PACK_COVER = __COVER_URL__;
 const TRACKS = __TRACKS__;
+const INQ = __INQUIRE_JSON__;  // {contact,producer,pack} — drives the per-beat Inquire button
+function inquire(i){var t=TRACKS[i];  // mailto for now; the hosted build POSTs this to a tracked endpoint
+  var subj='Beat inquiry: '+t.t+(INQ.pack?' ('+INQ.pack+')':'');
+  var body='Hi'+(INQ.producer?' '+INQ.producer:'')+',\n\nI’m interested in "'+t.t+'"'+(INQ.pack?' from your '+INQ.pack+' pack':'')+'. Is it available?\n\n';
+  location.href='mailto:'+INQ.contact+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);}
 const audio=document.getElementById('audio'),vinyl=document.getElementById('vinyl'),arm=document.getElementById('arm');
 const playBtn=document.getElementById('play'),nt=document.getElementById('nt'),nm=document.getElementById('nm'),list=document.getElementById('list');
 let cur=-1,actx,analyser,data;
@@ -514,6 +529,9 @@ TRACKS.forEach((t,i)=>{const li=document.createElement('li');
   li.querySelector('.ti').textContent=t.t; li.querySelector('.me').textContent=t.m;
   if(t.sf)li.querySelector('.sf').textContent='▸ for '+t.sf;
   if(t.n)li.querySelector('.nt2').textContent=t.n;
+  if(INQ.contact){var ib=document.createElement('button');ib.className='inq';ib.textContent='Inquire';
+    ib.title='Email '+(INQ.producer||'the producer')+' about this beat';
+    ib.onclick=function(e){e.stopPropagation();inquire(i);};li.appendChild(ib);}
   li.onclick=()=>select(i); list.appendChild(li);});
 function select(i){cur=i;const t=TRACKS[i];audio.src=encodeURI(t.f);
   nt.textContent=t.t;nm.textContent=t.m;
@@ -589,6 +607,13 @@ def render_index_html(
         label_html = f'<div class="label">{text}</div>'
         clabel_html = f'<div class="clabel">{text}</div>'
     contact = f'<p class="contact">{html.escape(meta.contact)}</p>' if meta.contact else ""
+    # per-beat "Inquire" button → a pre-filled mailto to the producer (when the
+    # contact line carries an email). The hosted build will swap this one call for
+    # a tracked POST; everything else stays the same.
+    inq = json.dumps(
+        {"contact": _email_in(meta.contact), "producer": meta.producer, "pack": meta.name},
+        ensure_ascii=False,
+    ).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     subs = {
         "__PACK_NAME__": html.escape(meta.name),
         "__PRODUCER__": html.escape(meta.producer),
@@ -600,6 +625,7 @@ def render_index_html(
         "__VIZ_JS__": TURNTABLE_JS,
         "__COVER_URL__": json.dumps(cover),
         "__TRACKS__": tracks_json,
+        "__INQUIRE_JSON__": inq,
     }
     out = _PLAYER_TEMPLATE
     for token, value in subs.items():
