@@ -166,10 +166,12 @@
   /* pin the controls in reel mode so they survive the centred/overflowing layout */
   #ov.reel .ovhead{position:fixed;top:10px;left:12px;right:12px;max-width:none;margin:0;z-index:9;}
   #ov.reel .fxbar{position:fixed;top:50px;left:0;right:0;margin:0;z-index:9;}
-  /* clean / presentation mode — hide ALL chrome, just the deck + effects (for screen/tab recording) */
+  /* clean / presentation mode — hide the chrome but KEEP the now-playing bar
+     (song + play/pause) pinned at the bottom; just the deck + effects + that bar */
   #ov.clean{justify-content:center;overflow:hidden;}
-  #ov.clean .ovhead,#ov.clean .fxbar,#ov.clean .hook,#ov.clean .ovnow,#ov.clean .ovlist{display:none;}
-  #ov.clean .deck{width:min(86vw,64vh);height:min(86vw,64vh);margin:0 auto;}
+  #ov.clean .ovhead,#ov.clean .fxbar,#ov.clean .hook,#ov.clean .ovlist{display:none;}
+  #ov.clean .deck{width:min(84vw,56vh);height:min(84vw,56vh);margin:0 auto;}
+  #ov.clean .ovnow{position:fixed;bottom:34px;left:0;right:0;justify-content:center;z-index:3;margin:0;}
 </style>
 </head>
 <body>
@@ -549,7 +551,7 @@ async function exportReel(){
   let stream;
   try{
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {frameRate: 30}, audio: true, preferCurrentTab: true,
+      video: {frameRate: {ideal: 60, max: 60}}, audio: {channelCount: 2}, preferCurrentTab: true,
     });
   }catch(e){ toast('Recording cancelled', true); return; }
   const vtrack = stream.getVideoTracks()[0];
@@ -560,7 +562,7 @@ async function exportReel(){
   const mp4mime = ['video/mp4;codecs=h264,aac','video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
   const webmmime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m => MediaRecorder.isTypeSupported(m));
   const mime = mp4mime || webmmime, direct = !!mp4mime;
-  const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 16_000_000, audioBitsPerSecond: 160_000});
+  const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 24_000_000, audioBitsPerSecond: 192_000});
   const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
   let stopped = false;
   function cleanup(){ if(!wasClean){ ov.classList.remove('clean'); document.getElementById('cleantgl').textContent='⛶ Clean'; deckSize(); }
