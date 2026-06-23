@@ -217,7 +217,7 @@ function ttRun(opts){
     // idle shimmer and, on the disk, a slow continuous revolve.
     var bars=cassette?80:96, half=bars/2, envAmp=playing?0.05:0.14, ringRot=idleT*0.08;
     if(!smoothV||smoothV.length!==bars){smoothV=new Float32Array(bars);}
-    ctx.save();ctx.shadowBlur=W*0.011;ctx.lineCap='round';
+    ctx.save();ctx.shadowBlur=W*0.006;ctx.lineCap='round';  // smaller blur = much cheaper per frame (96 bars)
     if(cassette){var baseY=W*0.85,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;
       var prc=(opts.audio&&opts.audio.duration&&isFinite(opts.audio.duration))?opts.audio.currentTime/opts.audio.duration:0;
       for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;
