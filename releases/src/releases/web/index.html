@@ -51,6 +51,9 @@
   #player .np { min-width:200px; max-width:40%; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; color:var(--dim); font-size:13px; }
   audio { flex:1; height:34px; }
+  /* blend the native control into the player bar instead of its light/grey default */
+  audio::-webkit-media-controls-enclosure,
+  audio::-webkit-media-controls-panel { background-color:var(--panel); }
   #panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
     margin:16px 18px; padding:16px; display:none; }
   #panel.show { display:block; }
@@ -541,7 +544,16 @@ function deckSelect(i){
   [...document.getElementById('ovlist').children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audioEl.play().catch(()=>{});
 }
-function deckTogglePlay(){ if(deckCur<0){ deckSelect(0); return; } audioEl.paused?audioEl.play():audioEl.pause(); }
+function deckTogglePlay(){
+  if(stemMode){ toggleStemPlay(); return; }  // in remix, play/pause drives the looping stems, not the <audio>
+  if(deckCur<0){ deckSelect(0); return; }
+  audioEl.paused?audioEl.play():audioEl.pause();
+}
+function toggleStemPlay(){  // suspend/resume the whole stem graph — freezes audio, spin, progress + the crew together
+  if(!dactx) return;
+  if(dactx.state === 'running'){ dactx.suspend(); window.__stemPlaying = false; deckSetPlaying(false); }
+  else { dactx.resume(); window.__stemPlaying = true; deckSetPlaying(true); }
+}
 function deckSetPlaying(p){
   document.getElementById('ov').classList.toggle('playing',p);
   document.getElementById('ovarm').classList.toggle('on',p);
@@ -648,6 +660,7 @@ function charSVG(part){
 }
 function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music notes — to its own stem
   if(!stemMode) return;
+  if(!window.__stemPlaying){ _stemRaf = requestAnimationFrame(stemBounce); return; }  // paused — hold poses, don't keep dancing silently
   const now = (window.performance && performance.now) ? performance.now() : Date.now();
   let k = 0;
   for(const part in stemAnalysers){
@@ -658,26 +671,32 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
     if(!fig){ k++; continue; }
     const arms = fig.querySelectorAll('.arm'), legs = fig.querySelectorAll('.leg');
     if(stemOn[part]){
-      const sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5), bob = -Math.min(15, e*72);
-      const sx = (1 + Math.min(0.10, e*0.45)).toFixed(3), sy = (1 + Math.min(0.18, e*0.7)).toFixed(3);
-      fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx+','+sy+')';
-      fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
-      // each character has its OWN dance (legs + arms) so the crew isn't in lockstep
+      // each character has its OWN dance — a distinct, recognisable move, not lockstep
+      let bob = -Math.min(15, e*72), sway = Math.sin(now*0.004 + k*1.7) * (3 + e*5);
+      let sx = 1 + Math.min(0.10, e*0.45), sy = 1 + Math.min(0.18, e*0.7);
+      let armA = 0, armB = 0, legA = 0, legB = 0;
       const style = (STEM_DANCE[part] != null) ? STEM_DANCE[part] : (k % 4);
-      let armA, armB, legA, legB;
-      if(style === 0){            // drums — high-step + alternating arm pump
-        const s = Math.sin(now*0.009 + k) * (6 + e*22), raise = Math.min(46, e*60);
-        legA = s; legB = -s; armA = -raise - s; armB = raise + s;
-      } else if(style === 1){     // bass — side shuffle, legs + arms lean together
-        const s = Math.sin(now*0.006 + k) * (6 + e*14);
-        legA = s; legB = s*0.55; armA = s*1.4 - 8; armB = s*1.4 + 8;
-      } else if(style === 2){     // melody — bounce, knees splay out/in, arms thrown up
-        const sp = Math.abs(Math.sin(now*0.008 + k)) * (5 + e*18), raise = Math.min(64, 18 + e*70);
-        legA = -sp; legB = sp; armA = -raise; armB = raise;
-      } else {                    // vocals — one-leg kick/tap, free hand up
-        const kick = Math.max(0, Math.sin(now*0.009 + k)) * (8 + e*30);
-        legA = kick; legB = -kick*0.12; armA = -Math.min(70, 30 + e*60); armB = Math.sin(now*0.008)*(6 + e*8);
+      if(style === 0){            // drums — FIST PUMP (punches the air on the beat)
+        const pump = Math.max(0, Math.sin(now*0.011 + k));
+        armA = -22 - pump*74; armB = 14 + Math.sin(now*0.006)*10;     // left fist drives up; right arm loose
+        const st = Math.sin(now*0.009 + k) * (3 + e*8); legA = st; legB = -st;
+        bob = -Math.min(14, e*34) - pump*5;
+      } else if(style === 1){     // bass — SPONGEBOB leg cross / uncross (feet scissor over each other)
+        const cross = Math.sin(now*0.0065 + k) * (14 + e*22);
+        legA = cross; legB = -cross;                                   // swing both feet inward → cross, then open out
+        armA = -12 + Math.sin(now*0.006)*7; armB = 12 - Math.sin(now*0.006)*7;
+        sway = Math.sin(now*0.0065 + k) * 4;
+      } else if(style === 2){     // melody — JUMP (hops up and down, knees tuck at the top)
+        const hop = Math.abs(Math.sin(now*0.006 + k));                 // 0..1 each hop
+        bob = -hop*(22 + e*36); sy = 1 + hop*0.05; sx = 1 - hop*0.04;
+        const tuck = hop*(12 + e*8); legA = tuck; legB = -tuck;
+        const raise = (0.4 + hop*0.6) * Math.min(58, 22 + e*48); armA = -raise; armB = raise;
+      } else {                    // vocals — TWO-STEP side shuffle (sways and steps side to side)
+        const sh = Math.sin(now*0.005 + k); sway = sh*7;
+        legA = sh*11 + 3; legB = sh*11 - 3; armA = sh*22 - 6; armB = sh*22 + 6;
       }
+      fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
+      fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
       if(arms[0]) arms[0].style.transform = 'rotate('+armA.toFixed(1)+'deg)';
       if(arms[1]) arms[1].style.transform = 'rotate('+armB.toFixed(1)+'deg)';
       if(legs[0]) legs[0].style.transform = 'rotate('+legA.toFixed(1)+'deg)';
