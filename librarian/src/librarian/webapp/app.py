@@ -238,6 +238,7 @@ def create_app(config: AppConfig) -> FastAPI:
             "inbox_dir": str(cfg.inbox_dir),
             "inbox_exists": cfg.inbox_dir.is_dir(),
             "ai_available": ai.is_available(),
+            "rekordbox_usb": _has_rb(cfg.library_root),  # file moves are blocked here
             "version": app.version,
         }
 
@@ -282,9 +283,15 @@ def create_app(config: AppConfig) -> FastAPI:
         resp["rules"] = [r.to_dict() for r in spec.rules]
         return resp
 
+    _RB_USB_BLOCK = ("This is a rekordbox USB — moving files here would desync its "
+                     "export database and the CDJ would lose the tracks. Use Pulse to "
+                     "organise it by play history instead (it never moves files).")
+
     @app.post("/api/apply", dependencies=[Depends(guard_origin)])
     def post_apply(req: ApplyRequest, st: AppState = Depends(state)) -> dict:
         cfg = st.config
+        if _has_rb(cfg.library_root):
+            raise HTTPException(status_code=409, detail=_RB_USB_BLOCK)
         # Everything that touches the plan + applies happens under one lock, and
         # the plan is consumed only on success — so two concurrent applies of the
         # same plan_id can't both execute (the second sees it already gone).
@@ -432,6 +439,8 @@ def create_app(config: AppConfig) -> FastAPI:
         each kept copy) through the reversible engine. Undo via /api/undo."""
         from .. import dedupe
         cfg = st.config
+        if _has_rb(cfg.library_root):
+            raise HTTPException(status_code=409, detail=_RB_USB_BLOCK)
         # Constrain client input to the server's own authoritative groups: every
         # keep+drop must belong to a real duplicate group (never a crafted pair).
         if st.dedupe is None:

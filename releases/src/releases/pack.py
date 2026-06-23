@@ -116,12 +116,9 @@ function ttRun(opts){
       c2.drawImage(img,0,0,14,14);var px=c2.getImageData(0,0,14,14).data,r=0,g=0,b=0,n=0;
       for(var i=0;i<px.length;i+=4){if(px[i+3]>10){r+=px[i];g+=px[i+1];b+=px[i+2];n++;}}
       if(n)hue=rgbHue(r/n,g/n,b/n);}catch(e){}};img.src=url;}
-  // beat-drop payoff: a burst that flings outward across the WHOLE screen + two clean rings
-  function onDrop(energy){flash=1;punch=1;shake=15;bloom=1;  // bloom = a glowing light-punch behind the disc on the drop
-    if(!fxParticles)return;  // keep the flash/shake payoff, drop the spark+ring particles
-    for(var i=0;i<80;i++){var a=Math.random()*6.2832,sp=fxw*0.007*(1+Math.random()*4.5);
-      sparks.push({x:rcx+Math.cos(a)*ref*0.18,y:rcy+Math.sin(a)*ref*0.18,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-fxh*0.002,life:1,h:(hue+Math.random()*80)%360,big:true});}
-    shocks.push({x:rcx,y:rcy,r:ref*0.45,life:1}); shocks.push({x:rcx,y:rcy,r:ref*0.25,life:0.8});}
+  // beat-drop: a gentle pulse + a soft bloom of light behind the disc. (The old
+  // explosive spark-burst + shockwave "collision" was removed — to be replaced later.)
+  function onDrop(energy){flash=0.4;punch=0.45;shake=6;bloom=0.85;}
   function frame(){
     requestAnimationFrame(frame);
     idleT+=0.016;
@@ -194,7 +191,7 @@ function ttRun(opts){
     var chorus=Math.min(1,Math.max(0,(eMid-0.25)/0.30));
     if(playing && opts.sparksOn && fxParticles && chorus>0.05){
       var rise=Math.floor(chorus*chorus*9);  // up to ~9 per frame, rising from the bottom edge
-      for(var ci=0;ci<rise && embers.length<300;ci++)
+      for(var ci=0;ci<rise && embers.length<200;ci++)
         embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0006,vy:-(fxh*0.0017)*(0.7+Math.random()*1.5)*(0.7+chorus*0.8),life:1,sz:ref*(0.004+Math.random()*0.013)});}
     draw(energy,kick,playing,breath);
     drawFX();  // particles, on the full-screen field
@@ -204,8 +201,8 @@ function ttRun(opts){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
   // soft, slow, glowing orbs drifting across the whole field — the Trap-Nation bokeh
   // look. They fade in and out (t:0->1), sway gently, and are tinted around the hue.
-  function bokehSpawn(energy){var cap=38+Math.floor(energy*78), n=1+Math.floor(energy*4);
-    for(var q=0;q<n;q++){ if(bokeh.length<cap && Math.random()<0.7){
+  function bokehSpawn(energy){var cap=24+Math.floor(energy*44), n=1+Math.floor(energy*2);  // capped lower: radial-gradient orbs are the heaviest per-frame cost
+    for(var q=0;q<n;q++){ if(bokeh.length<cap && Math.random()<0.6){
       var z=Math.random();  // depth: 0 = far (small, sharp, slow), 1 = near (big, soft, fast) → parallax
       bokeh.push({x:Math.random()*fxw,y:fxh*(0.15+Math.random()*1.05),
         vx:(Math.random()*2-1)*fxw*0.00012*(0.35+z*1.7),vy:-(fxh*0.0004)*(0.4+z*1.9)*(0.5+Math.random()*0.8),
@@ -287,10 +284,10 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
-    if(bloom>0.01){c.save();c.globalCompositeOperation='lighter';  // drop bloom: a glowing light-punch that expands as it fades
-      var brad=ref*(0.55+(1-bloom)*1.6),bgr=c.createRadialGradient(rcx,rcy,0,rcx,rcy,brad);
-      bgr.addColorStop(0,'hsla('+hue.toFixed(0)+',95%,74%,'+(bloom*0.5).toFixed(3)+')');
-      bgr.addColorStop(0.45,'hsla('+hue.toFixed(0)+',95%,64%,'+(bloom*0.16).toFixed(3)+')');
+    if(bloom>0.01){c.save();c.globalCompositeOperation='lighter';  // drop bloom: a soft glow that expands as it fades
+      var brad=ref*(0.5+(1-bloom)*1.1),bgr=c.createRadialGradient(rcx,rcy,0,rcx,rcy,brad);
+      bgr.addColorStop(0,'hsla('+hue.toFixed(0)+',95%,74%,'+(bloom*0.32).toFixed(3)+')');
+      bgr.addColorStop(0.45,'hsla('+hue.toFixed(0)+',95%,64%,'+(bloom*0.1).toFixed(3)+')');
       bgr.addColorStop(1,'hsla('+hue.toFixed(0)+',95%,60%,0)');
       c.fillStyle=bgr;c.beginPath();c.arc(rcx,rcy,brad,0,6.2832);c.fill();c.restore();}
     if(bokeh.length){c.save();c.globalCompositeOperation='lighter';  // additive → overlapping orbs glow brighter

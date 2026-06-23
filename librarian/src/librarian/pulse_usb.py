@@ -125,9 +125,33 @@ def _dlplus_sessions(db_path: Path):
         hid, title, artist, genre, bpm = r
         label = f"{artist} - {title}".strip(" -")
         by_hist[hid].append(label)
-        meta[_norm(label)] = {"genre": genre, "bpm": (int(bpm) / 100 if bpm.strip().isdigit() else 0.0), "title": title}
+        meta[_norm(label)] = {"genre": genre, "bpm": (int(bpm) / 100 if bpm.strip().isdigit() else 0.0),
+                              "title": title, "path": ""}
+    _merge_dlplus_paths(db_path, meta)
     return [{"fmt": "DL+", "id": int(h), "name": names.get(h, f"DL+ set #{h}"), "tracks": by_hist[h]}
             for h in sorted(by_hist, key=int)], meta
+
+
+def _merge_dlplus_paths(db_path: Path, meta: dict):
+    """Best-effort: attach each track's on-stick file path. Column names vary by
+    rekordbox version, so try a few and never let a miss break session reading."""
+    for col in ("folderPath", "fileName", "FilePath"):
+        try:
+            rows = _sqlcipher(db_path,
+                f"SELECT COALESCE(a.name,''), c.title, c.{col} FROM content c "
+                "LEFT JOIN artist a ON a.artist_id=c.artist_id_artist;")
+        except Exception:
+            continue
+        hit = False
+        for r in rows:
+            if len(r) < 3 or not r[2]:
+                continue
+            k = _norm(f"{r[0]} - {r[1]}".strip(" -"))
+            if k in meta and not meta[k].get("path"):
+                meta[k]["path"] = r[2]
+                hit = True
+        if hit:
+            return
 
 
 def read_stick(vol: Path):

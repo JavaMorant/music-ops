@@ -82,10 +82,12 @@
   #ov .stembar{display:none;flex-direction:column;align-items:center;gap:12px;
     margin-bottom:16px;position:relative;z-index:3;}
   #ov .stembar.show{display:flex;}
-  #ov #stemcrew{display:none;position:absolute;inset:0;z-index:9;pointer-events:none;}
+  /* #stemcrew stays in flow (0-height) so the .stemchar children anchor to #ov, not
+     to a stretched overlay; each char is absolutely placed on a ring by layoutCrew(). */
+  #ov #stemcrew{display:none;}
   #ov.remix #stemcrew{display:block;}
   #ov.remix.clean #stemcrew,#ov.remix.reel #stemcrew{display:none;}  /* clear the deck for recording */
-  #ov .stemchar{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;
+  #ov .stemchar{position:absolute;z-index:9;transform:translate(-50%,-50%);pointer-events:auto;
     display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
     user-select:none;width:84px;transition:opacity .25s;}
   #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
@@ -592,6 +594,7 @@ let stemMode = false, stemSources = [], stemGains = {}, stemOn = {}, stemAnalyse
 let stemStartAt = 0, stemLoopDur = 0, stemStartOffset = 0;  // for the visualizer: derive progress from the loop position, not the paused <audio>
 let stemSolo = null;  // right-click solos a layer (mutes the rest); right-click it again restores everyone
 let stemBpm = 0;      // the beat's BPM → the crew dances on the beat (falls back to ~120 if unknown)
+let stemCrewEls = []; // cached {part,fig,arms,legs,stage} per character (avoids per-frame DOM queries)
 function remixToggle(){ if(stemMode) exitStems(); else enterStems(); }
 async function enterStems(){
   if(stemMode) return;
@@ -630,6 +633,10 @@ async function enterStems(){
       `<div class="stemchar" data-part="${p}" style="--cc:${STEM_COLOR[p]||'#c9a227'}" title="tap: drop layer · right-click: solo"`
       + ` onclick="toggleStem('${p}')" oncontextmenu="soloStem('${p}');return false;">`
       + `<div class="charstage">${charSVG(p)}</div><div class="charname">${STEM_LABEL[p]||p}</div></div>`).join('');
+    stemCrewEls = r.parts.map(p => {  // cache nodes once so the rAF loop does no DOM lookups
+      const ch = document.querySelector('.stemchar[data-part="'+p+'"]'), fig = ch.querySelector('.charfig');
+      return {part:p, ch, fig, stage:ch.querySelector('.charstage'), arms:fig.querySelectorAll('.arm'), legs:fig.querySelectorAll('.leg'), glow:-1};
+    });
     document.getElementById('stembar').classList.add('show');
     document.getElementById('ov').classList.add('remix');  // shows the crew ringed around the deck
     stemSolo = null;
@@ -667,14 +674,12 @@ function charSVG(part){
     + '<path d="M28 30 Q32 33.5 36 30" stroke="#0d0d10" stroke-width="2" fill="none" stroke-linecap="round"/>'
     + acc + '</svg>';
 }
-function layoutCrew(){  // place each character on a ring around the deck (positions scroll with #ov)
-  if(!stemMode) return;
-  const ov = document.getElementById('ov'), deck = document.querySelector('#ov .deck');
-  if(!ov || !deck) return;
-  const dr = deck.getBoundingClientRect(), orr = ov.getBoundingClientRect();
-  const cx = dr.left - orr.left + ov.scrollLeft + dr.width/2;
-  const cy = dr.top  - orr.top  + ov.scrollTop  + dr.height/2;
-  const R = dr.width*0.5 + 60;
+function layoutCrew(){  // place each character on a ring around the deck — uses layout offsets
+  if(!stemMode) return;            // (transform/scroll-independent, so the live shake on #ov can't throw it off)
+  const deck = document.querySelector('#ov .deck'); if(!deck) return;
+  const cx = deck.offsetLeft + deck.offsetWidth/2;
+  const cy = deck.offsetTop  + deck.offsetHeight/2;
+  const R = deck.offsetWidth*0.5 + 60;
   const ANG = [145, 35, 215, 325];  // lower-left, lower-right, upper-left, upper-right (deg)
   document.querySelectorAll('#stemcrew .stemchar').forEach((ch, i) => {
     const a = ANG[i % ANG.length] * Math.PI/180;
@@ -686,14 +691,12 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
   if(!stemMode) return;
   if(!window.__stemPlaying){ _stemRaf = requestAnimationFrame(stemBounce); return; }  // paused — hold poses, don't keep dancing silently
   const now = (window.performance && performance.now) ? performance.now() : Date.now();
-  let k = 0;
-  for(const part in stemAnalysers){
-    const an = stemAnalysers[part], buf = stemData[part];
+  for(let k = 0; k < stemCrewEls.length; k++){
+    const el = stemCrewEls[k], part = el.part, an = stemAnalysers[part], buf = stemData[part];
+    if(!an || !el.fig){ continue; }
     an.getByteFrequencyData(buf);
     let e = 0; for(let i=0;i<buf.length;i++) e += buf[i]; e /= buf.length*255;
-    const fig = document.querySelector('.stemchar[data-part="'+part+'"] .charfig');
-    if(!fig){ k++; continue; }
-    const arms = fig.querySelectorAll('.arm'), legs = fig.querySelectorAll('.leg');
+    const fig = el.fig, arms = el.arms, legs = el.legs;
     if(stemOn[part]){
       // dance ON THE BEAT: phase comes from the track BPM (fallback ~120). Energy (e)
       // still scales the size of each move, so loud sections hit harder.
@@ -722,18 +725,18 @@ function stemBounce(){  // each mascot dances — bob, sway, arm-swing + music n
         sway = -half * 6; legA = half*8; legB = half*8;                // body counter-sways; feet side-step together
       }
       fig.style.transform = 'translateY('+bob.toFixed(1)+'px) rotate('+sway.toFixed(1)+'deg) scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
-      fig.style.filter = 'drop-shadow(0 0 '+(4+e*18).toFixed(0)+'px var(--cc))';
+      const glow = Math.round(3 + e*9);  // cheaper blur, only re-set when it actually changes (avoids redundant filter recalcs)
+      if(glow !== el.glow){ fig.style.filter = 'drop-shadow(0 0 '+glow+'px var(--cc))'; el.glow = glow; }
       if(arms[0]) arms[0].style.transform = 'rotate('+armA.toFixed(1)+'deg)';
       if(arms[1]) arms[1].style.transform = 'rotate('+armB.toFixed(1)+'deg)';
       if(legs[0]) legs[0].style.transform = 'rotate('+legA.toFixed(1)+'deg)';
       if(legs[1]) legs[1].style.transform = 'rotate('+legB.toFixed(1)+'deg)';
-      if(e > 0.52 && now - (stemNoteAt[part]||0) > 260) spawnNote(fig.parentNode, part, now);  // pop a note on hits
-    } else {
-      fig.style.transform = ''; fig.style.filter = '';
+      if(e > 0.52 && now - (stemNoteAt[part]||0) > 260) spawnNote(el.stage, part, now);  // pop a note on hits
+    } else if(el.glow !== -1 || fig.style.transform){
+      fig.style.transform = ''; fig.style.filter = ''; el.glow = -1;
       if(arms[0]) arms[0].style.transform = ''; if(arms[1]) arms[1].style.transform = '';
       if(legs[0]) legs[0].style.transform = ''; if(legs[1]) legs[1].style.transform = '';
     }
-    k++;
   }
   _stemRaf = requestAnimationFrame(stemBounce);
 }
@@ -772,7 +775,7 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
   Object.values(stemGains).forEach(g => { try{ g.disconnect(); }catch(e){} });
   Object.values(stemAnalysers).forEach(a => { try{ a.disconnect(); }catch(e){} });
   stemSources = []; stemGains = {}; stemAnalysers = {}; stemData = {}; stemMode = false; window.__stemPlaying = false;
-  stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null; stemBpm = 0;
+  stemStartAt = 0; stemLoopDur = 0; stemStartOffset = 0; stemSolo = null; stemBpm = 0; stemCrewEls = [];
   if(dactx && dactx.state === 'suspended') dactx.resume();  // in case it was paused mid-remix
   document.getElementById('stembar').classList.remove('show');
   document.getElementById('ov').classList.remove('remix');
@@ -863,7 +866,6 @@ audioEl.addEventListener('ended',()=>{
   else deckSetPlaying(false);
 });
 addEventListener('resize',deckSize);
-document.getElementById('ov').addEventListener('scroll',layoutCrew);  // keep the crew pinned around the deck while scrolling
 
 async function preview() {
   try {

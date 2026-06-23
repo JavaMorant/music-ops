@@ -276,7 +276,7 @@ def test_chorus_particle_burst(tmp_path):
     assert "eMid+=(energy-eMid)" in idx                          # smoothed section energy
     assert "var chorus=Math.min(1" in idx                        # loud/full sections = best guess at the chorus
     assert "streaming up from the bottom" in idx                 # the excess rises from the bottom, not off the deck
-    assert "chorus*chorus*9" in idx and "embers.length<300" in idx
+    assert "chorus*chorus*9" in idx and "embers.length<200" in idx
 
 
 def test_fx_toggles_present(tmp_path):
