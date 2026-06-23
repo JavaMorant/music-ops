@@ -222,6 +222,25 @@ class TestPack:
         assert c.get("/api/pack?genre=nope").status_code == 404
 
 
+class TestSends:
+    def test_log_send_history_and_per_track_badge(self, client):
+        c, _ = client
+        tid = next(t["id"] for t in _tracks(c) if t["name"].startswith("Encara"))
+        c.post("/api/mark", json={"id": tid, "genre": "trap"})
+        r = c.post("/api/sent", json={"contact": "John @ XYZ", "name": "Trap Pack", "genre": "trap"})
+        assert r.status_code == 200 and r.json()["count"] >= 1
+        sends = c.get("/api/sends").json()["sends"]
+        assert any(s["contact"] == "John @ XYZ" and s["pack"] == "Trap Pack" for s in sends)
+        # the beat now records who it was sent to (so you don't re-send it)
+        t = next(t for t in _tracks(c) if t["id"] == tid)
+        assert "John @ XYZ" in t["sent_to"]
+
+    def test_log_send_requires_contact_and_a_match(self, client):
+        c, _ = client
+        assert c.post("/api/sent", json={"contact": "  ", "genre": "trap"}).status_code == 400
+        assert c.post("/api/sent", json={"contact": "X", "genre": "nope-genre"}).status_code == 404
+
+
 class TestDeck:
     def test_tracks_expose_producer_and_no_cover_by_default(self, client):
         c, _ = client

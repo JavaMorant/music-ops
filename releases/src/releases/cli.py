@@ -314,6 +314,19 @@ def mark(
 
 
 @app.command()
+def sends(db: DbOpt = dbmod.DEFAULT_DB) -> None:
+    """Show the send history — which pack went to which contact and when."""
+    conn = _open(db)
+    rows = dbmod.list_sends(conn)
+    if not rows:
+        typer.echo("No sends logged yet.")
+        return
+    for r in rows:
+        when = datetime.fromtimestamp(r["sent_at"]).strftime("%Y-%m-%d")
+        typer.echo(f"{when}  {r['contact'][:24]:<24}  {r['pack']}  ({r['n_tracks']} beats)")
+
+
+@app.command()
 def dashboard(db: DbOpt = dbmod.DEFAULT_DB) -> None:
     """Counts by stage, what's scheduled, what's overdue."""
     conn = _open(db)

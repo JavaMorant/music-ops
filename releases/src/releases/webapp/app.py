@@ -58,6 +58,13 @@ class CoverBody(BaseModel):
     data: str  # base64 (optionally a data: URL)
 
 
+class SentBody(BaseModel):
+    contact: str
+    name: str | None = None
+    genre: str | None = None
+    month: str | None = None
+
+
 def _tid(abspath: str) -> str:
     return hashlib.sha1(abspath.encode("utf-8")).hexdigest()[:16]
 
@@ -84,7 +91,7 @@ def create_app(config: AppConfig) -> FastAPI:
         symlink planted in Track List can't read/zip a file outside it."""
         return orgmod._within(config.track_list_dir, path) and orgmod._contained(tl_real, path)
 
-    def _track_dict(p) -> dict:
+    def _track_dict(p, recipients: list | None = None) -> dict:
         path = Path(p.path)
         try:
             rel = path.relative_to(config.track_list_dir)
@@ -93,6 +100,7 @@ def create_app(config: AppConfig) -> FastAPI:
             parts = ()
         return {
             "id": _tid(p.path),
+            "sent_to": recipients or [],  # contacts who've already been sent this beat
             "name": p.name,
             "location": "/".join(parts[:-1]) if len(parts) > 1 else "(loose)",
             "filed": len(parts) == 4,  # <genre>/<mix>/<master>/<name>
@@ -130,6 +138,7 @@ def create_app(config: AppConfig) -> FastAPI:
         tl = config.track_list_dir
         tracks = []
         mapping: dict[str, str] = {}
+        recipients = dbmod.recipients_by_path(c)  # path → who's already been sent it
         for p in dbmod.all_projects(c):
             path = Path(p.path)
             if not _in_tl(path) or not path.is_file():
@@ -137,7 +146,7 @@ def create_app(config: AppConfig) -> FastAPI:
             if path.suffix.lower() not in orgmod.AUDIO_EXTS:
                 continue
             mapping[_tid(p.path)] = p.path
-            tracks.append(_track_dict(p))
+            tracks.append(_track_dict(p, recipients.get(p.path, [])))
         state.track_paths = mapping
         tracks.sort(key=lambda t: (t["genre"], t["name"].lower()))
         genres = sorted({t["genre"] for t in tracks if t["genre"] != "unknown"})
@@ -212,7 +221,8 @@ def create_app(config: AppConfig) -> FastAPI:
         rows = c.execute("SELECT * FROM projects WHERE path = ?", (abspath,)).fetchall()
         if not rows:
             raise HTTPException(404, "track not in index")
-        return _track_dict(dbmod._row_to_project(rows[0]))
+        recips = dbmod.recipients_by_path(c).get(abspath, [])
+        return _track_dict(dbmod._row_to_project(rows[0]), recips)
 
     @app.get("/api/audio")
     def audio(id: str):
@@ -370,6 +380,31 @@ def create_app(config: AppConfig) -> FastAPI:
             zpath, media_type="application/zip", filename=f"{folder}.zip",
             background=BackgroundTask(lambda: os.path.exists(zpath) and os.unlink(zpath)),
         )
+
+    @app.post("/api/sent", dependencies=[Depends(guard_origin)])
+    def log_send(body: SentBody):
+        """Record that a pack (the current genre/month filter) was sent to someone,
+        so you never re-send the same beat to the same contact. Logs only."""
+        contact = (body.contact or "").strip()
+        if not contact or len(contact) > 120 or any(ord(ch) < 32 for ch in contact):
+            raise HTTPException(400, "contact required (short, no control chars)")
+        c = conn()
+        projs = _matching_projects(c, body.genre, body.month)
+        if not projs:
+            raise HTTPException(404, "no matching tracks to log as sent")
+        pack_name = (body.name or body.genre or "Beat Pack").strip()[:80] or "Beat Pack"
+        sid = dbmod.record_send(c, contact, pack_name, [(p.path, p.name) for p in projs])
+        return {"send_id": sid, "contact": contact, "pack": pack_name, "count": len(projs)}
+
+    @app.get("/api/sends")
+    def sends():
+        c = conn()
+        out = [
+            {"contact": r["contact"], "pack": r["pack_name"],
+             "sent_at": r["sent_at"], "count": r["n_tracks"]}
+            for r in dbmod.list_sends(c)
+        ]
+        return {"sends": out}
 
     @app.get("/api/runs")
     def runs():

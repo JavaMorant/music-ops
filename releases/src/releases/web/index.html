@@ -40,6 +40,8 @@
   .pill.off { color:var(--dim); }
   .ginput { width:130px; }
   .filed { color:var(--good); font-size:11px; }
+  .senttag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:10px;
+    font-size:11px; background:#1d2b1d; color:#8be398; border:1px solid var(--good); cursor:default; }
   .loose { color:var(--dim); font-size:11px; }
   #player { position:fixed; bottom:0; left:0; right:0; background:var(--panel);
     border-top:1px solid var(--line); padding:10px 18px; display:flex; gap:14px;
@@ -186,6 +188,7 @@
   <button onclick="preview()">Preview plan</button>
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
   <button onclick="undoLast()">Undo last</button>
+  <button onclick="showSends()">Sent</button>
 </header>
 
 <div id="panel">
@@ -348,6 +351,13 @@ async function buildPack() {
     const a = document.createElement('a'); a.href = url; a.download = fn; a.click();
     URL.revokeObjectURL(url);
     toast('Built ' + fn + (prev ? ' (previews)' : '') + ' — unzip → open index.html, or drop the folder on Netlify Drop for a link');
+    const who = prompt('Log this send — who did you send it to? (blank to skip)');
+    if (who && who.trim()) {
+      const s = await api('/api/sent', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({contact: who.trim(), name: name.trim()||null, genre: fg||null, month: fm||null})});
+      toast(`Logged: sent to ${s.contact} (${s.count} beats)`);
+      loadTracks();  // refresh the "already sent" badges
+    }
   } catch(e){ toast(e.message, true); }
 }
 
@@ -357,7 +367,7 @@ function rowHtml(t) {
   const g = t.genre === 'unknown' ? '' : t.genre;
   return `<tr data-id="${t.id}">
     <td><button class="play" onclick="play('${t.id}')" ${t.taggable?'':'title="not mp3"'}>▶</button></td>
-    <td class="name">${esc(t.name)}</td>
+    <td class="name">${esc(t.name)}${sentBadge(t)}</td>
     <td class="meta">${t.bpm?t.bpm+' bpm':''} ${t.key||''}</td>
     <td><input class="ginput" list="genres" value="${esc(g)}" placeholder="${t.genre}"
          onchange="setGenre('${t.id}', this.value)"></td>
@@ -375,6 +385,18 @@ function rowHtml(t) {
   </tr>`;
 }
 function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function sentBadge(t){ return (t.sent_to && t.sent_to.length)
+  ? ` <span class="senttag" title="Sent to: ${esc(t.sent_to.join(', '))}">✓ ${t.sent_to.length}</span>` : ''; }
+async function showSends(){
+  try{
+    const {sends} = await api('/api/sends');
+    document.getElementById('panelTitle').textContent = `Send history — ${sends.length} sends`;
+    document.getElementById('planMoves').innerHTML = sends.length
+      ? sends.map(s=>`<div class="move"><b>${esc(s.contact)}</b> — ${esc(s.pack)} · ${s.count} beats · ${new Date(s.sent_at*1000).toLocaleDateString()}</div>`).join('')
+      : '<div class="move">No sends logged yet — build a pack and log who you sent it to.</div>';
+    document.getElementById('panel').classList.add('show');
+  }catch(e){ toast(e.message, true); }
+}
 
 function patch(updated) {
   const i = TRACKS.findIndex(t=>t.id===updated.id);

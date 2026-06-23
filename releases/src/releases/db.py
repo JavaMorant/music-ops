@@ -74,6 +74,24 @@ CREATE TABLE IF NOT EXISTS release_tracks (
 
 CREATE INDEX IF NOT EXISTS idx_release_tracks_order
     ON release_tracks (release_id, position);
+
+-- Send history: a log of which pack went to which contact and when, plus the
+-- exact beats included — so you never re-send the same beat to the same person.
+CREATE TABLE IF NOT EXISTS sends (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact   TEXT NOT NULL,        -- who it went to (free text: name / @handle / email)
+    pack_name TEXT NOT NULL,
+    sent_at   REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS send_tracks (
+    send_id INTEGER NOT NULL REFERENCES sends(id) ON DELETE CASCADE,
+    path    TEXT NOT NULL,          -- references projects.path (snapshot, not a hard FK)
+    name    TEXT NOT NULL           -- snapshot name, survives the project moving/vanishing
+);
+
+CREATE INDEX IF NOT EXISTS idx_send_tracks_path ON send_tracks (path);
+CREATE INDEX IF NOT EXISTS idx_send_tracks_send ON send_tracks (send_id);
 """
 
 
@@ -475,6 +493,47 @@ def repath(conn: sqlite3.Connection, old_path: str, new_path: str) -> int:
         conn.execute("UPDATE release_tracks SET path = ? WHERE path = ?", (new_path, old_path))
         conn.execute("UPDATE schedule SET path = ? WHERE path = ?", (new_path, old_path))
     return moved
+
+
+# --- send history (which pack went to whom, and when) -----------------------
+
+def record_send(
+    conn: sqlite3.Connection, contact: str, pack_name: str, items: list[tuple[str, str]]
+) -> int:
+    """Log a pack sent to ``contact``: the pack name + the (path, name) of each beat
+    in it. Returns the send id. Index-only — records, never sends anything."""
+    now = time.time()
+    cur = conn.execute(
+        "INSERT INTO sends (contact, pack_name, sent_at) VALUES (?, ?, ?)",
+        (contact, pack_name, now),
+    )
+    sid = cur.lastrowid
+    conn.executemany(
+        "INSERT INTO send_tracks (send_id, path, name) VALUES (?, ?, ?)",
+        [(sid, p, n) for p, n in items],
+    )
+    conn.commit()
+    return sid
+
+
+def list_sends(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Send log, newest first, with the beat count per send."""
+    return conn.execute(
+        "SELECT s.*, COUNT(st.path) AS n_tracks "
+        "FROM sends s LEFT JOIN send_tracks st ON st.send_id = s.id "
+        "GROUP BY s.id ORDER BY s.sent_at DESC"
+    ).fetchall()
+
+
+def recipients_by_path(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    """path → the distinct contacts who've already been sent that beat."""
+    out: dict[str, list[str]] = {}
+    for r in conn.execute(
+        "SELECT DISTINCT st.path AS path, s.contact AS contact "
+        "FROM send_tracks st JOIN sends s ON s.id = st.send_id ORDER BY s.contact"
+    ):
+        out.setdefault(r["path"], []).append(r["contact"])
+    return out
 
 
 def release_track_paths(conn: sqlite3.Connection) -> set[str]:
