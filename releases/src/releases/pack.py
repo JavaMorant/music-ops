@@ -106,7 +106,7 @@ function ttRun(opts){
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
   var sparks=[], embers=[], shocks=[], smoke=[], smoothV=null, idleT=0;  // idleT drives the always-on motion
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
-  var fxFire=true, fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
+  var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
   function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
   function nowMs(){return (window.performance&&performance.now)?performance.now():Date.now();}
   function rgbHue(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;
@@ -139,7 +139,7 @@ function ttRun(opts){
       rcx=(dr.left+dr.width/2-fr.left)*sclx; rcy=(dr.top+dr.height/2-fr.top)*scly;
     }else{fxw=W;fxh=W;ref=W;rcx=W/2;rcy=W/2;fxLeft=0;fxTop=0;sclx=1;scly=1;}
     var playing=!!(opts.audio&&!opts.audio.paused);
-    fxFire=on('fire');fxSmoke=on('smoke');fxParticles=on('particles');fxShake=on('shake');fxHeat=on('heat');
+    fxSmoke=on('smoke');fxParticles=on('particles');fxShake=on('shake');fxHeat=on('heat');
     var an=opts.getAnalyser(), bass=0, energy=0;
     if(an){if(!dataArr||dataArr.length!==an.frequencyBinCount){dataArr=new Uint8Array(an.frequencyBinCount);}
       an.getByteFrequencyData(dataArr);
@@ -238,28 +238,6 @@ function ttRun(opts){
       ctx.lineWidth=W*0.009;ctx.beginPath();ctx.arc(cx,cy,R0*0.9,-1.5708,-1.5708+pr*6.2832);ctx.stroke();
       ctx.restore();}  // cassette progress is shown by the lit portion of its waveform
   }
-  // a flickering flame band along the bottom of the screen (toggle via opts.fireGet).
-  // It roars with energy + heat; the rising embers spark up out of it. Additive
-  // ('lighter') blend so the tongues glow and overlap like real fire.
-  function drawFire(c){
-    if(!fxFire)return;
-    if(curHeat<=0.02)return;  // only ignites once the track has heated up
-    var W=fxw,H=fxh,n=44,inten=Math.min(1,curHeat*(0.55+curEnergy*0.9));  // grows with heat, flares with energy
-    c.save();c.globalCompositeOperation='lighter';
-    for(var i=0;i<n;i++){var x=(i+0.5)/n*W;
-      var f=0.5+0.5*Math.sin(idleT*3.1+i*1.7)*Math.sin(idleT*1.3+i*0.6);  // per-column flicker
-      var h=H*(0.06+inten*(0.13+0.13*f)),w=W/n*1.7,y0=H,y1=H-h;
-      var g=c.createLinearGradient(0,y0,0,y1);
-      g.addColorStop(0,'rgba(255,238,170,'+(0.5*inten).toFixed(3)+')');
-      g.addColorStop(0.35,'rgba(255,140,24,'+(0.4*inten).toFixed(3)+')');
-      g.addColorStop(0.72,'rgba(220,42,0,'+(0.22*inten).toFixed(3)+')');
-      g.addColorStop(1,'rgba(120,0,0,0)');
-      c.fillStyle=g;c.beginPath();c.moveTo(x-w/2,y0);
-      c.quadraticCurveTo(x-w*0.2,y1+h*0.2,x,y1);
-      c.quadraticCurveTo(x+w*0.2,y1+h*0.2,x+w/2,y0);
-      c.closePath();c.fill();}
-    c.restore();
-  }
   // the stylus scorches a red groove into the vinyl as the record spins under it —
   // a charred ring + red-hot line + a bright contact ember, all building with heat.
   // Drawn on the full-screen field (above the opaque record) so it's actually visible.
@@ -291,7 +269,6 @@ function ttRun(opts){
   function drawFX(){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
-    if(fxctx)drawFire(c);   // flame band along the bottom (toggleable), behind the particles
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
     for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.y+=pf.vy;pf.vy*=0.997;
       var age=1-pf.life;pf.x=pf.bx+Math.sin(age*9+pf.ph)*pf.amp*age;pf.r=ref*0.003+age*ref*0.013;pf.life-=0.006;
@@ -544,7 +521,6 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
 <button class="reelbtn" id="skinbtn" style="right:96px">Cassette</button>
 <button class="reelbtn" id="reelbtn">⤢ Reel</button>
 <div class="fxbar" id="fxbar">
-  <button class="fxchip" data-fx="fire">Fire</button>
   <button class="fxchip" data-fx="smoke">Smoke</button>
   <button class="fxchip" data-fx="particles">Particles</button>
   <button class="fxchip" data-fx="shake">Shake</button>
