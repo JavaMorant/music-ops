@@ -127,6 +127,7 @@ function ttRun(opts){
     idleT+=0.016;
     if(!seeded){var cu=opts.getCover&&opts.getCover();if(cu){seeded=true;seed(cu);}else if(!opts.getCover){seeded=true;}}
     var W=opts.canvas.width; if(!W){return;}
+    if(opts.pauseDraw&&opts.pauseDraw())return;  // an export is using the main thread — skip the live draw
     // size + locate the full-screen particle field (record centre in the field's own px)
     var fx=opts.fxCanvas;
     if(fx && !fx.clientWidth)return;  // overlay hidden (display:none) — skip; avoids particles spawned at the corner

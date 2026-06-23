@@ -59,6 +59,18 @@
     background:#222; border:1px solid var(--line); padding:10px 16px; border-radius:8px;
     display:none; z-index:10; }
   .count { color:var(--dim); font-size:12px; }
+  /* recording overlay — shown while a reel is being captured */
+  #recov { position:fixed; inset:0; z-index:60; display:none; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; text-align:center;
+    background:rgba(8,8,11,.93); }
+  #recov.show { display:flex; }
+  #recov .dot { width:14px; height:14px; border-radius:50%; background:var(--bad);
+    box-shadow:0 0 14px var(--bad); animation:blink 1s ease-in-out infinite; }
+  #recov h3 { margin:0; font-size:18px; }
+  #recov p { margin:0; color:var(--dim); font-size:13px; max-width:340px; line-height:1.5; }
+  #recov .warn { color:var(--warn); font-weight:600; }
+  #recov button { background:var(--accent); color:#10100a; border:none; font-weight:600;
+    padding:9px 18px; border-radius:8px; margin-top:6px; }
 
   /* in-app turntable (plays the filtered tracks live; no files created) */
   #ov{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;
@@ -210,6 +222,12 @@
   <audio id="audio" controls></audio>
 </div>
 <div id="toast"></div>
+<div id="recov">
+  <div class="dot"></div>
+  <h3 id="recmsg">Recording reel…</h3>
+  <p><span class="warn">Keep this tab in front</span> — switching tab/window will black out the video.</p>
+  <button id="recstop">Stop &amp; save</button>
+</div>
 
 <div id="ov">
   <canvas class="pfx" id="ovpfx"></canvas>
@@ -528,14 +546,15 @@ function deckInitViz(){
 }
 
 // ---- one-click reel export: render the deck onto a 1080x1920 canvas, capture it
-// + the audio, record to webm, then transcode to mp4 server-side. Records in real
-// time (plays the beat from the top, stops at the end). ----
+// + the audio, record (prefers mp4 directly; falls back to webm→mp4 via ffmpeg).
+// Records in REAL TIME — the tab must stay in front (a hidden tab freezes the
+// canvas/rAF and the video goes black). ----
 let _recording = false, _adest = null;
 async function exportReel(){
   if(_recording) return;
   if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
   if(typeof window.ttExportFrame !== 'function'){ toast('Export renderer not loaded — refresh', true); return; }
-  const btn = document.getElementById('exportbtn');
+  const btn = document.getElementById('exportbtn'), recov = document.getElementById('recov');
   _recording = true; btn.textContent = '● Recording…'; btn.disabled = true;
   try{
     deckInitViz();
@@ -546,13 +565,18 @@ async function exportReel(){
     if(COVER){ cover = new Image(); cover.crossOrigin='anonymous'; cover.src = COVER;
       try{ await cover.decode(); }catch(e){ cover = null; } }
     const ec = document.createElement('canvas'); ec.width = 1080; ec.height = 1920;
-    const ectx = ec.getContext('2d');
+    const ectx = ec.getContext('2d', {alpha:false});
     const vstream = ec.captureStream(30);
     const stream = new MediaStream([...vstream.getVideoTracks(), ..._adest.stream.getAudioTracks()]);
-    const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+    // record straight to mp4 if the browser can (avoids the lossy webm→mp4 re-encode)
+    const mp4mime = ['video/mp4;codecs=h264,aac','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4']
       .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+    const webmmime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+      .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+    const mime = mp4mime || webmmime;
     if(!mime){ throw new Error('this browser can’t record video (try Chrome)'); }
-    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 8_000_000});
+    const direct = !!mp4mime;
+    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 128_000});
     const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     let hue = 42, raf = 0;
     const dd = new Uint8Array(danalyser.frequencyBinCount);
@@ -568,29 +592,44 @@ async function exportReel(){
         curHeat, armDeg: -21 - pr*14, label: COVER ? '' : PRODUCER, cover});
       raf = requestAnimationFrame(frame);
     }
-    rec.onstop = async () => {
-      cancelAnimationFrame(raf);
+    const onVis = () => { if(document.hidden) document.getElementById('recmsg').textContent = '⚠ Came back to the tab! (it went black while hidden)'; };
+    function finish(){
+      window.__exportingDeck = false;
+      document.removeEventListener('visibilitychange', onVis);
+      recov.classList.remove('show'); cancelAnimationFrame(raf);
       btn.textContent = '⬇ Export reel'; btn.disabled = false; _recording = false;
-      const blob = new Blob(chunks, {type: 'video/webm'});
-      toast('Transcoding to mp4…');
+    }
+    rec.onstop = async () => {
+      finish();
+      const blob = new Blob(chunks, {type: direct ? 'video/mp4' : 'video/webm'});
+      const fname = ((DECK[deckCur] && DECK[deckCur].name) || 'reel').replace(/[\\/]/g,'_') + '.mp4';
       try{
-        const r = await fetch('/api/tomp4', {method:'POST', headers:{'Content-Type':'video/webm'}, body: blob});
-        if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
-        const mp4 = await r.blob(); const url = URL.createObjectURL(mp4);
-        const a = document.createElement('a'); a.href = url;
-        a.download = ((DECK[deckCur] && DECK[deckCur].name) || 'reel').replace(/[\\/]/g,'_') + '.mp4'; a.click();
+        let mp4;
+        if(direct){ mp4 = blob; }
+        else { toast('Transcoding to mp4…');
+          const r = await fetch('/api/tomp4', {method:'POST', headers:{'Content-Type':'video/webm'}, body: blob});
+          if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail); }
+          mp4 = await r.blob(); }
+        const url = URL.createObjectURL(mp4);
+        const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
         URL.revokeObjectURL(url);
         toast('Reel exported — check your downloads');
       }catch(e){ toast('mp4 failed: ' + e.message, true); }
     };
+    // pause the live deck so the main thread is free for the export render + encode
+    window.__exportingDeck = true;
+    recov.classList.add('show');
+    document.getElementById('recmsg').textContent = 'Recording reel…';
+    document.getElementById('recstop').onclick = () => { if(rec.state !== 'inactive') rec.stop(); };
+    document.addEventListener('visibilitychange', onVis);
     audioEl.currentTime = 0;
     await audioEl.play();
     rec.start(); frame();
-    toast('Recording the reel in real time — it stops at the end of the beat');
     const dur = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : 60;
     const guard = setTimeout(() => { if(rec.state !== 'inactive') rec.stop(); }, Math.min(120000, dur*1000 + 800));
     audioEl.addEventListener('ended', () => { clearTimeout(guard); if(rec.state !== 'inactive') rec.stop(); }, {once:true});
   }catch(e){
+    window.__exportingDeck = false; recov.classList.remove('show');
     btn.textContent = '⬇ Export reel'; btn.disabled = false; _recording = false;
     toast('Export failed: ' + e.message, true);
   }
@@ -607,6 +646,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
+  pauseDraw:()=>window.__exportingDeck,
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
