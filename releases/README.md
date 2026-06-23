@@ -155,6 +155,10 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
   bass-driven halo + sparks, a progress ring, the label pulsing on the kick, and
   (in reel) the scene shaking to the bass. The same effects run in the exported
   pack page (one shared module, `/api/turntable.js`).
+- **Recording for socials:** the **● Record reel** button does a quick one-click
+  tab-capture → mp4, but for posting-quality vertical clips record with **OBS** —
+  see [`RECORDING.md`](RECORDING.md) for the full recipe (portrait window + Clean
+  mode auto-frames 9:16; 1080×1920/60 fps; Chrome app-audio capture).
 - Record **artists/producers** and a **month** per track; filter by month to pull
   up a beat pack.
 - **Download N** zips the currently-filtered tracks (e.g. genre `trap`) into one

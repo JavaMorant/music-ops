@@ -918,7 +918,7 @@ async function undoLast() {
 
 loadTracks().then(()=>{
   const q = new URLSearchParams(location.search);
-  if (q.has('deck')) { openDeck(); if (q.get('skin')==='cassette') deckSkin(); if (q.has('reel')) deckReel(); }
+  if (q.has('deck')) { openDeck(); if (q.get('skin')==='cassette') deckSkin(); if (q.has('reel')) deckReel(); if (q.has('clean')) deckClean(); }
 });
 </script>
 </body>
