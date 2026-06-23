@@ -275,6 +275,41 @@ def usb_insights(vol: Path, last_n: int = 50, source: str = "all") -> dict:
     }
 
 
+def _crates_from(sessions: list[list[str]], meta: dict, *, last_n: int = 50, top: int = 40) -> list[dict]:
+    """Play-history crates from a stick's sessions — pure, so it's testable.
+    Each crate is ``{name, tracks:[{label, path}]}`` in play-priority order."""
+    recent = sessions[-last_n:] if last_n else sessions
+    recent_ids = {_norm(t) for s in recent for t in s}
+    plays = collections.Counter(_norm(t) for s in sessions for t in s)
+    recent_plays = collections.Counter(_norm(t) for s in recent for t in s)
+    all_sets = collections.Counter(k for s in sessions for k in {_norm(t) for t in s})
+    disp: dict[str, str] = {}
+    for s in sessions:
+        for t in s:
+            disp.setdefault(_norm(t), t)
+
+    def trk(k):
+        return {"label": disp.get(k, k), "path": meta.get(k, {}).get("path", "")}
+
+    openers = collections.Counter(_norm(s[0]) for s in recent if s)
+    closers = collections.Counter(_norm(s[-1]) for s in recent if s)
+    spec = [
+        ("⭐ Most Played", [k for k, _ in plays.most_common(top)]),
+        ("🔥 Hot Right Now", [k for k, _ in recent_plays.most_common(top)]),
+        ("❄️ Going Cold", [k for k, _ in plays.most_common() if k not in recent_ids][:top]),
+        ("🏆 Crowd-Pleasers", [k for k, _ in all_sets.most_common(top)]),
+        ("▶ Openers", [k for k, _ in openers.most_common(20)]),
+        ("⏹ Closers", [k for k, _ in closers.most_common(20)]),
+    ]
+    return [{"name": name, "tracks": [trk(k) for k in keys]} for name, keys in spec if keys]
+
+
+def usb_crates(vol: Path, *, last_n: int = 50, top: int = 40) -> list[dict]:
+    """Play-history crates for a stick, ready to export as importable playlists."""
+    sess, meta, _fmts = read_stick(vol)
+    return _crates_from([s["tracks"] for s in sess], meta, last_n=last_n, top=top)
+
+
 def follows(vol: Path, query: str, *, last_n: int = 80) -> list[dict]:
     """'What do I play after X' — next-track distribution after any track whose
     label contains the query, across recent sets."""

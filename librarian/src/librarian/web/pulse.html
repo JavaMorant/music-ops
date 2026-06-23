@@ -150,13 +150,31 @@ function transHtml(items) {
 }
 
 let usbSource = "all";
+let usbSticks = [];
+async function organiseStick(si) {
+  const s = usbSticks[si];
+  if (!s) return;
+  const out = $("org-" + si);
+  out.innerHTML = '<div class="skel">building crates from play history…</div>';
+  try {
+    const r = await fetch("/api/pulse/organise?stick=" + encodeURIComponent(s.name),
+      { method: "POST", headers: { "Content-Type": "application/json" } });
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = `<div class="banner bad">${esc(d.detail || "error")}</div>`; return; }
+    out.innerHTML = `<div class="banner" style="background:rgba(95,208,138,.12);color:var(--ok);border:1px solid rgba(95,208,138,.3)">✓ Wrote ${d.crates.length} crates → <code>${esc(d.folder)}</code></div>`
+      + `<div class="muted" style="margin:6px 0 2px">` + d.crates.map(c => `${esc(c.name)} <b style="color:var(--text)">${c.tracks}</b>`).join(" · ") + `</div>`
+      + `<div class="muted">Import the <b>.m3u8</b> files into rekordbox → assign to this stick → re-export.`
+      + (d.needs_paths ? ` <span style="color:var(--warm)">Some tracks had no on-stick path — those are tracklists to match by title.</span>` : "") + `</div>`;
+  } catch (e) { out.innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
 async function loadUsb() {
   try {
     const r = await fetch("/api/pulse/usb?source=" + encodeURIComponent(usbSource));
     const d = await r.json();
     if (!r.ok) { $("usb").innerHTML = `<div class="banner bad">${esc(d.detail||"error")}</div>`; return; }
     if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
-    $("usb").innerHTML = d.sticks.map(s => {
+    usbSticks = d.sticks;
+    $("usb").innerHTML = d.sticks.map((s, si) => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
       if (!s.sessions) return `<div class="panel">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -168,7 +186,10 @@ async function loadUsb() {
           <span class="stickname">🎛 ${esc(s.name)}</span>
           ${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}
           ${s.live ? "" : '<span class="pill" style="background:rgba(224,168,91,.16);color:var(--warm)">📼 archived</span>'}
-          <span class="muted">${s.sessions} sets · avg ${s.avg_per_set}/set (${s.set_lengths.min}–${s.set_lengths.max})${bpm}</span></div>
+          <span class="muted">${s.sessions} sets · avg ${s.avg_per_set}/set (${s.set_lengths.min}–${s.set_lengths.max})${bpm}</span>
+          <span style="flex:1"></span>
+          <button class="ghost" onclick="organiseStick(${si})" title="Build play-history crates as importable playlists — never touches the stick's database">📦 Organise → crates</button></div>
+        <div id="org-${si}"></div>
         <div class="cards" style="margin:14px 0">
           ${stat(s.distinct_played.toLocaleString(),"distinct tracks played")}
           ${stat(s.plays.toLocaleString(),"total plays","accent")}

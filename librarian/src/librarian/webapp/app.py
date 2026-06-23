@@ -460,6 +460,23 @@ def create_app(config: AppConfig) -> FastAPI:
             "rekordbox_rewritten": bool(journal.rekordbox and journal.rekordbox.get("rewritten")),
         }
 
+    @app.post("/api/pulse/organise", dependencies=[Depends(guard_origin)])
+    def post_pulse_organise(stick: str = "") -> dict:
+        """Build play-history crates for a mounted stick and write them as
+        rekordbox-importable .m3u8 playlists. Never touches the stick's pdb."""
+        from .. import pulse_organise, pulse_usb
+        if not pulse_usb.available():
+            return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed"})
+        vols = pulse_usb.find_usbs()
+        if stick:
+            vols = [v for v in vols if v.name == stick] or vols
+        if not vols:
+            return JSONResponse(status_code=400, content={"detail": "no CDJ stick mounted"})
+        crates = pulse_usb.usb_crates(vols[0])
+        if not crates:
+            return JSONResponse(status_code=400, content={"detail": "no play history on this stick yet"})
+        return pulse_organise.write_crates(vols[0].name, crates)
+
     @app.get("/api/pulse/sets")
     def get_sets(stick: str = "", limit: int = 40) -> dict:
         """Recent sets off a stick — tracklist in play order, custom name + linked
