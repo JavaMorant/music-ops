@@ -344,6 +344,72 @@ function ttScrub(opts){
   v.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
   v.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
 }
+
+// ---- video export: draw the WHOLE turntable scene onto ONE canvas ----
+// (disc/label/arm normally live as DOM; here they're drawn on the canvas so a
+// captureStream() recording is clean — just the deck + effects, no UI chrome).
+// st = {skin, hue, data, energy, pr, curHeat, armDeg, cover(Image), label, bottomFx(canvas)}.
+function ttExportFrame(c,W,H,st){
+  var bg=c.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#181820');bg.addColorStop(1,'#0a0a0d');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  var S=Math.min(W*0.84,H*0.46),cx=W/2,cy=H*0.40;
+  if(st.skin==='cassette')ttCassetteScene(c,cx,cy,S,st); else ttVinylScene(c,cx,cy,S,st);
+  if(st.bottomFx)c.drawImage(st.bottomFx,0,0,st.bottomFx.width,st.bottomFx.height,0,0,W,H);
+}
+function ttVinylScene(c,cx,cy,S,st){
+  var R=S*0.36,hue=st.hue||42,da=st.data,e=st.energy||0;
+  var halo=0.06+e*0.25;
+  var g=c.createRadialGradient(cx,cy,R*0.55,cx,cy,R*1.5);
+  g.addColorStop(0,'hsla('+hue.toFixed(0)+',90%,55%,'+halo.toFixed(3)+')');g.addColorStop(1,'hsla('+hue.toFixed(0)+',90%,55%,0)');
+  c.fillStyle=g;c.beginPath();c.arc(cx,cy,R*1.5,0,6.2832);c.fill();
+  var disc=c.createRadialGradient(cx-R*0.28,cy-R*0.36,R*0.1,cx,cy,R);
+  disc.addColorStop(0,'#2a2a31');disc.addColorStop(0.72,'#000');disc.addColorStop(1,'#050506');
+  c.fillStyle=disc;c.beginPath();c.arc(cx,cy,R,0,6.2832);c.fill();
+  c.strokeStyle='rgba(255,255,255,0.045)';c.lineWidth=Math.max(1,S*0.0035);
+  for(var gr=R*0.42;gr<R*0.97;gr+=S*0.012){c.beginPath();c.arc(cx,cy,gr,0,6.2832);c.stroke();}
+  var lr=R*0.4;
+  if(st.cover&&st.cover.width){c.save();c.beginPath();c.arc(cx,cy,lr,0,6.2832);c.clip();
+    c.drawImage(st.cover,cx-lr,cy-lr,lr*2,lr*2);c.restore();}
+  else{var lg=c.createRadialGradient(cx,cy-lr*0.3,lr*0.1,cx,cy,lr);
+    lg.addColorStop(0,'#e8c34a');lg.addColorStop(1,'#8a6f17');c.fillStyle=lg;c.beginPath();c.arc(cx,cy,lr,0,6.2832);c.fill();
+    if(st.label){c.fillStyle='#1a1405';c.font='800 '+(lr*0.4).toFixed(0)+'px -apple-system,Helvetica,sans-serif';
+      c.textAlign='center';c.textBaseline='middle';c.fillText(String(st.label).toUpperCase().slice(0,8),cx,cy);}}
+  c.fillStyle='#000';c.beginPath();c.arc(cx,cy,R*0.05,0,6.2832);c.fill();
+  if(da){var bars=96,half=48;c.save();c.lineCap='round';c.lineWidth=S*0.013;c.shadowBlur=S*0.011;
+    for(var b=0;b<bars;b++){var j=b<half?b:bars-1-b;var v=da[Math.floor(j/half*da.length*0.7)]/255;
+      var l=R*(0.03+v*v*0.3),a=b/bars*6.2832-1.5708,co=Math.cos(a),si=Math.sin(a);
+      var col='hsl('+((hue+j/half*40)%360).toFixed(0)+','+(72+v*25).toFixed(0)+'%,'+(52+v*20).toFixed(0)+'%)';
+      c.strokeStyle=col;c.shadowColor=col;c.beginPath();c.moveTo(cx+co*R,cy+si*R);c.lineTo(cx+co*(R+l),cy+si*(R+l));c.stroke();}
+    c.restore();}
+  // tonearm — pivot above-right, sweeping in with st.armDeg (-21 outer .. -35 inner)
+  var pvx=cx+R*1.02,pvy=cy-R*1.04,len=R*1.34,ang=((st.armDeg||-24))*Math.PI/180;
+  var tx=pvx-Math.cos(ang)*len,ty=pvy+Math.sin(ang)*len;
+  c.save();c.lineCap='round';c.strokeStyle='#5a5a66';c.lineWidth=S*0.02;
+  c.beginPath();c.moveTo(pvx,pvy);c.lineTo(tx,ty);c.stroke();
+  c.fillStyle='#3a3a44';c.beginPath();c.arc(pvx,pvy,S*0.03,0,6.2832);c.fill();
+  c.fillStyle='#52525e';c.beginPath();c.arc(tx,ty,S*0.024,0,6.2832);c.fill();c.restore();
+}
+function ttCassetteScene(c,cx,cy,S,st){
+  var w=S*0.92,h=S*0.56,x=cx-w/2,y=cy-h/2,hue=st.hue||42,da=st.data;
+  var bg=c.createLinearGradient(x,y,x,y+h);bg.addColorStop(0,'#34343f');bg.addColorStop(1,'#16161c');
+  c.fillStyle=bg;ttRoundRect(c,x,y,w,h,S*0.04);c.fill();
+  c.fillStyle='#c9a227';ttRoundRect(c,x+w*0.09,y+h*0.08,w*0.82,h*0.26,S*0.015);c.fill();
+  if(st.label){c.fillStyle='#1a1405';c.font='800 '+(h*0.13).toFixed(0)+'px -apple-system,sans-serif';
+    c.textAlign='center';c.textBaseline='middle';c.fillText(String(st.label).toUpperCase().slice(0,10),cx,y+h*0.21);}
+  var wy=y+h*0.66,wr=h*0.22;c.fillStyle='#0b0b0f';ttRoundRect(c,x+w*0.11,wy-wr*1.1,w*0.78,wr*2.2,S*0.02);c.fill();
+  [cx-w*0.22,cx+w*0.22].forEach(function(rx){c.save();c.translate(rx,wy);
+    c.fillStyle='#2a2a34';c.beginPath();c.arc(0,0,wr,0,6.2832);c.fill();
+    c.fillStyle='#14141a';for(var k=0;k<8;k++){c.save();c.rotate(k/8*6.2832);c.fillRect(-wr*0.08,-wr*0.9,wr*0.16,wr*0.5);c.restore();}
+    c.fillStyle='#000';c.beginPath();c.arc(0,0,wr*0.16,0,6.2832);c.fill();c.restore();});
+  if(da){var bars=80,half=40,baseY=cy+h*0.62+S*0.06;c.save();c.lineCap='round';c.lineWidth=S*0.012;c.shadowBlur=S*0.01;
+    for(var i=0;i<bars;i++){var idx=i<half?i:bars-1-i;var v=da[Math.floor(idx/half*da.length*0.7)]/255;
+      var px=cx-S*0.41+(i/(bars-1))*S*0.82,len=S*0.012+v*v*S*0.16;
+      var col='hsl('+((hue+idx/half*46)%360).toFixed(0)+',80%,'+(56+v*20).toFixed(0)+'%)';
+      c.strokeStyle=col;c.shadowColor=col;c.beginPath();c.moveTo(px,baseY-len/2);c.lineTo(px,baseY+len/2);c.stroke();}
+    c.restore();}
+}
+function ttRoundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 """
 
 

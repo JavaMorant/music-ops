@@ -295,6 +295,14 @@ def test_fx_toggles_present(tmp_path):
     assert all(g in idx for g in ("fxFire", "fxSmoke", "fxParticles", "fxShake", "fxHeat"))
 
 
+def test_export_scene_renderer_present(tmp_path):
+    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
+    idx = (tmp_path / "out" / "p" / "index.html").read_text()
+    # the whole deck drawn on ONE canvas (for a clean captureStream video export)
+    assert "function ttExportFrame" in idx
+    assert "function ttVinylScene" in idx and "function ttCassetteScene" in idx
+
+
 def test_cassette_skin_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
