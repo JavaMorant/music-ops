@@ -192,7 +192,9 @@
   #ov.reel .hook{font-size:23px;}
   #ov.reel{justify-content:center;overflow:hidden;}
   #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
-  #ov.reel .deck{width:min(94vw,56vh);height:min(94vw,56vh);margin:0 auto 18px;}
+  #ov.reel .deck{width:min(80vw,52vh);height:min(80vw,52vh);margin:0 auto 18px;}      /* size: Medium (default) */
+  #ov.reel.size-s .deck{width:min(60vw,42vh);height:min(60vw,42vh);}                   /* Small — fits a phone with room for TikTok UI */
+  #ov.reel.size-l .deck{width:min(96vw,58vh);height:min(96vw,58vh);}                   /* Large — fills the frame */
   #ov.reel .ovnow{transform:scale(1.15);}
   /* reel = clean full-frame for recording: hide ALL the top chrome; Esc exits */
   #ov.reel .ovhead,#ov.reel .fxbar,#ov.reel .hook{display:none;}
@@ -309,6 +311,8 @@
       <div class="reelcard-h">Reel setup</div>
       <div class="reelrow"><span>Skin</span>
         <div class="seg"><button id="ro-vinyl" onclick="reelSetSkin('vinyl')">Vinyl</button><button id="ro-cassette" onclick="reelSetSkin('cassette')">Cassette</button></div></div>
+      <div class="reelrow"><span>Size</span>
+        <div class="seg"><button id="ro-size-s" onclick="reelSetSize('s')">S</button><button id="ro-size-m" onclick="reelSetSize('m')">M</button><button id="ro-size-l" onclick="reelSetSize('l')">L</button></div></div>
       <div class="reelrow"><span>Effects</span>
         <div class="rofx">
           <button class="fxchip" data-rofx="smoke">Smoke</button>
@@ -616,6 +620,7 @@ function openReelOpts(){
     ch.classList.toggle('off', ov.classList.contains('off-'+ch.dataset.rofx)));
   document.getElementById('ro-crewrow').style.display = stemMode ? '' : 'none';  // dancers only exist in remix
   document.getElementById('ro-crew').classList.toggle('off', !ov.classList.contains('crewreel'));
+  applyReelSize();
   document.getElementById('reelopts').classList.add('show');
 }
 function reelSetSkin(which){
@@ -624,6 +629,13 @@ function reelSetSkin(which){
   document.getElementById('ro-vinyl').classList.toggle('on', which==='vinyl');
   document.getElementById('ro-cassette').classList.toggle('on', which==='cassette');
 }
+let reelSize = (function(){ try{ return localStorage.getItem('reelSize') || 'm'; }catch(e){ return 'm'; } })();  // S/M/L deck size, remembered
+function applyReelSize(){
+  const ov=document.getElementById('ov');
+  ov.classList.remove('size-s','size-m','size-l'); ov.classList.add('size-'+reelSize);
+  ['s','m','l'].forEach(x=>{ const b=document.getElementById('ro-size-'+x); if(b) b.classList.toggle('on', x===reelSize); });
+}
+function reelSetSize(s){ reelSize=s; try{ localStorage.setItem('reelSize', s); }catch(e){} applyReelSize(); deckSize(); }
 function reelToggleCrew(){
   const on=document.getElementById('ov').classList.toggle('crewreel');
   document.getElementById('ro-crew').classList.toggle('off', !on); layoutCrew();
