@@ -333,6 +333,7 @@
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label
 let DECK = [], deckCur = -1, dactx, danalyser, ddata;
+let reelSrc = null, reelStartAt = 0, reelDur = 0;  // reel plays the beat via Web Audio (no <audio> → no Chrome fullscreen media bar)
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -643,15 +644,31 @@ function startReel(){
   audioEl.removeAttribute('controls');
   try{ if(!document.fullscreenElement && ov.requestFullscreen) ov.requestFullscreen().catch(()=>{}); }catch(e){}
   // arm: stop + rewind so the beat begins fresh when the delay ends
+  window.__reelBuf = null;
   if(stemMode){ if(dactx && dactx.state==='running') dactx.suspend(); window.__stemPlaying=false; }
-  else { audioEl.pause(); try{ audioEl.currentTime=0; }catch(e){} }
+  else { audioEl.pause(); try{ audioEl.currentTime=0; }catch(e){}
+    // decode the beat into a buffer during the pre-roll, so reelGo can play it via Web Audio
+    deckInitViz();
+    if(dactx && deckCur>=0){ const id=DECK[deckCur].id;
+      fetch('/api/audio?id='+encodeURIComponent(id)).then(r=>r.arrayBuffer()).then(ab=>dactx.decodeAudioData(ab))
+        .then(buf=>{ window.__reelBuf=buf; }).catch(()=>{ window.__reelBuf=null; }); } }
   deckSetPlaying(false);
   // silent 5s pre-roll (no on-screen countdown) — time to hit record in OBS
   _reelTimer=setTimeout(()=>{ if(document.getElementById('ov').classList.contains('reel')) reelGo(); }, 5000);
 }
 function reelGo(){
-  if(stemMode){ if(dactx) dactx.resume(); window.__stemPlaying=true; deckSetPlaying(true); }
-  else { deckInitViz(); audioEl.play().then(()=>deckSetPlaying(true)).catch(()=>{}); }
+  if(stemMode){ if(dactx) dactx.resume(); window.__stemPlaying=true; deckSetPlaying(true); return; }
+  deckInitViz();
+  if(window.__reelBuf && dactx){  // play via Web Audio — no media element, so no Chrome media overlay
+    if(dactx.state==='suspended') dactx.resume();
+    try{ if(reelSrc){ reelSrc.onended=null; reelSrc.stop(); reelSrc.disconnect(); } }catch(e){}
+    reelSrc = dactx.createBufferSource(); reelSrc.buffer = window.__reelBuf; reelSrc.connect(danalyser);
+    reelDur = window.__reelBuf.duration; reelStartAt = dactx.currentTime;
+    reelSrc.onended = ()=>{ window.__reelPlaying=false; deckSetPlaying(false); };  // natural end of the beat
+    reelSrc.start(0); window.__reelPlaying=true; deckSetPlaying(true);
+  } else {  // decode not ready — fall back to the <audio> element (the media bar may appear)
+    audioEl.play().then(()=>deckSetPlaying(true)).catch(()=>{});
+  }
 }
 function exitReel(){
   clearTimeout(_reelTimer);
@@ -659,6 +676,8 @@ function exitReel(){
   ov.classList.remove('reel');
   document.getElementById('reeltgl').textContent='⤢ Reel';
   document.getElementById('reelopts').classList.remove('show');
+  try{ if(reelSrc){ reelSrc.onended=null; reelSrc.stop(); reelSrc.disconnect(); } }catch(e){}
+  reelSrc=null; window.__reelPlaying=false; window.__reelBuf=null;
   audioEl.setAttribute('controls', '');
   if(document.fullscreenElement){ try{ document.exitFullscreen(); }catch(e){} }
   deckSize();
@@ -952,8 +971,10 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
-  isPlaying:()=>window.__stemPlaying || !!(audioEl && !audioEl.paused),
-  getProgress:()=>{ if(!stemMode || !dactx || !stemLoopDur) return null;  // stem mode: tonearm/ring/heat follow the loop, not the paused <audio>
+  isPlaying:()=>window.__stemPlaying || window.__reelPlaying || !!(audioEl && !audioEl.paused),
+  getProgress:()=>{
+    if(window.__reelPlaying && dactx && reelDur) return Math.min(1, (dactx.currentTime - reelStartAt) / reelDur);  // reel buffer playback
+    if(!stemMode || !dactx || !stemLoopDur) return null;  // stem mode: tonearm/ring/heat follow the loop, not the paused <audio>
     const pos = Math.max(0, dactx.currentTime - stemStartAt) + stemStartOffset; return (pos % stemLoopDur) / stemLoopDur; },
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
