@@ -298,13 +298,17 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
-    if(bokeh.length){var spr=bokehSprite();c.save();c.globalCompositeOperation='lighter';  // additive; one pre-rendered orb blitted per particle (~2.4x cheaper than a gradient each) → smoother frame rate
+    if(bokeh.length){c.save();c.globalCompositeOperation='lighter';  // additive — per-particle radial gradient (crisper + per-orb hue; a touch more per-frame cost than the sprite)
       for(var bi=bokeh.length-1;bi>=0;bi--){var bo=bokeh[bi];bo.t+=bo.dt;
         if(bo.t>=1){bokeh.splice(bi,1);continue;}
         bo.y+=bo.vy;bo.x+=bo.vx+Math.sin(bo.t*6.2832+bo.ph)*bo.amp*0.012;
-        var ba=Math.sin(bo.t*3.14159)*bo.peak,d=bo.sz*2;
-        c.globalAlpha=ba;c.drawImage(spr,bo.x-bo.sz,bo.y-bo.sz,d,d);}
-      c.globalAlpha=1;c.restore();}
+        var ba=Math.sin(bo.t*3.14159)*bo.peak,bh=(hue+bo.hoff+360)%360,mid=(0.42-(bo.z||0)*0.3);  // near orbs (high z) = softer core
+        var bg=c.createRadialGradient(bo.x,bo.y,0,bo.x,bo.y,bo.sz);
+        bg.addColorStop(0,'hsla('+bh.toFixed(0)+',90%,72%,'+ba.toFixed(3)+')');
+        bg.addColorStop(mid.toFixed(2),'hsla('+bh.toFixed(0)+',88%,62%,'+(ba*0.4).toFixed(3)+')');
+        bg.addColorStop(1,'hsla('+bh.toFixed(0)+',88%,60%,0)');
+        c.fillStyle=bg;c.beginPath();c.arc(bo.x,bo.y,bo.sz,0,6.2832);c.fill();}
+      c.restore();}
     for(var z=smoke.length-1;z>=0;z--){var pf=smoke[z];pf.y+=pf.vy;pf.vy*=0.997;
       var age=1-pf.life;pf.x=pf.bx+Math.sin(age*9+pf.ph)*pf.amp*age;pf.r=ref*0.003+age*ref*0.013;pf.life-=0.006;
       if(pf.life<=0){smoke.splice(z,1);continue;}
