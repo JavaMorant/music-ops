@@ -67,6 +67,12 @@ def test_does_not_overwrite_a_set_artist_on_a_remix():
     assert a == "Lexa Raballo"   # never flipped to "Abba"
 
 
+def test_does_not_fill_artist_from_reversed_order():
+    # "Title (Mashup) - Artist" with an empty artist must not make the title the artist
+    a, _t = c("", "Come & Locked (Mashup) - Juice WRLD ft. Marshmello")
+    assert a == ""
+
+
 def test_never_blanks_existing_artist():
     assert c("Bicep", "Glue") == ("Bicep", "Glue")
 

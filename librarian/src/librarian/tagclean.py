@@ -45,6 +45,10 @@ _TRAIL_NOISE = re.compile(
 _HANDLE = re.compile(r"\s*[-_]\s*(?:musiclover\d+|spotdown\.org|topic|prod\.?\s*\w+)\s*$", re.I)
 _KBPS = re.compile(r"\s*[\(\[]?\s*\d{2,3}\s*kbps\s*[\)\]]?", re.I)
 _COPYMARK = re.compile(r"\s*\(\s*\d+\s*\)\s*$")
+# a derived "artist" carrying one of these is really a (Remix)/(Edit) title — the
+# file was named "Title - Remixer", so DON'T fill the artist from it.
+_VERSION = re.compile(r"\b(remix|edit|flip|bootleg|vip|refix|rework|mashup|dub|mix|version|amapiano)\b", re.I)
+_ALNUM = re.compile(r"[A-Za-z0-9]")
 
 
 def _norm(s: str) -> str:
@@ -97,7 +101,11 @@ def clean_fields(artist: str, title: str, stem: str = "") -> tuple[str, str]:
             nt = rest.strip()            # title duplicated the known artist — drop it
         return a, nt                     # keep the existing artist verbatim
     da, dt = _split(_clean_text(t or stem))
-    return (da, dt) if da else ("", nt or dt)
+    # only fill the artist when the split looks like a real "Artist - Title"
+    # (a version word in the would-be artist means the order was reversed)
+    if da and not _VERSION.search(da):
+        return da, dt
+    return ("", nt or dt)
 
 
 def build_proposals(library_root: Path) -> list[TagProposal]:
@@ -114,9 +122,10 @@ def build_proposals(library_root: Path) -> list[TagProposal]:
         a, t = cur.get("artist") or "", cur.get("title") or ""
         na, nt = clean_fields(a, t, fp.stem)
         fields: dict[str, str] = {}
-        if nt and nt != t:
+        # never write a value that's been scrubbed down to punctuation/empty
+        if nt and nt != t and _ALNUM.search(nt):
             fields["title"] = nt
-        if na and na != a:
+        if na and na != a and _ALNUM.search(na):
             fields["artist"] = na
         if fields:
             props.append(TagProposal(path=fp, fields=fields,
