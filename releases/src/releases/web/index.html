@@ -190,7 +190,7 @@
   @keyframes hookpop{0%{opacity:0;transform:scale(.7) translateY(8px);}60%{opacity:1;transform:scale(1.06);}100%{opacity:1;transform:none;}}
   #ov .hook.pop{animation:hookpop .5s cubic-bezier(.2,.9,.3,1.2);}
   #ov.reel .hook{font-size:23px;}
-  #ov.reel{justify-content:center;}
+  #ov.reel{justify-content:center;overflow:hidden;}
   #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
   #ov.reel .deck{width:min(94vw,56vh);height:min(94vw,56vh);margin:0 auto 18px;}
   #ov.reel .ovnow{transform:scale(1.15);}
@@ -638,6 +638,8 @@ function startReel(){
   const ov=document.getElementById('ov');
   document.getElementById('reelopts').classList.remove('show');
   ov.classList.add('reel'); document.getElementById('reeltgl').textContent='✕ Exit'; deckSize();
+  // go TRUE browser fullscreen (Start is a user gesture) — hides Chrome's tabs/toolbar entirely
+  try{ if(!document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{}); }catch(e){}
   // arm: stop + rewind so the beat begins fresh when the delay ends
   if(stemMode){ if(dactx && dactx.state==='running') dactx.suspend(); window.__stemPlaying=false; }
   else { audioEl.pause(); try{ audioEl.currentTime=0; }catch(e){} }
@@ -655,8 +657,13 @@ function exitReel(){
   ov.classList.remove('reel');
   document.getElementById('reeltgl').textContent='⤢ Reel';
   document.getElementById('reelopts').classList.remove('show');
+  if(document.fullscreenElement){ try{ document.exitFullscreen(); }catch(e){} }
   deckSize();
 }
+// leaving browser fullscreen (Esc / green button) should also leave reel mode
+document.addEventListener('fullscreenchange', ()=>{
+  if(!document.fullscreenElement && document.getElementById('ov').classList.contains('reel')) exitReel();
+});
 function deckClean(){ const on=document.getElementById('ov').classList.toggle('clean');
   document.getElementById('cleantgl').textContent=on?'⛶ Exit clean':'⛶ Clean'; deckSize(); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=document.getElementById('ov');
