@@ -201,8 +201,8 @@ function ttRun(opts){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
   // soft, slow, glowing orbs drifting across the whole field — the Trap-Nation bokeh
   // look. They fade in and out (t:0->1), sway gently, and are tinted around the hue.
-  function bokehSpawn(energy){var cap=24+Math.floor(energy*44), n=1+Math.floor(energy*2);  // capped lower: radial-gradient orbs are the heaviest per-frame cost
-    for(var q=0;q<n;q++){ if(bokeh.length<cap && Math.random()<0.6){
+  function bokehSpawn(energy){var cap=46+Math.floor(energy*100), n=1+Math.floor(energy*3);  // lush field — cheap now that orbs are blitted sprites, not per-frame gradients
+    for(var q=0;q<n;q++){ if(bokeh.length<cap && Math.random()<0.7){
       var z=Math.random();  // depth: 0 = far (small, sharp, slow), 1 = near (big, soft, fast) → parallax
       bokeh.push({x:Math.random()*fxw,y:fxh*(0.15+Math.random()*1.05),
         vx:(Math.random()*2-1)*fxw*0.00012*(0.35+z*1.7),vy:-(fxh*0.0004)*(0.4+z*1.9)*(0.5+Math.random()*0.8),

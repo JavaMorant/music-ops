@@ -638,8 +638,10 @@ function startReel(){
   const ov=document.getElementById('ov');
   document.getElementById('reelopts').classList.remove('show');
   ov.classList.add('reel'); document.getElementById('reeltgl').textContent='✕ Exit'; deckSize();
-  // go TRUE browser fullscreen (Start is a user gesture) — hides Chrome's tabs/toolbar entirely
-  try{ if(!document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{}); }catch(e){}
+  // fullscreen the DECK overlay (not the whole page): hides Chrome's tabs AND keeps
+  // the <audio> element outside the fullscreen, so Chrome shows no media-control overlay
+  audioEl.removeAttribute('controls');
+  try{ if(!document.fullscreenElement && ov.requestFullscreen) ov.requestFullscreen().catch(()=>{}); }catch(e){}
   // arm: stop + rewind so the beat begins fresh when the delay ends
   if(stemMode){ if(dactx && dactx.state==='running') dactx.suspend(); window.__stemPlaying=false; }
   else { audioEl.pause(); try{ audioEl.currentTime=0; }catch(e){} }
@@ -657,6 +659,7 @@ function exitReel(){
   ov.classList.remove('reel');
   document.getElementById('reeltgl').textContent='⤢ Reel';
   document.getElementById('reelopts').classList.remove('show');
+  audioEl.setAttribute('controls', '');
   if(document.fullscreenElement){ try{ document.exitFullscreen(); }catch(e){} }
   deckSize();
 }
