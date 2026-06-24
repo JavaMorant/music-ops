@@ -193,6 +193,7 @@
   #ov.reel{justify-content:center;overflow:hidden;}
   #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
   #ov.reel .deck{width:min(80vw,52vh);height:min(80vw,52vh);margin:0 auto 18px;}      /* size: Medium (default) */
+  #ov.reel.size-xs .deck{width:min(44vw,32vh);height:min(44vw,32vh);}                  /* Extra-small — lots of room for TikTok UI */
   #ov.reel.size-s .deck{width:min(60vw,42vh);height:min(60vw,42vh);}                   /* Small — fits a phone with room for TikTok UI */
   #ov.reel.size-l .deck{width:min(96vw,58vh);height:min(96vw,58vh);}                   /* Large — fills the frame */
   #ov.reel .ovnow{transform:scale(1.15);}
@@ -312,7 +313,7 @@
       <div class="reelrow"><span>Skin</span>
         <div class="seg"><button id="ro-vinyl" onclick="reelSetSkin('vinyl')">Vinyl</button><button id="ro-cassette" onclick="reelSetSkin('cassette')">Cassette</button></div></div>
       <div class="reelrow"><span>Size</span>
-        <div class="seg"><button id="ro-size-s" onclick="reelSetSize('s')">S</button><button id="ro-size-m" onclick="reelSetSize('m')">M</button><button id="ro-size-l" onclick="reelSetSize('l')">L</button></div></div>
+        <div class="seg"><button id="ro-size-xs" onclick="reelSetSize('xs')">XS</button><button id="ro-size-s" onclick="reelSetSize('s')">S</button><button id="ro-size-m" onclick="reelSetSize('m')">M</button><button id="ro-size-l" onclick="reelSetSize('l')">L</button></div></div>
       <div class="reelrow"><span>Effects</span>
         <div class="rofx">
           <button class="fxchip" data-rofx="smoke">Smoke</button>
@@ -632,8 +633,8 @@ function reelSetSkin(which){
 let reelSize = (function(){ try{ return localStorage.getItem('reelSize') || 'm'; }catch(e){ return 'm'; } })();  // S/M/L deck size, remembered
 function applyReelSize(){
   const ov=document.getElementById('ov');
-  ov.classList.remove('size-s','size-m','size-l'); ov.classList.add('size-'+reelSize);
-  ['s','m','l'].forEach(x=>{ const b=document.getElementById('ro-size-'+x); if(b) b.classList.toggle('on', x===reelSize); });
+  ov.classList.remove('size-xs','size-s','size-m','size-l'); ov.classList.add('size-'+reelSize);
+  ['xs','s','m','l'].forEach(x=>{ const b=document.getElementById('ro-size-'+x); if(b) b.classList.toggle('on', x===reelSize); });
 }
 function reelSetSize(s){ reelSize=s; try{ localStorage.setItem('reelSize', s); }catch(e){} applyReelSize(); deckSize(); }
 function reelToggleCrew(){
