@@ -231,10 +231,26 @@ def colour_by_status(db, *, dry_run: bool = True, backup_to: Path | None = None,
             "legend": {"hot": "red", "cold": "blue", "untouched": "green"}}
 
 
+def _rated_cids(keys, by_title, min_rating: int) -> list:
+    """Content IDs for ``keys`` whose track is rated at least ``min_rating``.
+
+    Rating-gates a crate. ``min_rating=1`` excludes 0-star tracks (a floor-filler
+    can never be unrated) and is scale-safe: a rated track is >=1 whether the
+    backend stores 0-5 or rekordbox's raw 0/51/.../255. Higher thresholds only
+    behave as "stars" on a 0-5 backend, so default to the scale-safe 1.
+    """
+    return [c.ID for k in keys for c in by_title.get(k, [])
+            if (getattr(c, "Rating", 0) or 0) >= min_rating]
+
+
 def build_analytics_crates(db, *, dry_run: bool = True, backup_to: Path | None = None,
-                           recent_n: int = 50) -> list[dict]:
+                           recent_n: int = 50, min_rating: int = 1) -> list[dict]:
     """Auto-build rekordbox playlists from your play stats, under a 'pulse crates'
-    folder: Floor Fillers (in 5+ sets), Resurface (was a staple, gone cold)."""
+    folder: Floor Fillers (in 5+ sets), Resurface (was a staple, gone cold).
+
+    Both crates are rating-gated by ``min_rating`` (default 1 = exclude 0-star):
+    a track you never rated is not a floor-filler no matter how often it played.
+    """
     plays, sets, recent = usb_track_stats(recent_n)
     _by_path, by_title = _index(db)
     crates = {
@@ -243,7 +259,7 @@ def build_analytics_crates(db, *, dry_run: bool = True, backup_to: Path | None =
     }
     plans = []
     for name, keys in crates.items():
-        cids = [c.ID for k in keys for c in by_title.get(k, [])]
+        cids = _rated_cids(keys, by_title, min_rating)
         plans.append({"name": name, "tracks": len(cids), "_cids": cids})
 
     if not dry_run:

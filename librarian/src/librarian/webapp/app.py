@@ -66,6 +66,10 @@ class IngestRequest(BaseModel):
     apply: bool = False
 
 
+class OrganiseRequest(BaseModel):
+    folder: str = ""  # blank = the configured library root
+
+
 class RootRequest(BaseModel):
     path: str
 
@@ -386,9 +390,10 @@ def create_app(config: AppConfig) -> FastAPI:
             return JSONResponse(status_code=503, content={"detail": f"rekordbox DB unavailable: {exc}"})
 
     @app.get("/api/pulse/usb")
-    def get_pulse_usb(source: str = "all") -> dict:
+    def get_pulse_usb(source: str = "all", last_n: int = 50) -> dict:
         """Per-stick play history off mounted CDJ USBs. ``source`` filters the
-        export format: all (DL + DL+ combined), DL, or DL+."""
+        export format: all (DL + DL+ combined), DL, or DL+. ``last_n`` is the
+        recency window (how many recent sets the hot/cold/openers stats use)."""
         from .. import pulse_usb, history_archive
         if not pulse_usb.available():
             return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed (cargo install rekordcrate)"})
@@ -401,7 +406,7 @@ def create_app(config: AppConfig) -> FastAPI:
         sticks = []
         for vol in vols:
             try:
-                sticks.append(pulse_usb.usb_insights(vol, source=source))
+                sticks.append(pulse_usb.usb_insights(vol, last_n=last_n, source=source))
             except Exception as exc:
                 sticks.append({"name": vol.name, "error": str(exc)})
         return {"sticks": sticks}
@@ -422,6 +427,39 @@ def create_app(config: AppConfig) -> FastAPI:
         if req.apply and plan["survivors"]:
             out["applied"] = ingest.apply_ingest(lib, plan)
         return out
+
+    @app.post("/api/organise", dependencies=[Depends(guard_origin)])
+    def post_organise(req: OrganiseRequest, st: AppState = Depends(state)) -> dict:
+        """Organise a library/USB: identify → dedup v2 → classify → reviewable
+        plans (dry-run; never applies from the web). Slow. With an AcoustID key
+        it identifies + classifies; without one it dedups + folder-migrates."""
+        import json as _json
+        from .. import identity as idmod
+        from ..organise import (build_dedup_plan, build_reorg_plan,
+                                build_usb_playlists, read_usb_ratings)
+        from ..organise import organise as run_organise
+
+        root = Path(req.folder).expanduser() if req.folder else st.config.library_root
+        if not root.is_dir():
+            return JSONResponse(status_code=400, content={"detail": f"not a folder: {root}"})
+        key = idmod.get_api_key()
+        is_usb = (root / "PIONEER" / "rekordbox" / "export.pdb").exists()
+        res = run_organise(root, key=key, run_ai=bool(key) or is_usb)
+        out = root / "organise-run"
+        out.mkdir(parents=True, exist_ok=True)
+        base = {"root": str(res.root), "total": res.total, "used_ai": res.used_ai,
+                "identity": "AcoustID" if key else "tags/filename (no key)",
+                "dedup": res.dedup, "out": str(out)}
+        if is_usb:
+            summ = build_usb_playlists(res, out, ratings=read_usb_ratings(root))
+            return {**base, "target": "usb", "playlists": summ["playlists"],
+                    "by_bucket": summ["by_bucket"]}
+        dplan = build_dedup_plan(res.root, res.dup_groups)
+        rplan = build_reorg_plan(res)
+        (out / "dedup-plan.json").write_text(_json.dumps(dplan.to_dict(), indent=2))
+        (out / "reorg-plan.json").write_text(_json.dumps(rplan.to_dict(), indent=2))
+        return {**base, "target": "library", "reorg_relocations": res.reorg_actions,
+                "needs_ai": res.needs_ai}
 
     @app.get("/api/dedupe/plan")
     def get_dedupe(rescan: int = 0, st: AppState = Depends(state)) -> dict:

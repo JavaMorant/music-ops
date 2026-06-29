@@ -108,6 +108,72 @@ def cleanup(
 
 
 @app.command()
+def organise(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root (or USB) to organise")],
+    apply: Annotated[bool, typer.Option("--apply", help="Apply the plans (gated; default dry-run holds everything)")] = False,
+    acoustid_key: Annotated[Optional[str], typer.Option("--acoustid-key", help="AcoustID key (else env ACOUSTID_API_KEY or ~/DJ/.acoustid-key); improves identity on junk filenames")] = None,
+    classify: Annotated[bool, typer.Option("--classify/--no-classify", help="AI-classify into genres (default: on when a key is present; force on for clean-tagged libraries)")] = False,
+    out_dir: Annotated[Path, typer.Option("--out", help="Where to write plans + report")] = Path("organise-run"),
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox XML to keep in sync")] = None,
+) -> None:
+    """Organise a library/USB: identify → dedup v2 → classify → reviewable plans.
+
+    Dry-run by default (holds everything). With an AcoustID key it fingerprints,
+    identifies the real track, and classifies into the 24 buckets; without one it
+    dedups and does a deterministic folder migration, flagging the rest for the AI
+    pass. `--apply` executes the reviewed dedup + reorg plans via the undo journal.
+    """
+    from . import identity as idmod
+    from .engine import apply_plan
+    from .organise import (build_dedup_plan, build_reorg_plan, build_usb_playlists,
+                           read_usb_ratings)
+    from .organise import organise as run_organise
+
+    root = library_root.absolute()
+    rbx = rekordbox_xml.absolute() if rekordbox_xml else None
+    key = acoustid_key or idmod.get_api_key()
+    run_ai = classify or bool(key)
+    is_usb = (root / "PIONEER" / "rekordbox" / "export.pdb").exists()
+    typer.echo(f"Organising {root} — {'guest USB' if is_usb else 'library'} · "
+               f"identity: {'AcoustID' if key else 'tags/filename (no key)'} · "
+               f"classify: {'on' if run_ai else 'off'}")
+    res = run_organise(root, key=key, run_ai=run_ai)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if is_usb:
+        # Guest USB: write importable .m3u8 per bucket; never touch the stick's pdb.
+        ratings = read_usb_ratings(root)
+        summ = build_usb_playlists(res, out_dir, ratings=ratings)
+        d = res.dedup
+        typer.echo(f"  files {res.total} → keepers {d['unique_keepers']} · "
+                   f"dupes {d['drops']} (versions kept {d['distinct_versions_kept']})")
+        typer.echo(f"  {summ['playlists']} importable playlists → {out_dir}")
+        typer.echo("Import the .m3u8 into rekordbox → assign to a fresh stick → export. "
+                   "Nothing on this stick was modified.")
+        return
+
+    dplan = build_dedup_plan(root, res.dup_groups, rekordbox_xml=rbx)
+    rplan = build_reorg_plan(res, rekordbox_xml=rbx)
+    (out_dir / "dedup-plan.json").write_text(json.dumps(dplan.to_dict(), indent=2), encoding="utf-8")
+    (out_dir / "reorg-plan.json").write_text(json.dumps(rplan.to_dict(), indent=2), encoding="utf-8")
+    d = res.dedup
+    typer.echo(f"  files {res.total} → keepers {d['unique_keepers']} · drops {d['drops']} "
+               f"(versions kept {d['distinct_versions_kept']})")
+    typer.echo(f"  reorg relocations {res.reorg_actions}"
+               + ("" if res.used_ai else f" · needs AI pass {res.needs_ai}"))
+    typer.echo(f"  plans → {out_dir}/dedup-plan.json, {out_dir}/reorg-plan.json")
+
+    if apply:
+        runs_dir = root / ".librarian" / "runs"
+        for plan in (dplan, rplan):
+            if plan.actions:
+                j = apply_plan(plan, runs_dir.absolute(), backup=True)
+                typer.echo(f"  applied {len([a for a in j.actions if a.status == DONE])} ({j.run_id})")
+    else:
+        typer.echo("\nDry run — nothing moved. Review the plans, then re-run with --apply.")
+
+
+@app.command()
 def organize(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
     instruction: Annotated[Optional[str], typer.Argument(help="Plain-English request, e.g. 'put all Avicii in Festival/ and quarantine the _spotdown rips'")] = None,
