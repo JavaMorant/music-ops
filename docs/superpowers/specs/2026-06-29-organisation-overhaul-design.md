@@ -132,6 +132,30 @@ Fix:
 5. CLI command + web button wired.
 6. Everything committed on `feat/organise-engine`; a summary of plans/reports for review.
 
+## Build status (2026-06-29, branch `feat/organise-engine`)
+
+Done + tested (212 pytest passing), committed:
+- ✅ Floor-fillers / recs rating-gated (0-star excluded) — `rekordbox_sync._rated_cids`.
+- ✅ Version detection (`versions.py`) + quarantine recovery (`quarantine.py`). Ran on
+  `~/DJ/_quarantine`: **1,642 distinct versions** flagged recoverable; Promiscuous/Wannabe
+  located. Reports under `~/DJ/quarantine-recovery/` (restore held).
+- ✅ Identity stage (`identity.py`) — fpcalc→AcoustID, cached, degrades without key.
+- ✅ Dedup v2 (`dedup_v2.py`) — recording-level, version-preserving.
+- ✅ Classify v2 (`classify_v2.py`) — tiered, identity-aware, cached.
+- ✅ Organise engine (`organise.py`) + `librarian organise` CLI + `/api/organise` web button.
+- ✅ Ran on `~/DJ/library` (7,949): **7,506 keepers, 443 recording-level dupes, 1,764 versions
+  preserved, 6,628 relocations**, 637 needing the AI pass. Plans held under `~/DJ/organise-run/`
+  (both preflight-OK). **Nothing applied.**
+
+Blocked on user action:
+- ⏳ The accurate identity-first AI classify run needs the AcoustID key. Once it's at
+  `~/DJ/.acoustid-key` (or `ACOUSTID_API_KEY`), re-running `librarian organise ~/DJ/library`
+  fills in real identities + genres; cached, so cheap thereafter.
+
+Next increment (not in first-run scope):
+- Guest-USB output mode (genre `.m3u8` + Low/Unrated from pdb ratings) in the engine — the
+  D_MI scratchpad playlists already demonstrate the shape.
+
 ## Open / external
 - **AcoustID API key** not yet on the machine. Identity stage built to read
   `ACOUSTID_API_KEY` (env) or `~/DJ/.acoustid-key`; runs full-accuracy once present,
