@@ -151,6 +151,8 @@ function transHtml(items) {
 
 let usbSource = "all";
 let usbSticks = [];
+let usbWindow = 50;   // recency window for the USB analysis (last N sets); 9999 = all
+const WINDOW_PRESETS = [10, 25, 50, 100, 9999];
 async function organiseStick(si) {
   const s = usbSticks[si];
   if (!s) return;
@@ -169,12 +171,15 @@ async function organiseStick(si) {
 }
 async function loadUsb() {
   try {
-    const r = await fetch("/api/pulse/usb?source=" + encodeURIComponent(usbSource));
+    const r = await fetch("/api/pulse/usb?source=" + encodeURIComponent(usbSource) + "&last_n=" + usbWindow);
     const d = await r.json();
     if (!r.ok) { $("usb").innerHTML = `<div class="banner bad">${esc(d.detail||"error")}</div>`; return; }
     if (!d.sticks.length) { $("usb").innerHTML = '<div class="panel muted">No CDJ stick mounted. Plug one in and hit refresh.</div>'; return; }
     usbSticks = d.sticks;
-    $("usb").innerHTML = d.sticks.map((s, si) => {
+    const winChips = WINDOW_PRESETS.map(n =>
+      `<button class="src${n === usbWindow ? " on" : ""}" onclick="setUsbWindow(${n})">${n >= 9999 ? "All" : n}</button>`).join("");
+    $("usb").innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="muted">Recency window:</span><span id="usbWinToggle">${winChips}</span></div>`
+      + d.sticks.map((s, si) => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
       if (!s.sessions) return `<div class="panel">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -227,13 +232,13 @@ async function loadDesktop() {
     if (!r.ok) { $("desktop").innerHTML = `<div class="panel"><div class="banner bad">${esc(d.detail||"error")}</div><div class="muted">The desktop view needs rekordbox closed-ish (it reads master.db). Your sticks above don't need it.</div></div>`; return; }
     const win = d.window_from ? `last ${d.window} sets · ${d.window_from} → ${d.window_to}` : "no sessions logged yet";
     $("desktop").innerHTML = `<div class="panel">
+      <div class="muted" style="margin-bottom:14px">Window: ${esc(win)}</div>
       <div class="cards" style="margin-bottom:16px">
         ${stat(d.library.toLocaleString(),"tracks in collection")}
         ${stat(d.sessions.toLocaleString(),"logged sets")}
         ${stat(d.coverage_pct+"%","ever played","ok")}
         ${stat(d.untouched.toLocaleString(),"untouched in window","warm")}
       </div>
-      <div class="muted" style="margin-bottom:14px">Window: ${esc(win)}</div>
       <div class="grid2">
         <div><h2 style="margin-top:0">🔥 Staples</h2>${listOl(d.staples, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
         <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(d.cold, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
@@ -241,6 +246,13 @@ async function loadDesktop() {
       <h2>Recent set lean</h2>${bars(d.genre_lean)}
     </div>`;
   } catch (e) { $("desktop").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+
+function setUsbWindow(n) {
+  if (n === usbWindow) return;
+  usbWindow = n;
+  $("usb").innerHTML = '<div class="skel">reading mounted USBs…</div>';
+  loadUsb();
 }
 
 async function ingest(apply) {

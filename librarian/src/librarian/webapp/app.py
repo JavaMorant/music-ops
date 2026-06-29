@@ -386,9 +386,10 @@ def create_app(config: AppConfig) -> FastAPI:
             return JSONResponse(status_code=503, content={"detail": f"rekordbox DB unavailable: {exc}"})
 
     @app.get("/api/pulse/usb")
-    def get_pulse_usb(source: str = "all") -> dict:
+    def get_pulse_usb(source: str = "all", last_n: int = 50) -> dict:
         """Per-stick play history off mounted CDJ USBs. ``source`` filters the
-        export format: all (DL + DL+ combined), DL, or DL+."""
+        export format: all (DL + DL+ combined), DL, or DL+. ``last_n`` is the
+        recency window (how many recent sets the hot/cold/openers stats use)."""
         from .. import pulse_usb, history_archive
         if not pulse_usb.available():
             return JSONResponse(status_code=503, content={"detail": "rekordcrate not installed (cargo install rekordcrate)"})
@@ -401,7 +402,7 @@ def create_app(config: AppConfig) -> FastAPI:
         sticks = []
         for vol in vols:
             try:
-                sticks.append(pulse_usb.usb_insights(vol, source=source))
+                sticks.append(pulse_usb.usb_insights(vol, last_n=last_n, source=source))
             except Exception as exc:
                 sticks.append({"name": vol.name, "error": str(exc)})
         return {"sticks": sticks}
