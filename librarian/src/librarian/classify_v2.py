@@ -143,19 +143,30 @@ class ClassifyCache:
         self.path.write_text(json.dumps(self._data, indent=1))
 
 
-def _run_pass(tracks, model, effort, call, batch_size):
-    """Classify a list of track dicts (each carrying 'key'); return {key: ClassifyResult}."""
+def _run_pass(tracks, model, effort, call, batch_size, workers=6):
+    """Classify a list of track dicts (each carrying 'key'); return {key: ClassifyResult}.
+    Batches run concurrently (the call creates its own client and is thread-safe)."""
+    import concurrent.futures as cf
+    import threading
+
     out: dict[str, ClassifyResult] = {}
-    for start in range(0, len(tracks), batch_size):
-        chunk = tracks[start:start + batch_size]
+    lock = threading.Lock()
+    chunks = [tracks[i:i + batch_size] for i in range(0, len(tracks), batch_size)]
+
+    def work(chunk):
         try:
-            for r in call(chunk, model, effort):
+            results = call(chunk, model, effort)
+        except Exception:
+            return  # a failed batch is skipped, not fatal; a re-run picks it up
+        with lock:
+            for r in results:
                 idx = int(r["index"])
                 if 0 <= idx < len(chunk):
                     out[chunk[idx]["key"]] = ClassifyResult(
                         r["genre"], r["confidence"], r.get("note", ""))
-        except Exception:
-            continue  # a failed batch is skipped, not fatal; re-run picks it up
+
+    with cf.ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(work, chunks))
     return out
 
 

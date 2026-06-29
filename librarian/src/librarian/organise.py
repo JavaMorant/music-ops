@@ -99,9 +99,11 @@ def organise(
     keepers = [g.keep for g in groups]
     drops = [d for g in groups for d in g.drops]
 
-    # Stage 3 — classify (AI on real identity if a key is available)
+    # Stage 3 — classify. run_ai drives classification independently of the
+    # AcoustID key: the key only improves IDENTITY (junk filenames). A library
+    # with clean tags classifies accurately without one.
     genres: dict = {}
-    used_ai = bool(run_ai and key)
+    used_ai = bool(run_ai)
     if used_ai:
         tracks = [{"key": classify_v2.track_key(k.artist, k.title, k.mbid),
                    "artist": k.artist, "title": k.title,

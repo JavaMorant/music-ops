@@ -111,7 +111,8 @@ def cleanup(
 def organise(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root (or USB) to organise")],
     apply: Annotated[bool, typer.Option("--apply", help="Apply the plans (gated; default dry-run holds everything)")] = False,
-    acoustid_key: Annotated[Optional[str], typer.Option("--acoustid-key", help="AcoustID key (else env ACOUSTID_API_KEY or ~/DJ/.acoustid-key); enables identify+classify")] = None,
+    acoustid_key: Annotated[Optional[str], typer.Option("--acoustid-key", help="AcoustID key (else env ACOUSTID_API_KEY or ~/DJ/.acoustid-key); improves identity on junk filenames")] = None,
+    classify: Annotated[bool, typer.Option("--classify/--no-classify", help="AI-classify into genres (default: on when a key is present; force on for clean-tagged libraries)")] = False,
     out_dir: Annotated[Path, typer.Option("--out", help="Where to write plans + report")] = Path("organise-run"),
     rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox XML to keep in sync")] = None,
 ) -> None:
@@ -130,8 +131,10 @@ def organise(
     root = library_root.absolute()
     rbx = rekordbox_xml.absolute() if rekordbox_xml else None
     key = acoustid_key or idmod.get_api_key()
-    typer.echo(f"Organising {root} — identity: {'AcoustID' if key else 'tags/filename (no key)'}")
-    res = run_organise(root, key=key, run_ai=bool(key))
+    run_ai = classify or bool(key)
+    typer.echo(f"Organising {root} — identity: {'AcoustID' if key else 'tags/filename (no key)'}"
+               f" · classify: {'on' if run_ai else 'off'}")
+    res = run_organise(root, key=key, run_ai=run_ai)
     dplan = build_dedup_plan(root, res.drops, rekordbox_xml=rbx)
     rplan = build_reorg_plan(res, rekordbox_xml=rbx)
 
