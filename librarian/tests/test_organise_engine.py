@@ -39,7 +39,7 @@ def test_plans_are_reversible_and_typed(tmp_path):
     _lib(tmp_path)
     res = organise.organise(tmp_path, key=None, run_ai=False)
 
-    dplan = organise.build_dedup_plan(tmp_path, res.drops)
+    dplan = organise.build_dedup_plan(tmp_path, res.dup_groups)
     assert dplan.actions and all(a.kind == QUARANTINE for a in dplan.actions)
 
     rplan = organise.build_reorg_plan(res)
@@ -48,3 +48,23 @@ def test_plans_are_reversible_and_typed(tmp_path):
     assert all(a.dest.parent.name in ("UK Rap", "Pop") for a in rplan.actions)
     # nothing is deleted: every drop maps to a quarantine destination
     assert all(a.src != a.dest for a in dplan.actions)
+
+
+def test_dedup_redirects_cues_to_keeper_not_quarantine(tmp_path):
+    """rekordbox cue-safety invariant: a quarantined duplicate's cues must follow
+    the KEPT copy that stays in the library, never the reject in _quarantine."""
+    _lib(tmp_path)
+    res = organise.organise(tmp_path, key=None, run_ai=False)
+
+    dplan = organise.build_dedup_plan(tmp_path, res.dup_groups)
+    assert dplan.actions and dplan.location_redirects
+
+    # the true drop -> keeper mapping straight from the dedup grouping
+    drop_to_keeper = {d.path: g.keep.path for g in res.dup_groups for d in g.drops}
+    assert drop_to_keeper  # the fixture contains a real recording-level duplicate
+
+    for a in dplan.actions:
+        keeper = dplan.location_redirects[a.src]
+        assert keeper == drop_to_keeper[a.src]  # points at the kept copy...
+        assert keeper != a.dest                 # ...not the quarantine reject
+        assert keeper.exists()                  # the keeper stays in the library

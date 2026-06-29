@@ -46,8 +46,8 @@ class OrganiseResult:
     root: Path
     total: int
     dedup: dict
-    drops: list = field(default_factory=list)          # FileInfo
     keepers: list = field(default_factory=list)         # FileInfo
+    dup_groups: list = field(default_factory=list)      # DupGroup (keep + drops linkage)
     genres: dict = field(default_factory=dict)          # key -> genre
     reorg_actions: int = 0
     needs_ai: int = 0
@@ -97,7 +97,6 @@ def organise(
     # Stage 2 — dedup v2 (recording-level, version-preserving)
     groups = dedup_v2.plan_groups(infos)
     keepers = [g.keep for g in groups]
-    drops = [d for g in groups for d in g.drops]
 
     # Stage 3 — classify. run_ai drives classification independently of the
     # AcoustID key: the key only improves IDENTITY (junk filenames). A library
@@ -120,21 +119,29 @@ def organise(
                    if not used_ai and (fi.path.parent.name in AMBIGUOUS_FOLDERS
                                        or fi.path.parent.name not in FOLDER_MIGRATION))
     return OrganiseResult(root=root, total=len(paths), dedup=dedup_v2.summarise(groups),
-                          drops=drops, keepers=keepers, genres=genres,
+                          keepers=keepers, dup_groups=groups, genres=genres,
                           reorg_actions=reorg, needs_ai=needs_ai, used_ai=used_ai)
 
 
-def build_dedup_plan(root: Path, drops, rekordbox_xml: Path | None = None) -> Plan:
-    """Reversible QUARANTINE plan for dedup drops (never deletes)."""
+def build_dedup_plan(root: Path, groups, rekordbox_xml: Path | None = None) -> Plan:
+    """Reversible QUARANTINE plan for dedup drops (never deletes).
+
+    Each dropped duplicate is moved to quarantine, but its rekordbox cues are
+    redirected to the KEPT copy of the same recording — so hot/memory cues land
+    on the surviving track in the library, not on the reject in _quarantine.
+    """
     root = Path(root).absolute()
     reserved: set[str] = set()
     actions = []
-    for fi in drops:
-        dest = quarantine_dest(root, fi.path.name, reserved)
-        reserved.add(norm_key(dest))
-        actions.append(Action(QUARANTINE, fi.path, dest, "recording-level duplicate"))
+    redirects: dict[Path, Path] = {}
+    for g in groups:
+        for drop in g.drops:
+            dest = quarantine_dest(root, drop.path.name, reserved)
+            reserved.add(norm_key(dest))
+            actions.append(Action(QUARANTINE, drop.path, dest, "recording-level duplicate"))
+            redirects[drop.path] = g.keep.path
     return Plan(library_root=root, actions=actions, rekordbox_xml=rekordbox_xml,
-                location_redirects={a.src: a.dest for a in actions})
+                location_redirects=redirects)
 
 
 def _safe(name: str) -> str:

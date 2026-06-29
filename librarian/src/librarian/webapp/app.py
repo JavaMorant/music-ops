@@ -454,7 +454,7 @@ def create_app(config: AppConfig) -> FastAPI:
             summ = build_usb_playlists(res, out, ratings=read_usb_ratings(root))
             return {**base, "target": "usb", "playlists": summ["playlists"],
                     "by_bucket": summ["by_bucket"]}
-        dplan = build_dedup_plan(res.root, res.drops)
+        dplan = build_dedup_plan(res.root, res.dup_groups)
         rplan = build_reorg_plan(res)
         (out / "dedup-plan.json").write_text(_json.dumps(dplan.to_dict(), indent=2))
         (out / "reorg-plan.json").write_text(_json.dumps(rplan.to_dict(), indent=2))

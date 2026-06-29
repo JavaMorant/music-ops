@@ -152,7 +152,7 @@ def organise(
                    "Nothing on this stick was modified.")
         return
 
-    dplan = build_dedup_plan(root, res.drops, rekordbox_xml=rbx)
+    dplan = build_dedup_plan(root, res.dup_groups, rekordbox_xml=rbx)
     rplan = build_reorg_plan(res, rekordbox_xml=rbx)
     (out_dir / "dedup-plan.json").write_text(json.dumps(dplan.to_dict(), indent=2), encoding="utf-8")
     (out_dir / "reorg-plan.json").write_text(json.dumps(rplan.to_dict(), indent=2), encoding="utf-8")
