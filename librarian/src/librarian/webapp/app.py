@@ -66,6 +66,10 @@ class IngestRequest(BaseModel):
     apply: bool = False
 
 
+class OrganiseRequest(BaseModel):
+    folder: str = ""  # blank = the configured library root
+
+
 class RootRequest(BaseModel):
     path: str
 
@@ -423,6 +427,34 @@ def create_app(config: AppConfig) -> FastAPI:
         if req.apply and plan["survivors"]:
             out["applied"] = ingest.apply_ingest(lib, plan)
         return out
+
+    @app.post("/api/organise", dependencies=[Depends(guard_origin)])
+    def post_organise(req: OrganiseRequest, st: AppState = Depends(state)) -> dict:
+        """Organise a library/USB: identify → dedup v2 → classify → reviewable
+        plans (dry-run; never applies from the web). Slow. With an AcoustID key
+        it identifies + classifies; without one it dedups + folder-migrates."""
+        import json as _json
+        from .. import identity as idmod
+        from ..organise import build_dedup_plan, build_reorg_plan
+        from ..organise import organise as run_organise
+
+        root = Path(req.folder).expanduser() if req.folder else st.config.library_root
+        if not root.is_dir():
+            return JSONResponse(status_code=400, content={"detail": f"not a folder: {root}"})
+        key = idmod.get_api_key()
+        res = run_organise(root, key=key, run_ai=bool(key))
+        dplan = build_dedup_plan(res.root, res.drops)
+        rplan = build_reorg_plan(res)
+        out = root / "organise-run"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "dedup-plan.json").write_text(_json.dumps(dplan.to_dict(), indent=2))
+        (out / "reorg-plan.json").write_text(_json.dumps(rplan.to_dict(), indent=2))
+        return {
+            "root": str(res.root), "total": res.total, "used_ai": res.used_ai,
+            "identity": "AcoustID" if key else "tags/filename (no key)",
+            "dedup": res.dedup, "reorg_relocations": res.reorg_actions,
+            "needs_ai": res.needs_ai, "out": str(out),
+        }
 
     @app.get("/api/dedupe/plan")
     def get_dedupe(rescan: int = 0, st: AppState = Depends(state)) -> dict:

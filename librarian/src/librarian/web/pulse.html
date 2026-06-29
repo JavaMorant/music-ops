@@ -95,6 +95,17 @@
     <div id="ingOut"></div>
   </div>
 
+  <h2>Organise <span class="muted">— identify → dedup v2 → genre, as reviewable plans</span></h2>
+  <div class="panel">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input id="orgFolder" type="text" value="~/DJ/library"
+        style="flex:1;min-width:240px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:12px" />
+      <button id="orgRun" class="ghost">Organise (plan)</button>
+    </div>
+    <div class="muted" style="margin-top:8px">Recording-level dedup (keeps distinct versions) + genre reorg into the 24 buckets. With an AcoustID key it identifies the real track first; without one it dedups + folder-migrates. Writes reviewable plans, moves nothing.</div>
+    <div id="orgOut"></div>
+  </div>
+
   <h2 style="display:flex;align-items:center;gap:10px">Your sticks <span class="muted">— what you actually play</span>
     <span style="flex:1"></span>
     <span id="srcToggle">
@@ -364,6 +375,26 @@ document.getElementById("srcToggle").onclick = (e) => {
   document.querySelectorAll("#srcToggle .src").forEach(x => x.classList.toggle("on", x === b));
   loadUsb();
 };
+async function organiseLibrary() {
+  const folder = $("orgFolder").value.trim();
+  $("orgRun").disabled = true;
+  $("orgOut").innerHTML = '<div class="skel">organising… (identify + dedup + classify — can take a minute)</div>';
+  try {
+    const r = await fetch("/api/organise", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folder }) });
+    const d = await r.json();
+    if (!r.ok) { $("orgOut").innerHTML = `<div class="banner bad">${esc(d.detail || "error")}</div>`; $("orgRun").disabled = false; return; }
+    const dd = d.dedup;
+    $("orgOut").innerHTML = `<div class="cards" style="margin:14px 0">
+      ${stat(d.total.toLocaleString(), "files")}
+      ${stat(dd.unique_keepers.toLocaleString(), "keepers", "ok")}
+      ${stat(dd.drops.toLocaleString(), "dupes → quarantine", "warm")}
+      ${stat(dd.distinct_versions_kept.toLocaleString(), "versions kept", "accent")}</div>
+      <div class="muted">Identity: ${esc(d.identity)} · reorg relocations: <b style="color:var(--text)">${d.reorg_relocations.toLocaleString()}</b>${d.used_ai ? "" : ` · needs AI pass: ${d.needs_ai.toLocaleString()}`}</div>
+      <div class="muted" style="margin-top:6px">Plans written to <code>${esc(d.out)}</code> — nothing moved. Review, then <code>librarian apply</code>.</div>`;
+  } catch (e) { $("orgOut").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  $("orgRun").disabled = false;
+}
+$("orgRun").onclick = organiseLibrary;
 load();
 </script>
 </body>
