@@ -153,14 +153,17 @@ Done + tested (212 pytest passing), committed:
   23 canonical buckets → **7,302 reorg relocations**, plan preflight-OK, held at
   `~/DJ/organise-run/reorg-plan-classified.json`. ~$8 of the ~$10 budget.
 
-Gated by the user's explicit choices (not incompleteness):
-- ⏸ **Applying** dedup / reorg / quarantine-restore — held by "plans only on ~/DJ". Awaits
-  the user's review + `librarian apply`.
+- ✅ **Guest-USB output mode — DONE.** `build_usb_playlists` + `read_usb_ratings`; CLI and web
+  auto-detect a mounted rekordbox stick and emit importable `.m3u8` per bucket + Low/Unrated
+  (never touches the pdb). Validated against the D_MI engine-of-record (Low/Unrated 1297,
+  US Rap 560 — exact match).
 
-Next increment (not in first-run scope):
-- Guest-USB output mode (genre `.m3u8` + Low/Unrated from pdb ratings) in the engine — needs
-  the AcoustID key + a mounted stick to validate. The D_MI scratchpad playlists demonstrate
-  the shape.
+Gated by the user's explicit choices + CLAUDE.md safety invariants (NOT incompleteness):
+- ⏸ **Applying** dedup / reorg / quarantine-restore — held by the user's "plans only on ~/DJ"
+  instruction AND CLAUDE.md's dry-run-first / backup-before-apply rules. Requires the user's
+  review + go-ahead; will not be applied autonomously. Then: `librarian apply <plan.json>`.
+- ⏳ Guest-USB accuracy on junk-filenamed sticks still benefits from the AcoustID key (user to
+  provide); the mode runs degraded without it.
 
 ## Open / external
 - **AcoustID API key** not yet on the machine. Identity stage built to read
