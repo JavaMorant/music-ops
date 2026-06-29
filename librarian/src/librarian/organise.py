@@ -108,9 +108,11 @@ def organise(
         tracks = [{"key": classify_v2.track_key(k.artist, k.title, k.mbid),
                    "artist": k.artist, "title": k.title,
                    "filename": k.path.name, "genre": ""} for k in keepers]
-        genres = {kk: r.genre for kk, r in classify_v2.classify(
-            tracks, cache=classify_v2.ClassifyCache(cache_dir / "classify.json"),
-            call=classify_call).items()}
+        canon = {g.casefold(): g for g in classify_v2.GENRES}
+        genres = {kk: canon.get(r.genre.casefold(), r.genre)
+                  for kk, r in classify_v2.classify(
+                      tracks, cache=classify_v2.ClassifyCache(cache_dir / "classify.json"),
+                      call=classify_call).items()}
 
     reorg = sum(1 for fi in keepers
                 if (b := _genre_for(fi, genres, used_ai)) and fi.path.parent.name != b)
