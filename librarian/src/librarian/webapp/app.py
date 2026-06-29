@@ -435,26 +435,31 @@ def create_app(config: AppConfig) -> FastAPI:
         it identifies + classifies; without one it dedups + folder-migrates."""
         import json as _json
         from .. import identity as idmod
-        from ..organise import build_dedup_plan, build_reorg_plan
+        from ..organise import (build_dedup_plan, build_reorg_plan,
+                                build_usb_playlists, read_usb_ratings)
         from ..organise import organise as run_organise
 
         root = Path(req.folder).expanduser() if req.folder else st.config.library_root
         if not root.is_dir():
             return JSONResponse(status_code=400, content={"detail": f"not a folder: {root}"})
         key = idmod.get_api_key()
-        res = run_organise(root, key=key, run_ai=bool(key))
-        dplan = build_dedup_plan(res.root, res.drops)
-        rplan = build_reorg_plan(res)
+        is_usb = (root / "PIONEER" / "rekordbox" / "export.pdb").exists()
+        res = run_organise(root, key=key, run_ai=bool(key) or is_usb)
         out = root / "organise-run"
         out.mkdir(parents=True, exist_ok=True)
+        base = {"root": str(res.root), "total": res.total, "used_ai": res.used_ai,
+                "identity": "AcoustID" if key else "tags/filename (no key)",
+                "dedup": res.dedup, "out": str(out)}
+        if is_usb:
+            summ = build_usb_playlists(res, out, ratings=read_usb_ratings(root))
+            return {**base, "target": "usb", "playlists": summ["playlists"],
+                    "by_bucket": summ["by_bucket"]}
+        dplan = build_dedup_plan(res.root, res.drops)
+        rplan = build_reorg_plan(res)
         (out / "dedup-plan.json").write_text(_json.dumps(dplan.to_dict(), indent=2))
         (out / "reorg-plan.json").write_text(_json.dumps(rplan.to_dict(), indent=2))
-        return {
-            "root": str(res.root), "total": res.total, "used_ai": res.used_ai,
-            "identity": "AcoustID" if key else "tags/filename (no key)",
-            "dedup": res.dedup, "reorg_relocations": res.reorg_actions,
-            "needs_ai": res.needs_ai, "out": str(out),
-        }
+        return {**base, "target": "library", "reorg_relocations": res.reorg_actions,
+                "needs_ai": res.needs_ai}
 
     @app.get("/api/dedupe/plan")
     def get_dedupe(rescan: int = 0, st: AppState = Depends(state)) -> dict:

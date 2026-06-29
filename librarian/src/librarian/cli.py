@@ -125,20 +125,35 @@ def organise(
     """
     from . import identity as idmod
     from .engine import apply_plan
-    from .organise import build_dedup_plan, build_reorg_plan
+    from .organise import (build_dedup_plan, build_reorg_plan, build_usb_playlists,
+                           read_usb_ratings)
     from .organise import organise as run_organise
 
     root = library_root.absolute()
     rbx = rekordbox_xml.absolute() if rekordbox_xml else None
     key = acoustid_key or idmod.get_api_key()
     run_ai = classify or bool(key)
-    typer.echo(f"Organising {root} — identity: {'AcoustID' if key else 'tags/filename (no key)'}"
-               f" · classify: {'on' if run_ai else 'off'}")
+    is_usb = (root / "PIONEER" / "rekordbox" / "export.pdb").exists()
+    typer.echo(f"Organising {root} — {'guest USB' if is_usb else 'library'} · "
+               f"identity: {'AcoustID' if key else 'tags/filename (no key)'} · "
+               f"classify: {'on' if run_ai else 'off'}")
     res = run_organise(root, key=key, run_ai=run_ai)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if is_usb:
+        # Guest USB: write importable .m3u8 per bucket; never touch the stick's pdb.
+        ratings = read_usb_ratings(root)
+        summ = build_usb_playlists(res, out_dir, ratings=ratings)
+        d = res.dedup
+        typer.echo(f"  files {res.total} → keepers {d['unique_keepers']} · "
+                   f"dupes {d['drops']} (versions kept {d['distinct_versions_kept']})")
+        typer.echo(f"  {summ['playlists']} importable playlists → {out_dir}")
+        typer.echo("Import the .m3u8 into rekordbox → assign to a fresh stick → export. "
+                   "Nothing on this stick was modified.")
+        return
+
     dplan = build_dedup_plan(root, res.drops, rekordbox_xml=rbx)
     rplan = build_reorg_plan(res, rekordbox_xml=rbx)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "dedup-plan.json").write_text(json.dumps(dplan.to_dict(), indent=2), encoding="utf-8")
     (out_dir / "reorg-plan.json").write_text(json.dumps(rplan.to_dict(), indent=2), encoding="utf-8")
     d = res.dedup

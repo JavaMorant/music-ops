@@ -137,6 +137,78 @@ def build_dedup_plan(root: Path, drops, rekordbox_xml: Path | None = None) -> Pl
                 location_redirects={a.src: a.dest for a in actions})
 
 
+def _safe(name: str) -> str:
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"[^\w .&!-]", " ", name)).strip() or "crate"
+
+
+def build_usb_playlists(
+    result: OrganiseResult,
+    out_dir: Path,
+    *,
+    ratings: dict | None = None,
+    low_rating_max: int = 1,
+) -> dict:
+    """Guest-USB output: one rekordbox-importable .m3u8 per genre bucket + a
+    'Low _ Unrated' playlist (rating <= ``low_rating_max``, which wins over genre).
+    Writes nothing to the stick's pdb; the owner imports these into rekordbox.
+
+    ``ratings`` maps a keeper's path → 0-5 stars (from the stick's pdb). Missing =
+    unrated (0). Returns a per-bucket summary.
+    """
+    ratings = ratings or {}
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    buckets: dict[str, list] = {}
+    for fi in result.keepers:
+        genre = _genre_for(fi, result.genres, result.used_ai)
+        if not genre:
+            continue
+        rating = ratings.get(str(fi.path), ratings.get(fi.path, 0))
+        bucket = "Low _ Unrated" if rating <= low_rating_max else genre
+        buckets.setdefault(bucket, []).append(fi)
+
+    summary = {}
+    for bucket, items in buckets.items():
+        items.sort(key=lambda fi: ((fi.artist or "").lower(), (fi.title or "").lower()))
+        m3u, txt = ["#EXTM3U"], []
+        for fi in items:
+            label = f"{fi.artist} - {fi.title}".strip(" -") or fi.path.stem
+            m3u.append(f"#EXTINF:-1,{label}")
+            m3u.append(str(fi.path))
+            txt.append(label)
+        base = _safe(bucket)
+        (out_dir / f"{base}.m3u8").write_text("\n".join(m3u) + "\n", encoding="utf-8")
+        (out_dir / f"{base}.txt").write_text("\n".join(txt) + "\n", encoding="utf-8")
+        summary[bucket] = len(items)
+    return {"folder": str(out_dir), "playlists": len(summary), "by_bucket": summary}
+
+
+def read_usb_ratings(mount: Path) -> dict:
+    """{on-stick absolute path → 0-5 rating} read from the stick's export.pdb.
+    Empty if no pdb / rekordcrate unavailable."""
+    import re
+    import subprocess
+    mount = Path(mount)
+    pdb = mount / "PIONEER" / "rekordbox" / "export.pdb"
+    rc = Path.home() / ".cargo" / "bin" / "rekordcrate"
+    if not pdb.exists() or not rc.exists():
+        return {}
+    try:
+        txt = subprocess.run([str(rc), "dump-pdb", str(pdb)],
+                             capture_output=True, text=True, timeout=300).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    out: dict = {}
+    for m in re.finditer(r"Track\(Track \{(.*?)\}\)", txt):
+        b = m.group(1)
+        fp = re.search(r'file_path: DeviceSQLString\("((?:[^"\\]|\\.)*)"\)', b)
+        rt = re.search(r"rating: (\d+)", b)
+        if fp:
+            out[str(mount / fp.group(1).lstrip("/"))] = int(rt.group(1)) if rt else 0
+    return out
+
+
 def build_reorg_plan(result: OrganiseResult, rekordbox_xml: Path | None = None) -> Plan:
     """Reversible MOVE plan filing each keeper into its (new) genre bucket."""
     root = result.root
