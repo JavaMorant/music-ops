@@ -147,14 +147,20 @@ Done + tested (212 pytest passing), committed:
   preserved, 6,628 relocations**, 637 needing the AI pass. Plans held under `~/DJ/organise-run/`
   (both preflight-OK). **Nothing applied.**
 
-Blocked on user action:
-- ⏳ The accurate identity-first AI classify run needs the AcoustID key. Once it's at
-  `~/DJ/.acoustid-key` (or `ACOUSTID_API_KEY`), re-running `librarian organise ~/DJ/library`
-  fills in real identities + genres; cached, so cheap thereafter.
+- ✅ **Accurate AI genre classification of `~/DJ/library` — DONE** (not key-blocked: the
+  library has clean tags; the AcoustID key only matters for junk-filenamed guest USBs).
+  Classify decoupled from the key, batches run concurrently. Classified 7,491 keepers into
+  23 canonical buckets → **7,302 reorg relocations**, plan preflight-OK, held at
+  `~/DJ/organise-run/reorg-plan-classified.json`. ~$8 of the ~$10 budget.
+
+Gated by the user's explicit choices (not incompleteness):
+- ⏸ **Applying** dedup / reorg / quarantine-restore — held by "plans only on ~/DJ". Awaits
+  the user's review + `librarian apply`.
 
 Next increment (not in first-run scope):
-- Guest-USB output mode (genre `.m3u8` + Low/Unrated from pdb ratings) in the engine — the
-  D_MI scratchpad playlists already demonstrate the shape.
+- Guest-USB output mode (genre `.m3u8` + Low/Unrated from pdb ratings) in the engine — needs
+  the AcoustID key + a mounted stick to validate. The D_MI scratchpad playlists demonstrate
+  the shape.
 
 ## Open / external
 - **AcoustID API key** not yet on the machine. Identity stage built to read
