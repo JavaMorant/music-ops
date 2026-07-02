@@ -168,7 +168,7 @@ def test_app_assets_split_out(client):
 
 - [ ] **Step 2: Run to verify failure.**
 
-- [ ] **Step 3: Implement** — move `index.html`'s `<style>` body (minus already-moved deck rules) to `css/app.css`; move the `<script>` body to `js/app.js` except the deck helpers listed above, which become `deck/deck.js` (rename call sites: `ovSmokeAt()` → `deckSmokeAt(ov)`, skin toggle → `deckSetSkin`). In `pack.py`, replace its duplicated helper functions (`604-663` portion that matches) with `__DECK_JS__` inlining `deck.js` + the pack's残 glue calling `deckSetSkin`/`deckSetPlaying`/`deckSmokeAt`.
+- [ ] **Step 3: Implement** — move `index.html`'s `<style>` body (minus already-moved deck rules) to `css/app.css`; move the `<script>` body to `js/app.js` except the deck helpers listed above, which become `deck/deck.js` (rename call sites: `ovSmokeAt()` → `deckSmokeAt(ov)`, skin toggle → `deckSetSkin`). In `pack.py`, replace its duplicated helper functions (`604-663` portion that matches) with `__DECK_JS__` inlining `deck.js` + the pack's remaining glue calling `deckSetSkin`/`deckSetPlaying`/`deckSmokeAt`.
 
 - [ ] **Step 4: Full suite + manual check** (app: play, skin toggle, FX chips, remix crew, reel modal; pack build: play, skin, reel toggle).
 
