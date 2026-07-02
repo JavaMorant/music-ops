@@ -154,7 +154,18 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
 - The turntable is **beat-reactive**: a glowing, frequency-coloured spectrum, a
   bass-driven halo + sparks, a progress ring, the label pulsing on the kick, and
   (in reel) the scene shaking to the bass. The same effects run in the exported
-  pack page (one shared module, `/api/turntable.js`).
+  pack page — both the app and the pack share one deck module
+  (`src/releases/web/deck/`: `turntable.js`, `deck.css`, `deck.html`, `deck.js`).
+  The app serves it at `/api/turntable.js`; the pack inlines it so the zip is
+  fully self-contained (no CDN, no external font file).
+- **Themes:** the app defaults to the **editorial** look — champagne brass
+  (`#d4aa5e`), record-red (`#b3352c`), violet (`#b98ede`), and self-hosted
+  Fraunces display type (`web/fonts/fraunces.woff2`), with soft card-style track
+  rows. A header toggle (**Classic ⇄ Editorial**) switches to the prior palette
+  and type, persisted in `localStorage`. (Row structure is CSS-restyled in both
+  themes — classic renders flat with the old palette; a full card Tracks tab is a
+  later plan.) Asset layout: `web/css/app.css` (layout), `web/css/themes.css`
+  (the two `[data-theme]` token sets), `web/js/app.js` (all app JS).
 - **Recording for socials:** the **● Record reel** button does a quick one-click
   tab-capture → mp4, but for posting-quality vertical clips record with **OBS** —
   see [`RECORDING.md`](RECORDING.md) for the full recipe (portrait window + Clean
@@ -173,6 +184,10 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
   WeTransfer/Drive, or drop the folder on a free static host (Netlify Drop) for
   an instant shareable **player link**. Also `releases pack "Name" --genre trap
   --cover art.jpg`. Read-only — exports copies, never moves your files.
+  The pack is **themed**: editorial by default; pass `--theme classic` (or
+  `--theme editorial`) to the CLI, or append `?theme=classic` (or
+  `?theme=editorial`) to the URL at runtime. Fraunces falls back to Georgia when
+  viewed offline — no font file ships in the pack.
 - **Preview plan** shows the moves + tag edits; **Apply** files + tags everything
   (journaled); **Undo last** reverses it.
 - Safe by construction: binds 127.0.0.1 only, mutating routes are origin-guarded,
@@ -255,3 +270,24 @@ CLI end-to-end against a synthetic library. A real-library test runs if
 `pip install -e '.[ai]'` reserves the Anthropic client for a flagged
 "what this needs to ship" estimator (arrangement / mix / vocal checklist from a
 project's bounce). Core ships first.
+
+## Once-over status
+
+**Plan A — foundation + themes** (done, merged to `main`):
+- Inline CSS/JS extracted from `index.html` into `web/css/app.css` + `web/js/app.js`.
+- Shared deck module: `web/deck/{turntable.js,deck.css,deck.html,deck.js}` — consumed
+  by both the live app (served at `/api/turntable.js` etc.) and the self-contained
+  exported pack.
+- Theme layer: `web/css/themes.css` holds `[data-theme="classic"]` and
+  `[data-theme="editorial"]` custom-property token sets; layout CSS uses `var(--)`.
+- Editorial is the new default look (champagne brass / record-red / violet /
+  self-hosted Fraunces). Classic toggle in the header persists to `localStorage`
+  and faithfully reverts the prior palette and type. Track rows are CSS-restyled
+  as soft cards in editorial and flat in classic — not a DOM rewrite (full card
+  Tracks tab is a later plan).
+- Exported packs: editorial by default; `releases pack --theme classic|editorial`
+  CLI flag; `?theme=` query-string runtime override; no font file in the zip
+  (Fraunces falls back to Georgia).
+
+**Plan B** (management hub — 4 tabs), **Plan C** (record studio / OBS automation),
+**Plan D** (reel FX + pack player parity): pending.
