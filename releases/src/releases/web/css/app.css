@@ -1,6 +1,5 @@
   :root {
-    --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
-    --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149; --deck-size:320px;
+    --deck-size:320px;
     color-scheme: dark;  /* dark native <audio> controls + scrollbars — no light-grey strip at the bottom */
   }
   html { background:var(--bg); }  /* also covers overscroll/rubber-band so it never flashes white */

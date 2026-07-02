@@ -1,0 +1,12 @@
+[data-theme="classic"]{
+  --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
+  --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+  --accent-ink:#10100a; --record:#f85149; --remix:#c9a227;
+  --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; --radius-card:0px;
+}
+[data-theme="editorial"]{
+  --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
+  --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+  --accent-ink:#10100a; --record:#f85149; --remix:#c9a227;
+  --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; --radius-card:0px;
+}

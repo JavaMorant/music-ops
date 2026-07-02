@@ -4,6 +4,8 @@ endpoints, the origin guard, and that apply/undo round-trips."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -336,6 +338,22 @@ class TestSecurity:
         r = c.post("/api/mark", json={"id": tid, "genre": "afro"},
                    headers={"origin": "http://127.0.0.1:8765"})
         assert r.status_code == 200
+
+
+class TestTheme:
+    def test_theme_token_parity(self, client):
+        c, _ = client
+        css = c.get("/static/css/themes.css").text
+
+        def tokens(theme):
+            block = re.search(r'\[data-theme="%s"\]\s*{([^}]*)}' % theme, css).group(1)
+            return set(re.findall(r"--[\w-]+", block))
+
+        assert tokens("classic") == tokens("editorial") != set()
+
+    def test_app_css_uses_tokens_not_literals(self, client):
+        c, _ = client
+        assert "#c9a227" not in c.get("/static/css/app.css").text
 
 
 class TestSharedDeckModule:

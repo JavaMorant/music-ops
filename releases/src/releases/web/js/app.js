@@ -1,3 +1,6 @@
+function applyTheme(name){document.documentElement.dataset.theme=name;try{localStorage.theme=name}catch(e){}}
+applyTheme(new URLSearchParams(location.search).get("theme")||localStorage.theme||"classic");
+
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label
 let DECK = [], deckCur = -1, dactx, danalyser, ddata;
