@@ -355,6 +355,18 @@ class TestTheme:
         c, _ = client
         assert "#c9a227" not in c.get("/static/css/app.css").text
 
+    def test_editorial_is_default_and_distinct(self, client):
+        c, _ = client
+        assert 'data-theme' in c.get("/").text  # boot attr present
+        css = c.get("/static/css/themes.css").text
+        assert "#d4aa5e" in css and "#b3352c" in css and "Fraunces" in css
+        assert c.get("/static/fonts/fraunces.woff2").status_code == 200
+
+    def test_default_theme_is_editorial(self, client):
+        c, _ = client
+        # boot fallback in app.js flips to editorial
+        assert '||"editorial"' in c.get("/static/js/app.js").text
+
 
 class TestSharedDeckModule:
     def test_index_includes_shared_deck(self, client):

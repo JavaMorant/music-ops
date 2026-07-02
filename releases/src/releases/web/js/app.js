@@ -1,5 +1,6 @@
-function applyTheme(name){document.documentElement.dataset.theme=name;try{localStorage.theme=name}catch(e){}}
-applyTheme(new URLSearchParams(location.search).get("theme")||localStorage.theme||"classic");
+function applyTheme(name){document.documentElement.dataset.theme=name;try{localStorage.theme=name}catch(e){}
+  const p=document.getElementById('themepick');if(p)p.value=name;}
+applyTheme(new URLSearchParams(location.search).get("theme")||localStorage.theme||"editorial");
 
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label

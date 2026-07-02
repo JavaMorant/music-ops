@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="classic">
+<html lang="en" data-theme="editorial">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -29,6 +29,10 @@
   <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
   <button onclick="undoLast()">Undo last</button>
   <button onclick="showSends()">Sent</button>
+  <select id="themepick" onchange="applyTheme(this.value)">
+    <option value="editorial">Editorial</option>
+    <option value="classic">Classic</option>
+  </select>
 </header>
 
 <div id="panel">
