@@ -11,6 +11,8 @@ import pytest
 from releases import pack as packmod
 from releases import preview as previewmod
 
+DECK_DIR = Path(packmod.__file__).parent / "web" / "deck"
+
 
 def _real_audio(path: Path, seconds: int = 20) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,14 +294,6 @@ def test_fx_toggles_present(tmp_path):
     assert "drawFire" not in idx and "fxFire" not in idx and 'data-fx="fire"' not in idx
 
 
-def test_export_scene_renderer_present(tmp_path):
-    packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
-    idx = (tmp_path / "out" / "p" / "index.html").read_text()
-    # the whole deck drawn on ONE canvas (for a clean captureStream video export)
-    assert "function ttExportFrame" in idx
-    assert "function ttVinylScene" in idx and "function ttCassetteScene" in idx
-
-
 def test_cassette_skin_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
@@ -344,3 +338,14 @@ def test_non_image_cover_is_ignored(tmp_path):
     out = tmp_path / "out" / "p"
     assert not (out / "cover.txt").exists()
     assert "label cover" not in (out / "index.html").read_text()  # falls back to text label
+
+
+def test_turntable_engine_is_a_real_file():
+    src = (DECK_DIR / "turntable.js").read_text(encoding="utf-8")
+    assert "function ttRun" in src and "function ttScrub" in src
+    assert packmod.TURNTABLE_JS == src  # constant now loads from the file
+
+
+def test_dead_canvas_export_engine_removed():
+    assert "ttExportFrame" not in packmod.TURNTABLE_JS
+    assert "ttVinylScene" not in packmod.TURNTABLE_JS

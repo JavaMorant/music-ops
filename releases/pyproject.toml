@@ -32,4 +32,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-releases = ["web/index.html"]
+releases = ["web/index.html", "web/deck/*"]
