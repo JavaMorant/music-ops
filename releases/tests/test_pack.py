@@ -349,3 +349,10 @@ def test_turntable_engine_is_a_real_file():
 def test_dead_canvas_export_engine_removed():
     assert "ttExportFrame" not in packmod.TURNTABLE_JS
     assert "ttVinylScene" not in packmod.TURNTABLE_JS
+
+
+def test_pack_inlines_shared_deck(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert "deck-module" in html and "__DECK_HTML__" not in html and "__DECK_CSS__" not in html

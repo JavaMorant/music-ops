@@ -110,7 +110,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>__PACK_NAME__</title>
 <style>
-  :root{--bg:#0d0d10;--panel:#15151b;--line:#26262f;--txt:#e7e7ea;--dim:#8a8a96;--accent:#c9a227;}
+  :root{--bg:#0d0d10;--panel:#15151b;--line:#26262f;--txt:#e7e7ea;--dim:#8a8a96;--accent:#c9a227;--deck-size:330px;}
   *{box-sizing:border-box;}
   body{margin:0;background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,var(--bg));color:var(--txt);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
@@ -125,65 +125,9 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
     padding:6px 12px;font-size:12px;cursor:pointer;}
   .fxchip.off{color:var(--dim);border-color:var(--line);}
-  /* deck + record are sized in % of .deck, so reel mode just scales .deck */
-  .deck{position:relative;width:330px;height:330px;margin:8px auto 14px;animation:float 7s ease-in-out infinite;}
-  @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
-  #viz{position:absolute;inset:0;width:100%;height:100%;}
-  .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
-    background:
-      conic-gradient(from 0deg,rgba(255,255,255,0) 0deg,rgba(255,255,255,.07) 30deg,rgba(255,255,255,0) 72deg,rgba(255,255,255,0) 205deg,rgba(255,255,255,.05) 235deg,rgba(255,255,255,0) 280deg),
-      repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 0.85%,#191920 0.85% 1.7%),
-      radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000,inset 0 0 16px 3px rgba(255,255,255,.05);
-    animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
-  body.playing .vinyl{animation-play-state:running;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  .vinyl .label{position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;
-    background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
-    align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
-    font-size:clamp(11px,3.5vmin,18px);padding:6%;overflow:hidden;text-align:center;
-    box-shadow:inset 0 0 0 2px rgba(0,0,0,.25),0 0 0 3px rgba(255,255,255,.1);background-size:cover;background-position:center;}
-  .vinyl .label.cover{background-color:#000;}
-  .vinyl .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
-    background:#000;z-index:2;box-shadow:0 0 0 0.6vmin #b6911f;}
-  .arm{position:absolute;right:4%;top:2%;width:46%;height:3.2%;border-radius:4px;z-index:3;
-    background:linear-gradient(180deg,#60606c,#2a2a32);transform-origin:100% 50%;
-    transform:rotate(8deg);transition:transform .6s cubic-bezier(.4,1.3,.5,1);box-shadow:0 2px 7px rgba(0,0,0,.5);}
-  .arm.on{transform:rotate(calc(-21deg - var(--prog,0)*14deg));}  /* playing: needle on the grooves, sweeping inward with progress */
-  .arm:before{content:"";position:absolute;right:-12%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translateY(-50%);
-    background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
-  .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);
-    background:linear-gradient(#3a3a44,#191920);border:1px solid #000;}
-  .arm .tip{position:absolute;left:0;top:50%;width:1px;height:1px;}  /* stylus anchor for the smoke origin */
-  /* cassette skin (toggled with .cassette-mode) */
-  .cassette{position:absolute;left:6%;top:24%;width:88%;height:52%;border-radius:14px;display:none;z-index:1;
-    background:linear-gradient(165deg,#34343f,#16161c);border:1px solid #000;
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px rgba(255,255,255,.05);}
-  body.cassette-mode .cassette{display:block;}
-  body.cassette-mode .vinyl,body.cassette-mode .arm,body.cassette-mode .gloss{display:none;}
-  .cassette .clabel{position:absolute;left:9%;right:9%;top:8%;height:26%;border-radius:6px;overflow:hidden;
-    background:radial-gradient(circle at 50% 30%,var(--accent),#8a6f17);background-size:cover;background-position:center;
-    display:flex;align-items:center;justify-content:center;color:#1a1405;font-weight:800;text-transform:uppercase;
-    letter-spacing:.05em;font-size:clamp(10px,3vmin,15px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.2);}
-  .cassette .clabel.cover{color:transparent;}
-  .cassette .win{position:absolute;left:11%;right:11%;bottom:15%;height:48%;border-radius:10px;background:#0b0b0f;
-    box-shadow:inset 0 0 0 2px #000,inset 0 5px 14px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:space-between;padding:0 9%;}
-  .cassette .reel{width:31%;aspect-ratio:1;border-radius:50%;position:relative;
-    background:repeating-conic-gradient(#34343e 0 18deg,#14141a 18deg 36deg);
-    box-shadow:inset 0 0 0 3px #000;animation:spin 1.7s linear infinite;animation-play-state:paused;}
-  /* the reel hubs heat up like brake discs as the track plays (--heat 0..1) */
-  .cassette .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;
-    background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);
-    background:radial-gradient(circle at 40% 35%,color-mix(in srgb,#3a3a44,#ff3a00 calc(var(--heat,0)*88%)),color-mix(in srgb,#1c1c22,#7a1400 calc(var(--heat,0)*82%)));
-    box-shadow:inset 0 0 0 2px #000,inset 0 0 calc(var(--heat,0)*16px) rgba(255,70,0,calc(var(--heat,0)*0.9)),0 0 calc(var(--heat,0)*30px) rgba(255,45,0,calc(var(--heat,0)*0.85));
-    filter:brightness(calc(1 + var(--heat,0)*0.6));}
-  .cassette .reel:after{content:"";position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#000;z-index:2;}
-  .cassette .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;background:#42424c;}
-  body.playing .cassette .reel{animation-play-state:running;}
-  .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
-    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
-    animation:sheen 3.6s ease-in-out infinite;}
-  @keyframes sheen{0%,100%{opacity:.35;}50%{opacity:.85;}}
+__DECK_CSS__
+  /* 9:16 reel mode: scale the shared deck; the rest of reel layout is below */
+  body.reel .deck{width:min(82vw,58vh);height:min(82vw,58vh);margin:0 auto 26px;}
   .fx{position:fixed;inset:0;pointer-events:none;z-index:5;
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
@@ -245,16 +189,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
   <h1>__PACK_NAME__</h1>
   <p class="by">Produced by <b>__PRODUCER__</b> · __MADE__ · __NBEATS__ beats</p>
   <div class="hook" id="hook"></div>
-  <div class="deck" id="deck">
-    <canvas id="viz"></canvas>
-    <div class="vinyl" id="vinyl">__LABEL_HTML__<div class="hole"></div></div>
-    <div class="gloss"></div>
-    <div class="arm" id="arm"><i class="tip" id="armtip"></i></div>
-    <div class="cassette" id="cassette">
-      __CLABEL_HTML__
-      <div class="win"><div class="reel"></div><div class="tape"></div><div class="reel"></div></div>
-    </div>
-  </div>
+  __DECK_HTML__
   <div class="now">
     <button class="play" id="play">&#9654;</button>
     <span class="bpmdot" id="bpmdot"></span>
@@ -385,6 +320,8 @@ def render_index_html(
         "__INQUIRE_JSON__": inq,
     }
     out = _PLAYER_TEMPLATE
+    out = out.replace("__DECK_CSS__", (_WEB_DIR / "deck" / "deck.css").read_text(encoding="utf-8"))
+    out = out.replace("__DECK_HTML__", (_WEB_DIR / "deck" / "deck.html").read_text(encoding="utf-8"))
     for token, value in subs.items():
         out = out.replace(token, value)
     return out

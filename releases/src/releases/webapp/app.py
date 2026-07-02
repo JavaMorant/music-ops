@@ -21,7 +21,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -132,7 +133,12 @@ def create_app(config: AppConfig) -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(WEB_DIR / "index.html")
+        deck = (WEB_DIR / "deck" / "deck.html").read_text(encoding="utf-8")
+        deck = deck.replace("__LABEL_HTML__", '<div class="label" id="label"></div>')
+        deck = deck.replace("__CLABEL_HTML__", '<div class="clabel" id="clabel"></div>')
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        html = html.replace("<!--DECK-->", deck)
+        return HTMLResponse(html)
 
     @app.get("/api/tracks")
     def list_tracks():
@@ -499,4 +505,5 @@ def create_app(config: AppConfig) -> FastAPI:
                 moved += 1
         return moved
 
+    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     return app

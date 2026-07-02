@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
-    --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149; --deck-size:320px;
     color-scheme: dark;  /* dark native <audio> controls + scrollbars — no light-grey strip at the bottom */
   }
   html { background:var(--bg); }  /* also covers overscroll/rubber-band so it never flashes white */
@@ -103,60 +103,7 @@
     20%{opacity:1;}100%{opacity:0;transform:translate(var(--nx,0),-48px) rotate(var(--nr,0)) scale(1.1);}}
   #ov .stemchar.off .charname{color:var(--dim);}
   #ov .stemexit{font-size:12px;}
-  #ov .deck{position:relative;width:320px;height:320px;margin:8px auto 14px;flex:none;z-index:2;animation:float 7s ease-in-out infinite;}
-  @keyframes float{0%,100%{transform:translateY(-4px);}50%{transform:translateY(4px);}}
   #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
-  #ov canvas{position:absolute;inset:0;width:100%;height:100%;}
-  #ov .vinyl{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;
-    background:
-      conic-gradient(from 0deg,rgba(255,255,255,0) 0deg,rgba(255,255,255,.07) 30deg,rgba(255,255,255,0) 72deg,rgba(255,255,255,0) 205deg,rgba(255,255,255,.05) 235deg,rgba(255,255,255,0) 280deg),
-      repeating-radial-gradient(circle at 50% 50%,#0c0c0e 0 .85%,#191920 .85% 1.7%),
-      radial-gradient(circle at 38% 32%,#2a2a31,#000 72%);
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px #000,inset 0 0 16px 3px rgba(255,255,255,.05);
-    animation:spin 3.4s linear infinite;animation-play-state:paused;cursor:pointer;}
-  #ov.playing .vinyl{animation-play-state:running;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  #ov .label{position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;
-    background:radial-gradient(circle at 50% 34%,var(--accent),#8a6f17);color:#1a1405;display:flex;
-    align-items:center;justify-content:center;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
-    font-size:clamp(11px,3.4vmin,18px);padding:6%;overflow:hidden;text-align:center;
-    background-size:cover;background-position:center;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25),0 0 0 3px rgba(255,255,255,.1);}
-  #ov .label.cover{background-color:#000;color:transparent;}
-  #ov .hole{position:absolute;left:47.5%;top:47.5%;width:5%;height:5%;border-radius:50%;
-    background:#000;z-index:2;box-shadow:0 0 0 .6vmin #b6911f;}
-  #ov .arm{position:absolute;right:4%;top:2%;width:46%;height:3.2%;border-radius:4px;z-index:3;
-    background:linear-gradient(180deg,#60606c,#2a2a32);transform-origin:100% 50%;transform:rotate(8deg);
-    transition:transform .6s cubic-bezier(.4,1.3,.5,1);box-shadow:0 2px 7px rgba(0,0,0,.5);}
-  #ov .arm.on{transform:rotate(calc(-21deg - var(--prog,0)*14deg));}  /* playing: needle on the grooves, sweeping inward with progress */
-  #ov .arm:before{content:"";position:absolute;right:-12%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translateY(-50%);
-    background:radial-gradient(circle at 38% 32%,#52525e,#1c1c22);border:1px solid #000;box-shadow:0 2px 6px rgba(0,0,0,.5);}
-  #ov .arm:after{content:"";position:absolute;left:-2%;top:30%;width:12%;height:240%;border-radius:2px;transform:rotate(24deg);
-    background:linear-gradient(#3a3a44,#191920);border:1px solid #000;}
-  #ov .arm .tip{position:absolute;left:0;top:50%;width:1px;height:1px;}  /* stylus anchor for the smoke origin */
-  #ov .cassette{position:absolute;left:6%;top:24%;width:88%;height:52%;border-radius:14px;display:none;z-index:1;
-    background:linear-gradient(165deg,#34343f,#16161c);border:1px solid #000;
-    box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px rgba(255,255,255,.05);}
-  #ov.cassette-mode .cassette{display:block;}
-  #ov.cassette-mode .vinyl,#ov.cassette-mode .arm,#ov.cassette-mode .gloss{display:none;}
-  #ov .clabel{position:absolute;left:9%;right:9%;top:8%;height:26%;border-radius:6px;overflow:hidden;
-    background:radial-gradient(circle at 50% 30%,var(--accent),#8a6f17);background-size:cover;background-position:center;
-    display:flex;align-items:center;justify-content:center;color:#1a1405;font-weight:800;text-transform:uppercase;
-    letter-spacing:.05em;font-size:clamp(10px,3vmin,15px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.2);}
-  #ov .clabel.cover{color:transparent;}
-  #ov .win{position:absolute;left:11%;right:11%;bottom:15%;height:48%;border-radius:10px;background:#0b0b0f;
-    box-shadow:inset 0 0 0 2px #000,inset 0 5px 14px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:space-between;padding:0 9%;}
-  #ov .reel{width:31%;aspect-ratio:1;border-radius:50%;position:relative;
-    background:repeating-conic-gradient(#34343e 0 18deg,#14141a 18deg 36deg);
-    box-shadow:inset 0 0 0 3px #000;animation:spin 1.7s linear infinite;animation-play-state:paused;}
-  /* the reel hubs heat up like brake discs as the track plays (--heat 0..1) */
-  #ov .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;
-    background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);
-    background:radial-gradient(circle at 40% 35%,color-mix(in srgb,#3a3a44,#ff3a00 calc(var(--heat,0)*88%)),color-mix(in srgb,#1c1c22,#7a1400 calc(var(--heat,0)*82%)));
-    box-shadow:inset 0 0 0 2px #000,inset 0 0 calc(var(--heat,0)*16px) rgba(255,70,0,calc(var(--heat,0)*0.9)),0 0 calc(var(--heat,0)*30px) rgba(255,45,0,calc(var(--heat,0)*0.85));
-    filter:brightness(calc(1 + var(--heat,0)*0.6));}
-  #ov .reel:after{content:"";position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#000;z-index:2;}
-  #ov .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;background:#42424c;}
-  #ov.playing .reel{animation-play-state:running;}
   .ovnow{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:18px;}
   .ovplay{width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#10100a;
     font-size:19px;cursor:pointer;flex:none;box-shadow:0 6px 18px rgba(201,162,39,.3);}
@@ -175,10 +122,6 @@
   ol.ovlist li.active{border-color:var(--accent);background:#1d1d12;}
   ol.ovlist .num{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;}
   ol.ovlist .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
-  #ov .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
-    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.08) 50%,transparent 58%);
-    animation:sheen 3.6s ease-in-out infinite;}
-  @keyframes sheen{0%,100%{opacity:.35;}50%{opacity:.85;}}
   #ov .fx{position:absolute;inset:0;pointer-events:none;z-index:1;
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   #ov .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
@@ -222,6 +165,7 @@
   #ov .reelact{display:flex;gap:10px;justify-content:flex-end;margin-top:2px;}
   #ov .reelact button{padding:8px 16px;border-radius:8px;}
 </style>
+<link rel="stylesheet" href="/static/deck/deck.css">
 </head>
 <body>
 <header>
@@ -287,16 +231,7 @@
     <button class="fxchip" data-fx="heat">Heat</button>
   </div>
   <div class="hook" id="ovhook"></div>
-  <div class="deck">
-    <canvas id="oviz"></canvas>
-    <div class="vinyl" id="ovinyl"><div class="label" id="ovlabel"></div><div class="hole"></div></div>
-    <div class="gloss"></div>
-    <div class="arm" id="ovarm"><i class="tip" id="ovarmtip"></i></div>
-    <div class="cassette" id="ovcassette">
-      <div class="clabel" id="ovclabel"></div>
-      <div class="win"><div class="reel"></div><div class="tape"></div><div class="reel"></div></div>
-    </div>
-  </div>
+  <!--DECK-->
   <div class="ovnow">
     <button class="ovplay" id="ovplay" onclick="deckTogglePlay()">&#9654;</button>
     <span class="bpmdot" id="ovbpmdot"></span>
@@ -527,7 +462,7 @@ const audioEl = document.getElementById('audio');
 function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 function deckMeta(t){ return [t.bpm?t.bpm+' bpm':'', t.key||'', t.genre!=='unknown'?t.genre:''].filter(Boolean).join(' · '); }
 function deckLabel(){
-  [['ovlabel','label'],['ovclabel','clabel']].forEach(function(pair){
+  [['label','label'],['clabel','clabel']].forEach(function(pair){
     const el=document.getElementById(pair[0]); if(!el) return;
     if (COVER) { el.className=pair[1]+' cover'; el.style.backgroundImage="url('"+COVER+"')"; el.textContent=''; }
     else { el.className=pair[1]; el.style.backgroundImage=''; el.textContent = PRODUCER; }
@@ -602,7 +537,7 @@ function toggleStemPlay(){  // suspend/resume the whole stem graph — freezes a
 }
 function deckSetPlaying(p){
   document.getElementById('ov').classList.toggle('playing',p);
-  document.getElementById('ovarm').classList.toggle('on',p);
+  document.getElementById('arm').classList.toggle('on',p);
   document.getElementById('ovplay').innerHTML=p?'&#10074;&#10074;':'&#9654;';
 }
 function closeDeck(){ if(stemMode) _teardownStems(); document.getElementById('ov').classList.remove('show'); }
@@ -706,7 +641,7 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=documen
   if(ov.classList.contains('reel')){ exitReel(); return; }
   if(ov.classList.contains('clean') && !_recording){ ov.classList.remove('clean');
     document.getElementById('cleantgl').textContent='⛶ Clean'; deckSize(); } } });
-const ocanvas=document.getElementById('oviz');
+const ocanvas=document.getElementById('viz');
 function deckSize(){ const d=document.querySelector('#ov .deck'); if(!d)return; const s=d.clientWidth||320; ocanvas.width=s*2; ocanvas.height=s*2; layoutCrew(); }
 function deckInitViz(){
   if(dactx){ if(dactx.state==='suspended')dactx.resume(); return; }
@@ -975,12 +910,12 @@ async function exportReel(){
 // shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
 function ovCenterOf(el){const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}
 function ovSmokeAt(){const ov=document.getElementById('ov');  // hot reels (cassette) or the stylus (vinyl)
-  if(ov.classList.contains('cassette-mode')) return [...document.querySelectorAll('#ovcassette .reel')].map(ovCenterOf);
-  const t=document.getElementById('ovarmtip');return t?[ovCenterOf(t)]:[];}
+  if(ov.classList.contains('cassette-mode')) return [...document.querySelectorAll('#cassette .reel')].map(ovCenterOf);
+  const t=document.getElementById('armtip');return t?[ovCenterOf(t)]:[];}
 if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
   fxCanvas:document.getElementById('ovpfx'), smokeAt:ovSmokeAt,
   scene:document.getElementById('ov'),
-  getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'ovclabel':'ovlabel'),
+  getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'clabel':'label'),
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
@@ -991,7 +926,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
     const pos = Math.max(0, dactx.currentTime - stemStartAt) + stemStartOffset; return (pos % stemLoopDur) / stemLoopDur; },
   reelGet:()=>document.getElementById('ov').classList.contains('reel'), sparksOn:true });
 // drag the record to scrub the track; a tap toggles play
-if (window.ttScrub) ttScrub({ vinyl:document.getElementById('ovinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
+if (window.ttScrub) ttScrub({ vinyl:document.getElementById('vinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
 // In remix mode the <audio> is deliberately paused while the stems loop, so its
 // pause/ended events must NOT brake the deck — stemMode keeps the disk spinning.
 audioEl.addEventListener('play',()=>{ if(stemMode)return; deckInitViz(); deckSetPlaying(true); });

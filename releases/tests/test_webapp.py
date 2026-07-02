@@ -336,3 +336,16 @@ class TestSecurity:
         r = c.post("/api/mark", json={"id": tid, "genre": "afro"},
                    headers={"origin": "http://127.0.0.1:8765"})
         assert r.status_code == 200
+
+
+class TestSharedDeckModule:
+    def test_index_includes_shared_deck(self, client):
+        c, _ = client
+        html = c.get("/").text
+        assert "deck-module" in html          # server-side include ran
+        assert "/static/deck/deck.css" in html
+
+    def test_static_deck_assets_served(self, client):
+        c, _ = client
+        assert c.get("/static/deck/deck.css").status_code == 200
+        assert "--deck-size" in c.get("/static/deck/deck.css").text
