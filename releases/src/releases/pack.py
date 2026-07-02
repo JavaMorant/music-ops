@@ -140,7 +140,7 @@ __DECK_CSS__
   .fx{position:fixed;inset:0;pointer-events:none;z-index:5;
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
-    background-image:url("data:image/svg+xml,%3Csvg width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
   .pfx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;}
   .flash{position:fixed;inset:0;pointer-events:none;z-index:7;opacity:0;}
   .hook{font-weight:800;font-size:19px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);

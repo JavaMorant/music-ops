@@ -370,7 +370,10 @@ def test_pack_is_themed_and_self_contained(tmp_path):
     html = (out / "index.html").read_text(encoding="utf-8")
     assert 'data-theme="editorial"' in html      # editorial by default
     assert "--accent:#d4aa5e" in html             # editorial accent colour inlined
-    assert "http://" not in html and "https://" not in html  # monetize seam: fully static
+    # monetize seam: no EXTERNAL fetches. (An inline SVG data-URI's xmlns='http://www.w3.org/2000/svg'
+    # is a namespace token, never fetched, so a blanket "http" ban is wrong.)
+    assert 'src="http' not in html and 'href="http' not in html
+    assert "url(http" not in html
     assert ".woff2" not in html                   # no font payload — self-contained
 
 

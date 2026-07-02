@@ -273,7 +273,7 @@ project's bounce). Core ships first.
 
 ## Once-over status
 
-**Plan A — foundation + themes** (done, merged to `main`):
+**Plan A — foundation + themes** (done; pending merge to `main`):
 - Inline CSS/JS extracted from `index.html` into `web/css/app.css` + `web/js/app.js`.
 - Shared deck module: `web/deck/{turntable.js,deck.css,deck.html,deck.js}` — consumed
   by both the live app (served at `/api/turntable.js` etc.) and the self-contained
