@@ -962,6 +962,7 @@ def pack_cmd(
     cover: Annotated[Optional[Path], typer.Option("--cover", exists=True, dir_okay=False, help="Cover image for the vinyl label")] = None,
     preview: Annotated[bool, typer.Option("--preview/--full", help="Ship protected previews (trimmed + tag tone) instead of full beats")] = False,
     preview_seconds: Annotated[int, typer.Option("--preview-seconds", help="Preview hook length")] = 40,
+    theme: Annotated[str, typer.Option("--theme", help="Pack colour theme: editorial or classic")] = "editorial",
     db: DbOpt = dbmod.DEFAULT_DB,
 ) -> None:
     """Export a polished beat pack (clean-named audio + player page + tracklist)
@@ -1002,7 +1003,7 @@ def pack_cmd(
             raise typer.Exit(1)
         typer.echo(f"Building {len(tracks)} protected previews (this re-encodes)…")
     packmod.build_pack(tracks, dest, meta, cover_src=cover.resolve() if cover else None,
-                       clean=True, preview=preview, preview_seconds=preview_seconds)
+                       clean=True, preview=preview, preview_seconds=preview_seconds, theme=theme)
     zpath = dest.with_name(dest.name + ".zip")
     packmod.zip_pack(dest, zpath)  # auto-zip — ready to send out
     kind = f"{len(tracks)} preview{'s' if len(tracks)!=1 else ''}" if preview else f"{len(tracks)} beats"

@@ -362,3 +362,20 @@ def test_pack_inlines_shared_deck(tmp_path):
     # pack's own :root sets --deck-size:330px and deck.css must NOT override it
     assert "--deck-size:330px" in html
     assert ":root{--deck-size" not in (DECK_DIR / "deck.css").read_text(encoding="utf-8")
+
+
+def test_pack_is_themed_and_self_contained(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'data-theme="editorial"' in html      # editorial by default
+    assert "--accent:#d4aa5e" in html             # editorial accent colour inlined
+    assert "http://" not in html and "https://" not in html  # monetize seam: fully static
+    assert ".woff2" not in html                   # no font payload — self-contained
+
+
+def test_pack_theme_flag(tmp_path):
+    out = tmp_path / "out" / "classic"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta(), theme="classic")
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'data-theme="classic"' in html

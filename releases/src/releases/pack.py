@@ -104,14 +104,22 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
 _WEB_DIR = Path(__file__).parent / "web"
 TURNTABLE_JS = (_WEB_DIR / "deck" / "turntable.js").read_text(encoding="utf-8")
 DECK_JS = (_WEB_DIR / "deck" / "deck.js").read_text(encoding="utf-8")
+# Theme tokens inlined into the pack <style> block — both [data-theme] blocks from
+# themes.css, minus the @font-face/@font-display declarations so the zip stays
+# font-file-free (Fraunces falls back to Georgia; the rest of the palette is intact).
+THEME_TOKENS = "\n".join(
+    l for l in (_WEB_DIR / "css" / "themes.css").read_text(encoding="utf-8").splitlines()
+    if "@font-face" not in l and ".woff2" not in l
+)
 
 
 _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/>
+<html lang="en" data-theme="__THEME__"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>__PACK_NAME__</title>
 <style>
-  :root{--bg:#0d0d10;--panel:#15151b;--line:#26262f;--txt:#e7e7ea;--dim:#8a8a96;--accent:#c9a227;--deck-size:330px;}
+  :root{--deck-size:330px;}
+  __THEME_TOKENS__
   *{box-sizing:border-box;}
   body{margin:0;background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,var(--bg));color:var(--txt);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
@@ -132,7 +140,7 @@ __DECK_CSS__
   .fx{position:fixed;inset:0;pointer-events:none;z-index:5;
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+    background-image:url("data:image/svg+xml,%3Csvg width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
   .pfx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;}
   .flash{position:fixed;inset:0;pointer-events:none;z-index:7;opacity:0;}
   .hook{font-weight:800;font-size:19px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
@@ -176,7 +184,9 @@ __DECK_CSS__
   body.reel h1,body.reel .by,body.reel ol.list,body.reel footer,body.reel .contact{display:none;}
   body.reel .deck{width:min(82vw,58vh);height:min(82vw,58vh);margin:0 auto 26px;}
   body.reel .now{transform:scale(1.15);margin-bottom:0;}
-</style></head>
+</style>
+<script>var _t=new URLSearchParams(location.search).get("theme");if(_t)document.documentElement.dataset.theme=_t;</script>
+</head>
 <body>
 <button class="reelbtn" id="skinbtn" style="right:96px">Cassette</button>
 <button class="reelbtn" id="reelbtn">⤢ Reel</button>
@@ -275,7 +285,8 @@ ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
 
 
 def render_index_html(
-    tracks: list[PackTrack], meta: PackMeta, filenames: list[str], cover: str | None = None
+    tracks: list[PackTrack], meta: PackMeta, filenames: list[str], cover: str | None = None,
+    theme: str = "editorial",
 ) -> str:
     items = [{"t": t.title, "m": _meta_str(t), "f": fn, "b": t.bpm or 0, "g": t.genre,
               "sf": t.suitable_for, "n": t.notes}
@@ -315,11 +326,13 @@ def render_index_html(
         "__COVER_URL__": json.dumps(cover),
         "__TRACKS__": tracks_json,
         "__INQUIRE_JSON__": inq,
+        "__THEME__": html.escape(theme),
     }
     out = _PLAYER_TEMPLATE
     out = out.replace("__DECK_CSS__", (_WEB_DIR / "deck" / "deck.css").read_text(encoding="utf-8"))
     out = out.replace("__DECK_HTML__", (_WEB_DIR / "deck" / "deck.html").read_text(encoding="utf-8"))
     out = out.replace("__DECK_JS__", DECK_JS)
+    out = out.replace("__THEME_TOKENS__", THEME_TOKENS)
     for token, value in subs.items():
         out = out.replace(token, value)
     return out
@@ -335,6 +348,7 @@ def is_image(path: Path) -> bool:
 def build_pack(
     tracks: list[PackTrack], out_dir: Path, meta: PackMeta, cover_src: Path | None = None,
     clean: bool = False, preview: bool = False, preview_seconds: int = 40,
+    theme: str = "editorial",
 ) -> list[str]:
     """Write the pack into ``out_dir`` (created): clean-named audio + index.html +
     tracklist.txt. ``cover_src``, if an image, is copied in as the vinyl-label cover
@@ -372,7 +386,7 @@ def build_pack(
         cover_name = "cover" + cover_src.suffix.lower()
         shutil.copy2(cover_src, out_dir / cover_name)
     (out_dir / "index.html").write_text(
-        render_index_html(tracks, meta, filenames, cover=cover_name), encoding="utf-8"
+        render_index_html(tracks, meta, filenames, cover=cover_name, theme=theme), encoding="utf-8"
     )
     (out_dir / "tracklist.txt").write_text(render_tracklist_txt(tracks, meta), encoding="utf-8")
     return filenames
