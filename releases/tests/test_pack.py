@@ -356,3 +356,8 @@ def test_pack_inlines_shared_deck(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
     html = (out / "index.html").read_text(encoding="utf-8")
     assert "deck-module" in html and "__DECK_HTML__" not in html and "__DECK_CSS__" not in html
+    # token-leak guard
+    assert "__LABEL_HTML__" not in html and "__CLABEL_HTML__" not in html
+    # pack's own :root sets --deck-size:330px and deck.css must NOT override it
+    assert "--deck-size:330px" in html
+    assert ":root{--deck-size" not in (DECK_DIR / "deck.css").read_text(encoding="utf-8")
