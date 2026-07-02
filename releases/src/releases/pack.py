@@ -103,6 +103,7 @@ def render_tracklist_txt(tracks: list[PackTrack], meta: PackMeta) -> str:
 # the kick. opts = {canvas, audio, getAnalyser, scene, label, reelGet, sparksOn}.
 _WEB_DIR = Path(__file__).parent / "web"
 TURNTABLE_JS = (_WEB_DIR / "deck" / "turntable.js").read_text(encoding="utf-8")
+DECK_JS = (_WEB_DIR / "deck" / "deck.js").read_text(encoding="utf-8")
 
 
 _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
@@ -204,13 +205,14 @@ __DECK_CSS__
 <div class="flash"></div>
 <audio id="audio"></audio>
 <script>
+__DECK_JS__
 __VIZ_JS__
 const PACK_COVER = __COVER_URL__;
 const TRACKS = __TRACKS__;
 const INQ = __INQUIRE_JSON__;  // {contact,producer,pack} — drives the per-beat Inquire button
 function inquire(i){var t=TRACKS[i];  // mailto for now; the hosted build POSTs this to a tracked endpoint
   var subj='Beat inquiry: '+t.t+(INQ.pack?' ('+INQ.pack+')':'');
-  var body='Hi'+(INQ.producer?' '+INQ.producer:'')+',\n\nI’m interested in "'+t.t+'"'+(INQ.pack?' from your '+INQ.pack+' pack':'')+'. Is it available?\n\n';
+  var body='Hi'+(INQ.producer?' '+INQ.producer:'')+',\n\nI'm interested in "'+t.t+'"'+(INQ.pack?' from your '+INQ.pack+' pack':'')+'. Is it available?\n\n';
   location.href='mailto:'+INQ.contact+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);}
 const audio=document.getElementById('audio'),vinyl=document.getElementById('vinyl'),arm=document.getElementById('arm');
 const playBtn=document.getElementById('play'),nt=document.getElementById('nt'),nm=document.getElementById('nm'),list=document.getElementById('list');
@@ -233,10 +235,9 @@ function select(i){cur=i;const t=TRACKS[i];audio.src=encodeURI(t.f);
   hook.classList.remove('pop');void hook.offsetWidth;hook.classList.add('pop');
   [...list.children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audio.play().catch(()=>{});}
-function setPlaying(p){document.body.classList.toggle('playing',p);arm.classList.toggle('on',p);playBtn.innerHTML=p?'&#10074;&#10074;':'&#9654;';}
-function isCassette(){return document.body.classList.contains('cassette-mode');}
-document.getElementById('skinbtn').onclick=function(){var on=document.body.classList.toggle('cassette-mode');
-  this.textContent=on?'Vinyl':'Cassette';size();};
+function setPlaying(p){deckSetPlaying(document.body,p);playBtn.innerHTML=p?'&#10074;&#10074;':'&#9654;';}
+document.getElementById('skinbtn').onclick=function(){var on=!document.body.classList.contains('cassette-mode');
+  deckSetSkin(document.body,on?'cassette':'vinyl');this.textContent=on?'Vinyl':'Cassette';size();};
 audio.addEventListener('play',()=>{initViz();setPlaying(true);});
 audio.addEventListener('pause',()=>setPlaying(false));
 audio.addEventListener('ended',()=>{cur<TRACKS.length-1?select(cur+1):setPlaying(false);});
@@ -260,16 +261,12 @@ function initViz(){
     src.connect(analyser);analyser.connect(actx.destination);
   }catch(e){/* file:// or unsupported — vinyl still spins, audio still plays */}
 }
-function centerOf(el){var r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}
-function smokeAt(){  // smoke rises from the hot reels (cassette) or the stylus (vinyl)
-  if(isCassette()){return [].slice.call(document.querySelectorAll('#cassette .reel')).map(centerOf);}
-  var t=document.getElementById('armtip');return t?[centerOf(t)]:[];}
 ttRun({canvas:canvas,audio:audio,getAnalyser:function(){return analyser;},
-  fxCanvas:document.getElementById('pfx'),smokeAt:smokeAt,
+  fxCanvas:document.getElementById('pfx'),smokeAt:function(){return deckSmokeAt(document.body);},
   scene:document.querySelector('.wrap'),
-  getLabel:function(){return isCassette()?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
+  getLabel:function(){return document.body.classList.contains('cassette-mode')?document.querySelector('#cassette .clabel'):document.querySelector('#vinyl .label');},
   flash:document.querySelector('.flash'),getCover:function(){return PACK_COVER;},
-  getSkin:function(){return isCassette()?'cassette':'vinyl';},
+  getSkin:function(){return document.body.classList.contains('cassette-mode')?'cassette':'vinyl';},
   fxOn:function(n){return !document.body.classList.contains('off-'+n);},
   reelGet:function(){return document.body.classList.contains('reel');},sparksOn:true});
 </script>
@@ -322,6 +319,7 @@ def render_index_html(
     out = _PLAYER_TEMPLATE
     out = out.replace("__DECK_CSS__", (_WEB_DIR / "deck" / "deck.css").read_text(encoding="utf-8"))
     out = out.replace("__DECK_HTML__", (_WEB_DIR / "deck" / "deck.html").read_text(encoding="utf-8"))
+    out = out.replace("__DECK_JS__", DECK_JS)
     for token, value in subs.items():
         out = out.replace(token, value)
     return out

@@ -256,7 +256,7 @@ def test_brake_heat_and_smoke_present(tmp_path):
     assert "setProperty('--heat'" in idx
     # smoke rises from the hot reels / the stylus, denser + redder over time
     assert "function puff" in idx and "smoke.push" in idx
-    assert "function smokeAt" in idx and "armtip" in idx         # stylus anchor on the tonearm
+    assert "function deckSmokeAt" in idx and "armtip" in idx      # stylus anchor on the tonearm
     assert "#cassette .reel" in idx                              # smoke from both reels in cassette mode
 
 

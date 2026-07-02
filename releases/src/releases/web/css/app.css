@@ -1,0 +1,159 @@
+  :root {
+    --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
+    --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149; --deck-size:320px;
+    color-scheme: dark;  /* dark native <audio> controls + scrollbars — no light-grey strip at the bottom */
+  }
+  html { background:var(--bg); }  /* also covers overscroll/rubber-band so it never flashes white */
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding-bottom:84px; }
+  header { position:sticky; top:0; z-index:5; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:12px 18px; display:flex; gap:14px;
+    align-items:center; flex-wrap:wrap; }
+  h1 { font-size:15px; letter-spacing:.14em; text-transform:uppercase; margin:0;
+    color:var(--accent); font-weight:600; }
+  .sub { color:var(--dim); font-size:12px; }
+  .spacer { flex:1; }
+  button { background:#20202a; color:var(--txt); border:1px solid var(--line);
+    padding:7px 13px; border-radius:7px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#10100a; border-color:var(--accent); font-weight:600; }
+  select, input { background:#101016; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:5px 8px; font-size:13px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; color:var(--dim); font-weight:500; font-size:11px;
+    text-transform:uppercase; letter-spacing:.08em; padding:10px 12px;
+    border-bottom:1px solid var(--line); position:sticky; top:53px; background:var(--bg); }
+  td { padding:7px 12px; border-bottom:1px solid #1c1c24; vertical-align:middle; }
+  tr:hover td { background:#13131a; }
+  .name { font-weight:500; }
+  .meta { color:var(--dim); font-size:12px; white-space:nowrap; }
+  .play { width:30px; height:30px; border-radius:50%; padding:0; font-size:13px; }
+  .pill { padding:3px 9px; border-radius:20px; font-size:12px; cursor:pointer;
+    border:1px solid var(--line); user-select:none; white-space:nowrap; }
+  .pill.on { background:#1d2b1d; border-color:var(--good); color:#8be398; }
+  .pill.off { color:var(--dim); }
+  .ginput { width:130px; }
+  .filed { color:var(--good); font-size:11px; }
+  .senttag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:10px;
+    font-size:11px; background:#1d2b1d; color:#8be398; border:1px solid var(--good); cursor:default; }
+  .loose { color:var(--dim); font-size:11px; }
+  #player { position:fixed; bottom:0; left:0; right:0; background:var(--panel);
+    border-top:1px solid var(--line); padding:10px 18px; display:flex; gap:14px;
+    align-items:center; }
+  #player .np { min-width:200px; max-width:40%; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; color:var(--dim); font-size:13px; }
+  audio { flex:1; height:34px; }
+  /* blend the native control into the player bar instead of its light/grey default */
+  audio::-webkit-media-controls-enclosure,
+  audio::-webkit-media-controls-panel { background-color:var(--panel); }
+  #panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    margin:16px 18px; padding:16px; display:none; }
+  #panel.show { display:block; }
+  #panel h2 { font-size:13px; margin:0 0 10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  .move { font-size:12px; color:var(--dim); padding:2px 0; font-family:ui-monospace,monospace; }
+  .move b { color:var(--txt); font-weight:500; }
+  #toast { position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+    background:#222; border:1px solid var(--line); padding:10px 16px; border-radius:8px;
+    display:none; z-index:10; }
+  .count { color:var(--dim); font-size:12px; }
+
+  /* in-app turntable (plays the filtered tracks live; no files created) */
+  #ov{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;
+    overflow:auto;padding:16px 16px 40px;text-align:center;will-change:transform;backface-visibility:hidden;
+    background:radial-gradient(1100px 560px at 50% -8%,#1c1c24,#0b0b0e);}
+  #ov.show{display:flex;}
+  .ovhead{width:100%;max-width:560px;display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .ovtitle{font-weight:600;font-size:15px;letter-spacing:.02em;}
+  .ovhead .sp{flex:1;}
+  #ov .fxbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;position:relative;z-index:2;}
+  #ov .fxchip{background:#20202a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;
+    padding:5px 11px;font-size:12px;cursor:pointer;}
+  #ov .fxchip.off{color:var(--dim);border-color:var(--line);}
+  /* stem remix — a crew of characters RINGED AROUND the turntable; each bounces/glows
+     to its own layer. tap to drop/add, right-click to solo. */
+  #ov .stembar{display:none;flex-direction:column;align-items:center;gap:12px;
+    margin-bottom:16px;position:relative;z-index:3;}
+  #ov .stembar.show{display:flex;}
+  /* #stemcrew stays in flow (0-height) so the .stemchar children anchor to #ov, not
+     to a stretched overlay; each char is absolutely placed on a ring by layoutCrew(). */
+  #ov #stemcrew{display:none;}
+  #ov.remix #stemcrew{display:block;}
+  #ov.remix.clean #stemcrew{display:none;}                          /* clean mode always clears the deck */
+  #ov.remix.reel:not(.crewreel) #stemcrew{display:none;}            /* reel hides the crew UNLESS opted in (via the reel setup panel) */
+  #ov .stemchar{position:absolute;z-index:9;transform:translate(-50%,-50%);pointer-events:auto;
+    display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+    user-select:none;width:84px;transition:opacity .25s;}
+  #ov .stemchar.off{opacity:.42;filter:grayscale(.85);}
+  #ov .charfig{width:60px;height:90px;display:block;overflow:visible;will-change:transform,filter;transform-origin:50% 96%;}
+  #ov .charfig .charm{transform-box:fill-box;transform-origin:50% 10%;}  /* swing from the shoulder (NB: .charm, not .arm — see tonearm) */
+  #ov .charfig .leg{transform-box:fill-box;transform-origin:50% 8%;}   /* step from the hip */
+  #ov .charstage{height:96px;display:flex;align-items:flex-end;justify-content:center;position:relative;}
+  #ov .charname{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--txt);}
+  #ov .note{position:absolute;bottom:46px;font-size:16px;pointer-events:none;color:var(--cc);
+    text-shadow:0 0 8px var(--cc);animation:noteup 1s ease-out forwards;}
+  @keyframes noteup{0%{opacity:0;transform:translateY(4px) scale(.5);}
+    20%{opacity:1;}100%{opacity:0;transform:translate(var(--nx,0),-48px) rotate(var(--nr,0)) scale(1.1);}}
+  #ov .stemchar.off .charname{color:var(--dim);}
+  #ov .stemexit{font-size:12px;}
+  #ov .ovhead,#ov .ovnow,#ov .ovlist{flex:none;position:relative;z-index:2;}
+  .ovnow{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:18px;}
+  .ovplay{width:54px;height:54px;border-radius:50%;border:none;background:var(--accent);color:#10100a;
+    font-size:19px;cursor:pointer;flex:none;box-shadow:0 6px 18px rgba(201,162,39,.3);}
+  .ovinfo{text-align:left;min-width:150px;max-width:320px;}
+  .ovinfo .nt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ovinfo .nm{color:var(--dim);font-size:13px;}
+  @keyframes nfin{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+  #ov .nfin{animation:nfin .38s cubic-bezier(.2,.8,.2,1);}
+  #ov .bpmdot{display:none;width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;
+    box-shadow:0 0 8px var(--accent);animation:blink 1s ease-in-out infinite;}
+  @keyframes blink{0%,100%{opacity:.2;transform:scale(.8);}45%{opacity:1;transform:scale(1.15);}}
+  ol.ovlist{list-style:none;margin:0;padding:0;width:100%;max-width:560px;text-align:left;}
+  ol.ovlist li{display:flex;gap:11px;align-items:baseline;padding:11px 13px;border:1px solid var(--line);
+    border-radius:9px;margin-bottom:9px;cursor:pointer;background:var(--panel);}
+  ol.ovlist li:hover{border-color:#4a4a55;}
+  ol.ovlist li.active{border-color:var(--accent);background:#1d1d12;}
+  ol.ovlist .num{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;}
+  ol.ovlist .me{color:var(--dim);font-size:13px;margin-left:auto;white-space:nowrap;}
+  #ov .fx{position:absolute;inset:0;pointer-events:none;z-index:1;
+    background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
+  #ov .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  #ov .pfx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;}
+  #ov .flash{position:absolute;inset:0;pointer-events:none;z-index:7;opacity:0;}
+  #ov .hook{font-weight:800;font-size:19px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
+    min-height:1.3em;margin:0 0 6px;text-shadow:0 0 14px rgba(201,162,39,.4);position:relative;z-index:2;}
+  @keyframes hookpop{0%{opacity:0;transform:scale(.7) translateY(8px);}60%{opacity:1;transform:scale(1.06);}100%{opacity:1;transform:none;}}
+  #ov .hook.pop{animation:hookpop .5s cubic-bezier(.2,.9,.3,1.2);}
+  #ov.reel .hook{font-size:23px;}
+  #ov.reel{justify-content:center;overflow:hidden;}
+  #ov.reel .ovtitle,#ov.reel .ovlist{display:none;}
+  #ov.reel .deck{width:min(80vw,52vh);height:min(80vw,52vh);margin:0 auto 18px;}      /* size: Medium (default) */
+  #ov.reel.size-xs .deck{width:min(44vw,32vh);height:min(44vw,32vh);}                  /* Extra-small — lots of room for TikTok UI */
+  #ov.reel.size-s .deck{width:min(60vw,42vh);height:min(60vw,42vh);}                   /* Small — fits a phone with room for TikTok UI */
+  #ov.reel.size-l .deck{width:min(96vw,58vh);height:min(96vw,58vh);}                   /* Large — fills the frame */
+  #ov.reel .ovnow{transform:scale(1.15);}
+  /* reel = clean full-frame for recording: hide ALL the top chrome; Esc exits */
+  #ov.reel .ovhead,#ov.reel .fxbar,#ov.reel .hook{display:none;}
+  /* clean / presentation mode — hide the chrome but KEEP the now-playing bar
+     (song + play/pause) pinned at the bottom; just the deck + effects + that bar */
+  #ov.clean{justify-content:center;overflow:hidden;}
+  #ov.clean .ovhead,#ov.clean .fxbar,#ov.clean .hook,#ov.clean .ovlist{display:none;}
+  #ov.clean .deck{width:min(96vw,56vh);height:min(96vw,56vh);margin:0 auto;}
+  #ov.clean .ovnow{position:fixed;bottom:34px;left:0;right:0;justify-content:center;z-index:3;margin:0;}
+  /* reel pre-roll setup panel (choose look, then it goes full-frame + counts in) */
+  #ov .reelmodal{display:none;position:fixed;inset:0;z-index:12;align-items:center;justify-content:center;
+    background:rgba(6,6,9,.74);backdrop-filter:blur(3px);}
+  #ov .reelmodal.show{display:flex;}
+  #ov .reelcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+    width:min(340px,86vw);display:flex;flex-direction:column;gap:13px;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:left;}
+  #ov .reelcard-h{font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:12px;color:var(--accent);}
+  #ov .reelrow{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--dim);}
+  #ov .reelrow .seg,#ov .reelrow .rofx{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+  #ov .reelcard .seg button{background:#20202a;color:var(--txt);border:1px solid var(--line);border-radius:20px;
+    padding:5px 12px;font-size:12px;cursor:pointer;}
+  #ov .reelcard .seg button.on{background:var(--accent);color:#10100a;border-color:var(--accent);font-weight:600;}
+  #ov .reelhint{font-size:11px;color:var(--dim);line-height:1.55;}
+  #ov .reelhint b{color:var(--txt);}
+  #ov .reelact{display:flex;gap:10px;justify-content:flex-end;margin-top:2px;}
+  #ov .reelact button{padding:8px 16px;border-radius:8px;}

@@ -349,3 +349,10 @@ class TestSharedDeckModule:
         c, _ = client
         assert c.get("/static/deck/deck.css").status_code == 200
         assert "--deck-size" in c.get("/static/deck/deck.css").text
+
+    def test_app_assets_split_out(self, client):
+        c, _ = client  # brief writes client.get() — fixture returns (TestClient, root)
+        html = c.get("/").text
+        assert '/static/css/app.css' in html and '/static/js/app.js' in html
+        assert c.get("/static/deck/deck.js").text.count("function deckSetSkin") == 1
+        assert "<style>" not in html.split("deck-module")[0]  # no inline app stylesheet left
