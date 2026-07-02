@@ -60,6 +60,30 @@ def infer_stage(rel_parts: list[str]) -> str:
     return found
 
 
+# --- remix vs. original beat ----------------------------------------------
+
+# Whole-word markers that flag a project as a remix / flip / edit of someone
+# else's track rather than an original beat. Matched against the name AND the
+# path, so a finished flip that graduated out of "Remixes In Progress" into
+# Track List / Complete Tracks is still counted as a remix. Whole-word only, so
+# "credit"≠edit, "flippant"≠flip.
+_REMIX_MARKERS = re.compile(
+    r"\b(remix(?:es)?|rmx|flip|bootleg|edit|refix|rework|mashup|vip)\b", re.I
+)
+
+
+def is_remix(name: str, path: str = "", stage: str = "") -> bool:
+    """True if a project is a remix/flip/edit rather than an original beat.
+
+    Detected across every stage — via a manually-set ``remix`` stage, the
+    folder taxonomy, or the filename — so the dashboard can keep remixes and
+    original beats in separate sections regardless of how finished they are.
+    """
+    if stage == "remix":
+        return True
+    return bool(_REMIX_MARKERS.search(f"{name}\n{path}"))
+
+
 # --- BPM / key parsing -----------------------------------------------------
 
 _TOKEN_SPLIT = re.compile(r"[\s_\-.()\[\]]+")

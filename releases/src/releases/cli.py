@@ -353,6 +353,34 @@ def stems(
     typer.secho(f"Stems ({', '.join(out)}) → {cache.resolve() / stemsmod.cache_key(src)}", fg="green")
 
 
+def _render_pipeline(title: str, projects: list) -> None:
+    """One dashboard section — a stage breakdown + the closest-to-done few —
+    for a single pipeline (beats or remixes), kept visually separate."""
+    from collections import Counter
+
+    from .model import STAGES
+
+    typer.secho(title, bold=True)
+    if not projects:
+        typer.echo("  (none)")
+        return
+    counts = Counter(p.effective_stage for p in projects)
+    typer.secho("  By stage", bold=True)
+    # Order by the stage weight so each section reads done→raw.
+    ordered = sorted(counts.items(), key=lambda kv: -STAGES[kv[0]].weight if kv[0] in STAGES else 0)
+    for key, n in ordered:
+        typer.echo(f"    {stage_label(key):<24} {n}")
+    typer.echo(f"    {'TOTAL':<24} {len(projects)}")
+
+    typer.secho("  Closest to done", bold=True)
+    unshipped = [p for p in projects if p.effective_stage != "released"]
+    top = rank(unshipped)[:5]
+    if not top:
+        typer.echo("    (all shipped)")
+    for s in top:
+        typer.echo(f"    {s.score:5.1f}  {s.project.name}")
+
+
 @app.command()
 def dashboard(db: DbOpt = dbmod.DEFAULT_DB) -> None:
     """Counts by stage, what's scheduled, what's overdue."""
@@ -362,20 +390,14 @@ def dashboard(db: DbOpt = dbmod.DEFAULT_DB) -> None:
         typer.echo("No projects indexed yet — run:  releases scan")
         return
 
-    counts = dbmod.counts_by_stage(conn)
-    typer.secho("By stage", bold=True)
-    # Order by the stage weight so the dashboard reads done→raw.
-    from .model import STAGES
-    ordered = sorted(counts.items(), key=lambda kv: -STAGES[kv[0]].weight if kv[0] in STAGES else 0)
-    for key, n in ordered:
-        typer.echo(f"  {stage_label(key):<24} {n}")
-    typer.echo(f"  {'TOTAL':<24} {len(projects)}")
-
+    # Beats (original productions) and remixes/flips are tracked as two
+    # separate pipelines — a finished flip is a different kind of ship than an
+    # original beat — so the dashboard keeps them in their own sections.
+    beats = [p for p in projects if not p.is_remix]
+    remixes = [p for p in projects if p.is_remix]
+    _render_pipeline("Beats", beats)
     typer.echo("")
-    typer.secho("Closest to done", bold=True)
-    unshipped = [p for p in projects if p.effective_stage != "released"]
-    for s in rank(unshipped)[:5]:
-        typer.echo(f"  {s.score:5.1f}  {s.project.name}")
+    _render_pipeline("Remixes", remixes)
 
     releases = dbmod.list_releases(conn)
     rel_status = {r["id"]: r["status"] for r in releases}

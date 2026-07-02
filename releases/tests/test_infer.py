@@ -1,4 +1,4 @@
-from releases.infer import guess_genre, infer_stage, parse_bpm, parse_key
+from releases.infer import guess_genre, infer_stage, is_remix, parse_bpm, parse_key
 
 
 class TestStage:
@@ -56,6 +56,30 @@ class TestGenre:
 
     def test_default_unknown(self):
         assert guess_genre("just a title") == "unknown"
+
+
+class TestRemix:
+    def test_remix_stage_always_counts(self):
+        # a project manually parked in the remix stage counts even if its name
+        # gives nothing away
+        assert is_remix("untitled idea", "/x/untitled idea", "remix") is True
+
+    def test_finished_remix_outside_the_remix_folder(self):
+        # a flip that graduated to Track List / Complete is still a remix
+        assert is_remix("Up - Cardi B - Dibs X Jah Remix", "/x/Track List/up", "track-list")
+        assert is_remix("SEXYBACK - Dibs Edit", "/x/Complete Tracks/sb", "complete")
+        assert is_remix("Bazzi - fantasy (DJ EJ flip)", "/x/f", "track-list")
+        assert is_remix("wthelly (JAH edit)", "/x/w", "return-to")
+
+    def test_detected_from_the_folder_taxonomy(self):
+        assert is_remix("rmx1", "/x/Beats/Tracks/Remixes In Progress/rmx1", "remix")
+        assert is_remix("song", "/x/Complete Tracks/Remix/song", "complete")
+
+    def test_original_beats_are_not_remixes(self):
+        assert is_remix("Encara", "/x/Complete Tracks/Song/Encara", "complete") is False
+        assert is_remix("Hong Tonky", "/x/Track List/Hong Tonky", "track-list") is False
+        # whole-word only — no substring false positives
+        assert is_remix("credit roll idea", "/x/credit", "uncategorized") is False
 
     def test_no_substring_false_positives(self):
         # whole-word matching only — these must NOT mistag

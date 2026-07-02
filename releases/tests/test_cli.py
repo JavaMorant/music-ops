@@ -77,6 +77,24 @@ def test_plan_persists_schedule_and_dashboard_shows_it(synth_library, tmp_path):
     assert "Closest to done" in r.output
 
 
+def test_dashboard_splits_beats_and_remixes(synth_library, tmp_path):
+    db = tmp_path / "r.db"
+    _run(["scan", str(synth_library), "--db", str(db)])
+
+    r = _run(["dashboard", "--db", str(db)])
+    assert r.exit_code == 0
+    # two separate sections, kept apart
+    assert "Beats" in r.output
+    assert "Remixes" in r.output
+    beats_at = r.output.index("Beats")
+    remix_at = r.output.index("Remixes")
+    # the synth library has one remix (rmx1) — it belongs under Remixes, and the
+    # original beats (Encara etc.) belong under Beats, not mixed together
+    assert "rmx1" in r.output
+    assert "rmx1" in r.output[remix_at:]
+    assert "Encara" in r.output[beats_at:remix_at]
+
+
 def test_plan_bad_cadence_errors(synth_library, tmp_path):
     db = tmp_path / "r.db"
     _run(["scan", str(synth_library), "--db", str(db)])

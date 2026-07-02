@@ -90,6 +90,14 @@ class Project:
         return self.genre_manual or self.genre
 
     @property
+    def is_remix(self) -> bool:
+        """A remix/flip/edit of someone else's track (vs. an original beat) —
+        detected across every stage. Drives the dashboard's remix/beat split."""
+        from .infer import is_remix as _is_remix
+
+        return _is_remix(self.name, self.path, self.effective_stage)
+
+    @property
     def effective_mix(self) -> str:
         return self.mix_state or "unmixed"
 
