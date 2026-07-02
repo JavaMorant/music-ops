@@ -7,10 +7,13 @@ safe and reversible first, useful second.
 
 > Status: the **plan / apply / undo engine**, the one-time **`cleanup`** scan,
 > the **`inbox`** forever-pipeline, the local **review web app** (`serve`), the
-> AI **`organize`** front-door, and reversible AI **`retag`** (tag repair) are
-> built, tested (139 pytest tests), and proven on a copy of the testbed. Not yet
-> built: fuzzy/fingerprint dedupe, and rekordbox **database** analysis (BPM/key
-> via pyrekordbox).
+> AI **`organize`** front-door, reversible AI **`retag`** (tag repair), and the
+> newer **`organise`** engine — AcoustID/chromaprint fingerprint **identity** →
+> recording-level **`dedup_v2`** → AI **`classify_v2`** genres → reviewable plans,
+> plus guest-USB `.m3u8` export — are built and tested (215 passing). So
+> audio-fingerprint / fuzzy dedupe **is** built (via `organise`). Not yet built:
+> reading rekordbox **database** BPM/key (pyrekordbox is used only for read-only
+> playlist lookup today) and a librosa/essentia key/BPM fallback.
 
 ## Safety model (non-negotiable)
 
@@ -78,6 +81,7 @@ testbed until you've trialled it against your own rekordbox export (below).
 | `librarian plan <root>` | Minimal plan: strip download-junk filenames, quarantine copy-markers. Dry-run. |
 | `librarian cleanup <root>` | Full deep-clean plan: exact-dup → quarantine, rename to `Artist - Title`, refile into `Genre/`, + a report. Dry-run. |
 | `librarian organize <root> "…"` | Plan from a plain-English instruction (AI turns it into rules; the engine applies them). Dry-run. |
+| `librarian organise <root>` | **Different engine** (British spelling): fingerprint-identify (AcoustID) → recording-level dedup → AI genre classify → reviewable dedup + reorg plans (+ guest-USB `.m3u8` when pointed at a stick). Dry-run; `--apply` gated. |
 | `librarian retag <root> ["…"]` | Repair messy/missing artist/title/genre tags from filenames (AI proposes; you review). Reversible. Dry-run. |
 | `librarian inbox <root>` | Drain `<root>/Inbox`: dedupe new drops against the library, file them, add them to rekordbox + a "New This Week" playlist. Dry-run. |
 | `librarian apply <plan.json>` | Execute a reviewed plan, journaled + backed up. |
@@ -87,9 +91,17 @@ testbed until you've trialled it against your own rekordbox export (below).
 
 Every command has `--help`.
 
+> **`organise` vs `organize` — two different engines, mind the spelling.**
+> `organise` (British) is the newer four-stage engine — `organise.py` +
+> `dedup_v2.py` + `classify_v2.py` + `identity.py` (AcoustID fingerprinting).
+> `organize` (American) is the older AI plain-English rule-set path —
+> `organize.py` + `dedupe.py` (exact-match dedup, pyrekordbox playlist lookup).
+> When editing, confirm which family you mean; the names are one letter apart.
+
 ### `organize` — describe it in plain English (AI)
 
-The one ambition-tier AI feature. You describe how you want the library arranged
+One of the ambition-tier AI features (see also `retag` and `organise --classify`).
+You describe how you want the library arranged
 and Claude turns it into a small **rule-set**, which is applied deterministically
 to produce the same reviewable plan as everything else. The AI only *authors
 rules* — it never touches files, never sees the apply path, and never guesses
@@ -264,10 +276,12 @@ undo, origin guard, safe upload).
   and it's fully reversible. It never writes musical **key/BPM** (those are
   trusted, never guessed) and never downloads. The report still flags missing
   key / tags / low bitrate for manual attention.
-- Dedupe is **exact** (byte-identical) + a copy-marker heuristic. Fuzzy metadata
-  / audio-fingerprint dedupe is not built.
-- BPM/key come from existing tags only; rekordbox **database** analysis via
-  pyrekordbox and librosa fallback are not wired up.
+- The `cleanup`/`inbox` path dedupes **exact** (byte-identical) + a copy-marker
+  heuristic. Fuzzy / audio-fingerprint dedupe lives in the separate `organise`
+  engine (AcoustID + recording-level `dedup_v2`).
+- BPM/key come from existing tags only; reading rekordbox **database** BPM/key via
+  pyrekordbox and a librosa fallback are not wired up (pyrekordbox is used only for
+  read-only playlist lookup in `dedupe.py`).
 - `inbox` is a one-shot batch (run on demand), not a live watch daemon.
 - The web app is local-only (127.0.0.1), single-user; no auth token yet (origin/
   host guard + localhost bind only).

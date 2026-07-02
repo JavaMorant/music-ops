@@ -1,5 +1,10 @@
 # Music Ops — Build Brief for Claude Code
 
+> **Historical spec (2026-06).** This is the original build brief; parts are now
+> superseded. `releases/` was added later (a full tool), and the librarian web app
+> is a vanilla single-page UI, not React. For the **current** state of what's built,
+> the foot-guns, and open work, read `CLAUDE.md` ("Current state") and `TODO.md`.
+
 ## What we're building
 A **music-ops monorepo**: a set of tools that run the operations side of my music
 career — content production, DJ library intelligence, and bookings — so my time

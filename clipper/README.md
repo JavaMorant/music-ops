@@ -28,6 +28,12 @@ Optional ambition-tier extras (Whisper transcription + Claude captions):
 pip install -e '.[ai]'
 ```
 
+Optional local clip-studio web UI:
+
+```
+pip install -e '.[web]'
+```
+
 Every command has `--help`.
 
 ## Commands
@@ -105,6 +111,15 @@ clipper artwork cover.jpg
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--out` | `out/artwork/<name>/` | Output directory |
+
+### `web` — local clip-studio UI (opt-in)
+
+Runs a small FastAPI app (needs `pip install -e '.[web]'`) to drive analyze/cut
+from the browser. Localhost only.
+
+```
+clipper web            # serves http://127.0.0.1:8765
+```
 
 ## Output layout
 

@@ -14,7 +14,7 @@ window-captures it straight into a 1080×1920 canvas with **no cropping**.
 ## TL;DR (once set up)
 
 1. Resize Chrome to a tall, narrow window (roughly phone-shaped).
-2. Open the player vertical: `http://127.0.0.1:8770/?deck` → hit **⛶ Clean**
+2. Open the player vertical: `http://127.0.0.1:8765/?deck` → hit **⛶ Clean**
    (or load `?deck&clean`). For the remix crew, use **⤢ Reel** + **👥 Show crew**.
 3. OBS → **Start Recording** → in the player press play (or remix) → **Stop** at the end.
 4. The `.mov`/`.mp4` lands in your OBS recording folder, ready to post.

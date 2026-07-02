@@ -9,9 +9,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# pyrekordbox lands in a later slice (rekordbox DB analysis). The engine needs
-# none of it — rekordbox XML cue-safety is plain ElementTree — so the core stays
-# light. The web review app is an opt-in extra so the CLI install stays minimal.
+# rekordbox XML cue-safety is plain ElementTree, so the core stays light.
+# pyrekordbox is now used for read-only rekordbox-DB playlist lookup (dedupe.py);
+# reading DB BPM/key is still a later slice. The web review app is an opt-in extra
+# so the CLI install stays minimal.
 dev = ["pytest>=8.0", "httpx>=0.27"]
 web = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "python-multipart>=0.0.9"]
 # Ambition-tier `organize`: natural-language → rule-set via Claude. Opt-in so the

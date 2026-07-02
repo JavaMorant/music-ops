@@ -195,6 +195,22 @@ Safety invariants (proven on a copy, never the real library during dev):
   any scheduled slot are re-pointed to the new path; `undo` re-points them back.
   Run `releases scan` afterward to refresh inferred stages from the new locations.
 
+`organize relink` re-syncs the index to files after out-of-band moves (repair).
+
+### `stems` — Demucs stem separation (opt-in)
+
+Splits a beat into stems (vocals / drums / bass / other) for the web app's 🎛 Remix
+player. Needs `pip install -e '.[stems]'` (Demucs); stems are cached **outside** the
+library and the source is only read.
+
+```bash
+releases stems "<beat file>"
+```
+
+### `sends` — beat-pack send history
+
+`releases sends` reports which packs/tracks you've already sent (from the send log).
+
 ### `status <project> <stage>`
 Moves a project along the pipeline and logs the change. `<project>` is a
 case-insensitive substring of the name or path (ambiguous matches are listed,
