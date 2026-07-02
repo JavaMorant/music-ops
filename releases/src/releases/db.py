@@ -285,15 +285,6 @@ def get_schedule(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return cur.fetchall()
 
 
-def counts_by_stage(conn: sqlite3.Connection) -> dict[str, int]:
-    """Project counts grouped by *effective* stage (manual override wins)."""
-    cur = conn.execute(
-        "SELECT COALESCE(stage_manual, stage) AS s, COUNT(*) AS n "
-        "FROM projects GROUP BY s"
-    )
-    return {r["s"]: r["n"] for r in cur.fetchall()}
-
-
 # --- releases (hand-curated singles/EPs) -----------------------------------
 
 def next_untitled_name(conn: sqlite3.Connection) -> str:
