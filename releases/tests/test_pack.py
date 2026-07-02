@@ -69,6 +69,7 @@ def test_build_pack_writes_audio_player_and_tracklist(tmp_path):
     idx = (out / "index.html").read_text()
     assert "Encara" in idx and "Produced by" in idx and "Dibs" in idx
     assert "01 - Encara [129 F].mp3" in idx  # the audio is wired into the player
+    assert '‘' not in idx and '’' not in idx  # editor must not convert ASCII quotes to curly ones
     tl = (out / "tracklist.txt").read_text()
     assert "Encara" in tl and "150 BPM" in tl and "feat. Jah" in tl
 

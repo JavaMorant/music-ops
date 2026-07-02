@@ -261,12 +261,11 @@ function deckTogglePlay(){
 }
 function toggleStemPlay(){  // suspend/resume the whole stem graph — freezes audio, spin, progress + the crew together
   if(!dactx) return;
-  if(dactx.state === 'running'){ dactx.suspend(); window.__stemPlaying = false; deckSetPlaying(false); }
-  else { dactx.resume(); window.__stemPlaying = true; deckSetPlaying(true); }
+  if(dactx.state === 'running'){ dactx.suspend(); window.__stemPlaying = false; ovSetPlaying(false); }
+  else { dactx.resume(); window.__stemPlaying = true; ovSetPlaying(true); }
 }
-function deckSetPlaying(p){
-  document.getElementById('ov').classList.toggle('playing',p);
-  document.getElementById('arm').classList.toggle('on',p);
+function ovSetPlaying(p){
+  deckSetPlaying(document.getElementById('ov'), p);
   document.getElementById('ovplay').innerHTML=p?'&#10074;&#10074;':'&#9654;';
 }
 function closeDeck(){ if(stemMode) _teardownStems(); document.getElementById('ov').classList.remove('show'); }
@@ -293,6 +292,7 @@ function reelSetSkin(which){
   deckSetSkin(ov, which);
   document.getElementById('ro-vinyl').classList.toggle('on', which==='vinyl');
   document.getElementById('ro-cassette').classList.toggle('on', which==='cassette');
+  deckSize();
 }
 let reelSize = (function(){ try{ return localStorage.getItem('reelSize') || 'm'; }catch(e){ return 'm'; } })();  // S/M/L deck size, remembered
 function applyReelSize(){
@@ -329,22 +329,22 @@ function startReel(){
     if(dactx && deckCur>=0){ const id=DECK[deckCur].id;
       fetch('/api/audio?id='+encodeURIComponent(id)).then(r=>r.arrayBuffer()).then(ab=>dactx.decodeAudioData(ab))
         .then(buf=>{ window.__reelBuf=buf; }).catch(()=>{ window.__reelBuf=null; }); } }
-  deckSetPlaying(false);
+  ovSetPlaying(false);
   // silent 5s pre-roll (no on-screen countdown) — time to hit record in OBS
   _reelTimer=setTimeout(()=>{ if(document.getElementById('ov').classList.contains('reel')) reelGo(); }, 5000);
 }
 function reelGo(){
-  if(stemMode){ if(dactx) dactx.resume(); window.__stemPlaying=true; deckSetPlaying(true); return; }
+  if(stemMode){ if(dactx) dactx.resume(); window.__stemPlaying=true; ovSetPlaying(true); return; }
   deckInitViz();
   if(window.__reelBuf && dactx){  // play via Web Audio — no media element, so no Chrome media overlay
     if(dactx.state==='suspended') dactx.resume();
     try{ if(reelSrc){ reelSrc.onended=null; reelSrc.stop(); reelSrc.disconnect(); } }catch(e){}
     reelSrc = dactx.createBufferSource(); reelSrc.buffer = window.__reelBuf; reelSrc.connect(danalyser);
     reelDur = window.__reelBuf.duration; reelStartAt = dactx.currentTime;
-    reelSrc.onended = ()=>{ window.__reelPlaying=false; deckSetPlaying(false); };  // natural end of the beat
-    reelSrc.start(0); window.__reelPlaying=true; deckSetPlaying(true);
+    reelSrc.onended = ()=>{ window.__reelPlaying=false; ovSetPlaying(false); };  // natural end of the beat
+    reelSrc.start(0); window.__reelPlaying=true; ovSetPlaying(true);
   } else {  // decode not ready — fall back to the <audio> element (the media bar may appear)
-    audioEl.play().then(()=>deckSetPlaying(true)).catch(()=>{});
+    audioEl.play().then(()=>ovSetPlaying(true)).catch(()=>{});
   }
 }
 function exitReel(){
@@ -438,7 +438,7 @@ async function enterStems(){
     document.getElementById('ov').classList.add('remix');  // shows the crew ringed around the deck
     stemSolo = null;
     stemMode = true; window.__stemPlaying = true;
-    deckSetPlaying(true);
+    ovSetPlaying(true);
     layoutCrew();      // place the characters around the turntable
     stemBounce();  // start the character animation loop
     btn.textContent = '🎛 Remixing'; btn.disabled = false;
@@ -654,12 +654,12 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
 if (window.ttScrub) ttScrub({ vinyl:document.getElementById('vinyl'), audio:audioEl, secPerRev:4, onTap:deckTogglePlay });
 // In remix mode the <audio> is deliberately paused while the stems loop, so its
 // pause/ended events must NOT brake the deck — stemMode keeps the disk spinning.
-audioEl.addEventListener('play',()=>{ if(stemMode)return; deckInitViz(); deckSetPlaying(true); });
-audioEl.addEventListener('pause',()=>{ if(!stemMode) deckSetPlaying(false); });
+audioEl.addEventListener('play',()=>{ if(stemMode)return; deckInitViz(); ovSetPlaying(true); });
+audioEl.addEventListener('pause',()=>{ if(!stemMode) ovSetPlaying(false); });
 audioEl.addEventListener('ended',()=>{
   if(stemMode) return;
   if(document.getElementById('ov').classList.contains('show') && deckCur>=0 && deckCur<DECK.length-1) deckSelect(deckCur+1);
-  else deckSetPlaying(false);
+  else ovSetPlaying(false);
 });
 addEventListener('resize',deckSize);
 
