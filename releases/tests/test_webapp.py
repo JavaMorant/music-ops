@@ -391,3 +391,8 @@ class TestSharedDeckModule:
         c, _ = client
         css = c.get("/static/deck/deck.css").text
         assert "--pk:" in css and ".cassette .reel .hub" in css and ".cassette .screw" in css
+
+    def test_deck_css_serves_vinyl_fidelity(self, client):
+        c, _ = client
+        css = c.get("/static/deck/deck.css").text
+        assert ".vinyl .lring" in css and "closest-side" in css

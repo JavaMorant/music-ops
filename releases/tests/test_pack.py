@@ -394,3 +394,11 @@ def test_pack_cassette_has_spooling_and_shell_detail(tmp_path):
     assert "--pk:calc(1 - var(--prog,0))" in html and "--pk:var(--prog,0)" in html
     # shell detail present
     assert 'class="screw s1"' in html and 'class="chole c1"' in html
+
+
+def test_pack_vinyl_has_ring_text_and_groove_detail(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'class="lring"' in html and "45 RPM" in html      # pressed ring text
+    assert "closest-side" in html                             # calibrated groove/rim rings
