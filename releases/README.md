@@ -158,6 +158,22 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
   (`src/releases/web/deck/`: `turntable.js`, `deck.css`, `deck.html`, `deck.js`).
   The app serves it at `/api/turntable.js`; the pack inlines it so the zip is
   fully self-contained (no CDN, no external font file).
+- **Two skins, one button.** The deck flips between a **vinyl** record and a
+  **cassette** (the `Cassette` / `Vinyl` toggle in the deck bar, or the Skin
+  segment in the reel setup). The cassette is fully detailed — tape that
+  **spools** hub-to-hub as the track plays (left pack full at 0:00, right pack
+  full at the end), cream hubs, a screwed shell with head-access holes, and a
+  printed sticker label. The vinyl has a fixed specular highlight, concentric
+  groove bands, a bevelled rim, and **"45 RPM · STEREO"** ring text curving
+  around the label.
+- **Cinematic FX chips.** A row of toggles in the deck bar layers film grain and
+  motion on top: **Smoke**, **Particles**, **Shake**, **Heat**, **VHS**
+  (grain + tracking + chroma bleed, applied to the cassette), **Vignette**, and
+  **Dust** (drifting motes on the canvas). Flip each on or off live. The
+  reel-setup panel carries the same chips plus a **Hue** slider (drag to pin the
+  palette, **Auto** to let it drift with the music) and **Title card** / **End
+  card** toggles that stamp a recorded reel with an opening title and a closing
+  name card.
 - **Themes:** the app defaults to the **editorial** look — champagne brass
   (`#d4aa5e`), record-red (`#b3352c`), violet (`#b98ede`), and self-hosted
   Fraunces display type (`web/fonts/fraunces.woff2`), with soft card-style track
@@ -184,6 +200,10 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
   WeTransfer/Drive, or drop the folder on a free static host (Netlify Drop) for
   an instant shareable **player link**. Also `releases pack "Name" --genre trap
   --cover art.jpg`. Read-only — exports copies, never moves your files.
+  The exported player carries both **skins** (vinyl + spooling cassette) and the
+  **VHS / Vignette / Dust** FX chips — same shared deck module — but **not** the
+  recording controls, the **Title / End cards**, or the **Hue** UI, which stay
+  app-only (recording and those reel-only extras don't ship in the pack).
   The pack is **themed**: editorial by default; pass `--theme classic` (or
   `--theme editorial`) to the CLI, or append `?theme=classic` (or
   `?theme=editorial`) to the URL at runtime. Fraunces falls back to Georgia when
@@ -289,5 +309,11 @@ project's bounce). Core ships first.
   CLI flag; `?theme=` query-string runtime override; no font file in the zip
   (Fraunces falls back to Georgia).
 
-**Plan B** (management hub — 4 tabs), **Plan C** (record studio / OBS automation),
-**Plan D** (reel FX + pack player parity): pending.
+**Plan D — reel FX + pack player parity** (done): two deck skins (a detailed
+vinyl and a spooling cassette), the cinematic FX chips (Smoke / Particles /
+Shake / Heat / VHS / Vignette / Dust) with the reel-only **Hue** slider and
+**Title-card / End-card** toggles, and pack export inheriting the skins +
+VHS / Vignette / Dust (recording, cards, and hue stay app-only).
+
+**Plan B** (management hub — 4 tabs) and **Plan C** (record studio / OBS
+automation): pending.
