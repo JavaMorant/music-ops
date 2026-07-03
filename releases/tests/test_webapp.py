@@ -411,3 +411,11 @@ class TestSharedDeckModule:
         page = c.get("/").text
         assert 'id="ro-hue"' in page and 'id="ro-hueauto"' in page
         assert "hueOverride" in c.get("/static/js/app.js").text
+
+    def test_app_has_title_and_end_cards(self, client):
+        c, _ = client
+        page = c.get("/").text
+        assert 'id="tcard"' in page and 'id="ecard"' in page
+        assert 'data-rofx="titlecard"' in page and 'data-rofx="endcard"' in page
+        js = c.get("/static/js/app.js").text
+        assert "showTitleCard" in js and "showEndCard" in js

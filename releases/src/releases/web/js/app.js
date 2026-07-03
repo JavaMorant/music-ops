@@ -349,8 +349,9 @@ function reelGo(){
     try{ if(reelSrc){ reelSrc.onended=null; reelSrc.stop(); reelSrc.disconnect(); } }catch(e){}
     reelSrc = dactx.createBufferSource(); reelSrc.buffer = window.__reelBuf; reelSrc.connect(danalyser);
     reelDur = window.__reelBuf.duration; reelStartAt = dactx.currentTime;
-    reelSrc.onended = ()=>{ window.__reelPlaying=false; ovSetPlaying(false); };  // natural end of the beat
+    reelSrc.onended = ()=>{ window.__reelPlaying=false; ovSetPlaying(false); showEndCard(); };  // natural end of the beat
     reelSrc.start(0); window.__reelPlaying=true; ovSetPlaying(true);
+    showTitleCard();
   } else {  // decode not ready — fall back to the <audio> element (the media bar may appear)
     audioEl.play().then(()=>ovSetPlaying(true)).catch(()=>{});
   }
@@ -589,6 +590,25 @@ function _teardownStems(){  // stop the stem graph + animation + reset UI, WITHO
 }
 function exitStems(){ if(!stemMode) return; _teardownStems(); if(deckCur >= 0) deckSelect(deckCur); }
 
+// ---- recorded intro/outro cards (reel-panel chips: titlecard / endcard, default on) ----
+function cardOn(n){ return !document.getElementById('ov').classList.contains('off-'+n); }
+function showTitleCard(){
+  if(!cardOn('titlecard')) return;
+  const t = DECK[deckCur]; if(!t) return;
+  document.getElementById('tc-title').textContent = t.name || '';
+  document.getElementById('tc-meta').textContent =
+    [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : ''].filter(Boolean).join(' · ');
+  const el = document.getElementById('tcard');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1500);
+}
+function showEndCard(done){
+  if(!cardOn('endcard')){ if(done) done(); return; }
+  document.getElementById('ec-name').textContent = PRODUCER;
+  const el = document.getElementById('ecard');
+  el.classList.add('show');
+  setTimeout(() => { el.classList.remove('show'); if(done) done(); }, 1100);
+}
 // ---- one-click reel export: capture THIS tab (getDisplayMedia) in Clean mode so
 // the recording is EXACTLY the live web render with no UI chrome, + tab audio, then
 // transcode to mp4. A captured tab keeps rendering even if you look away. ----
@@ -639,10 +659,11 @@ async function exportReel(){
   audioEl.currentTime = 0;
   try{ await audioEl.play(); }catch(e){}
   rec.start();
+  showTitleCard();
   toast('Recording — it stops at the end of the beat (or hit Chrome\'s "Stop sharing" bar)');
   const dur = (audioEl.duration && isFinite(audioEl.duration)) ? audioEl.duration : 60;
-  const guard = setTimeout(() => { if(rec.state !== 'inactive') rec.stop(); }, Math.min(180000, dur*1000 + 1000));
-  audioEl.addEventListener('ended', () => { clearTimeout(guard); if(rec.state !== 'inactive') rec.stop(); }, {once:true});
+  const guard = setTimeout(() => { if(rec.state !== 'inactive') rec.stop(); }, Math.min(180000, dur*1000 + 2600));
+  audioEl.addEventListener('ended', () => { clearTimeout(guard); showEndCard(() => { if(rec.state !== 'inactive') rec.stop(); }); }, {once:true});
 }
 // shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
 if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
