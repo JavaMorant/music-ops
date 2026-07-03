@@ -106,6 +106,9 @@
         </div></div>
       <div class="reelrow" id="ro-crewrow"><span>Dancers</span>
         <div class="rofx"><button class="fxchip" id="ro-crew" onclick="reelToggleCrew()">Show crew</button></div></div>
+      <div class="reelrow"><span>Hue</span>
+        <div class="rofx"><button class="fxchip" id="ro-hueauto" onclick="reelHueAuto()">Auto</button>
+        <input type="range" id="ro-hue" min="0" max="360" value="42" oninput="reelHueSet(this.value)"></div></div>
       <div class="reelhint">Top buttons hide while you record — press <b>Esc</b> to leave reel mode. The beat starts <b>5 seconds</b> after you press Start, so you have time to hit record in OBS.</div>
       <div class="reelact"><button onclick="cancelReelOpts()">Cancel</button><button class="primary" onclick="startReel()">Start ▶</button></div>
     </div>

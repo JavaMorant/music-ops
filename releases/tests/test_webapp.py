@@ -404,3 +404,10 @@ class TestSharedDeckModule:
         assert 'data-fx="vhs"' in page and 'data-fx="vignette"' in page
         css = c.get("/static/deck/deck.css").text
         assert ".off-vhs .fx-vhs" in css and ".off-vignette .fx-vig" in css
+
+    def test_app_has_dust_and_hue_controls(self, client):
+        c, _ = client
+        assert "dustSpawn" in c.get("/api/turntable.js").text
+        page = c.get("/").text
+        assert 'id="ro-hue"' in page and 'id="ro-hueauto"' in page
+        assert "hueOverride" in c.get("/static/js/app.js").text

@@ -413,3 +413,10 @@ def test_pack_has_cinematic_fx_layer(tmp_path):
     assert "vhstrack" in html            # tracking-line animation inlined via deck.css
     # still self-contained
     assert 'src="http' not in html and 'href="http' not in html and "url(http" not in html
+
+
+def test_pack_viz_has_dust_and_hue_override(tmp_path):
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert "dustSpawn" in html and "hueOverride" in html   # shared viz inlined via __VIZ_JS__

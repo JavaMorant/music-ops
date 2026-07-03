@@ -151,6 +151,7 @@
   #ov .reelcard-h{font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:12px;color:var(--accent);}
   #ov .reelrow{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--dim);}
   #ov .reelrow .seg,#ov .reelrow .rofx{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+  #ro-hue{accent-color:var(--accent);width:130px;}
   #ov .reelcard .seg button{background:#20202a;color:var(--txt);border:1px solid var(--line);border-radius:20px;
     padding:5px 12px;font-size:12px;cursor:pointer;}
   #ov .reelcard .seg button.on{background:var(--accent);color:#10100a;border-color:var(--accent);font-weight:600;}

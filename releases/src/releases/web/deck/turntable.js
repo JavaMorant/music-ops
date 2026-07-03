@@ -2,7 +2,7 @@
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
-  var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], smoothV=null, idleT=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe)
+  var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], dust=[], smoothV=null, idleT=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe)
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, curProg=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
   function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
@@ -46,7 +46,8 @@ function ttRun(opts){
     bassAvg=bassAvg*0.9+bass*0.1; eLong=eLong*0.985+energy*0.015;
     var kick=Math.max(0,bass-bassAvg-0.05);
     if(energy>eLong*1.45+0.12 && energy>0.30 && nowMs()-lastDrop>1400){lastDrop=nowMs();onDrop(energy);}
-    hue=(hue+0.04+energy*0.45)%360;  // a touch slower so the colour drift reads as calm, not strobing
+    var hov=opts.hueOverride?opts.hueOverride():null;  // reel hue chip: pin the palette
+    if(hov!=null&&isFinite(hov))hue=Number(hov); else hue=(hue+0.04+energy*0.45)%360;  // a touch slower so the colour drift reads as calm, not strobing
     flash*=0.86; punch*=0.9; shake*=0.82;
     if(kick>0.05){shake=Math.max(shake,Math.min(11,kick*34)); if(opts.sparksOn&&fxParticles)spawn(kick);}  // bass/kick → screen shake
     var breath=0.5+0.5*Math.sin(idleT*0.9);  // gentle idle pulse, ~7s cycle
@@ -78,6 +79,7 @@ function ttRun(opts){
     if(opts.scene)opts.scene.style.setProperty('--heat',(fxHeat?heat:0).toFixed(3));  // heat toggle → reels' red glow
     if(opts.scene)opts.scene.style.setProperty('--prog',pr.toFixed(4));  // tonearm tracks inward with track progress
     var cassette=opts.getSkin&&opts.getSkin()==='cassette';
+    if(playing&&!cassette&&fxParticles&&on('dust'))dustSpawn();  // vinyl only: dust catching the light
     var pts=opts.smokeAt?opts.smokeAt():[];  // reels (cassette) or the stylus (vinyl)
     if(!cassette && playing && pts.length){  // the red contact circle sits exactly where the stylus tip meets the vinyl
       stylusX=(pts[0].x-fxLeft)*sclx; stylusY=(pts[0].y-fxTop)*scly; hasStylus=true;}
@@ -97,6 +99,11 @@ function ttRun(opts){
   function ambient(energy){var cap=10+Math.floor(energy*60), n=1+Math.floor(energy*4);
     for(var q=0;q<n;q++){ if(embers.length<cap && Math.random()<0.5){
       embers.push({x:Math.random()*fxw,y:fxh+8,vx:(Math.random()*2-1)*fxw*0.0004,vy:-(fxh*0.0011)*(0.5+Math.random()*1.4)*(0.6+energy*1.3),life:1,sz:ref*(0.004+Math.random()*0.01)});}}}
+  // slow-drifting dust motes catching the light — vinyl only
+  function dustSpawn(){ if(dust.length>=36||Math.random()>0.3)return;
+    dust.push({x:Math.random()*fxw,y:Math.random()*fxh,vx:(Math.random()*2-1)*fxw*0.00008,
+      vy:-(fxh*0.00012)*(0.4+Math.random()),t:0,dt:0.0016+Math.random()*0.002,
+      sz:ref*(0.0016+Math.random()*0.0034),ph:Math.random()*6.2832,tw:2+Math.random()*3});}
   // soft, slow, glowing orbs drifting across the whole field — the Trap-Nation bokeh
   // look. They fade in and out (t:0->1), sway gently, and are tinted around the hue.
   function bokehSpawn(energy){var cap=46+Math.floor(energy*100), n=1+Math.floor(energy*3);  // lush field — cheap now that orbs are blitted sprites, not per-frame gradients
@@ -196,6 +203,15 @@ function ttRun(opts){
     var c=fxctx||ctx, e;
     if(fxctx)c.clearRect(0,0,fxw,fxh);
     if(fxctx)drawTrail(c);  // burnt groove + stylus ember (full-screen field only), under the smoke/particles
+    if(dust.length){c.save();
+      for(var di=dust.length-1;di>=0;di--){var d=dust[di];d.t+=d.dt;
+        if(d.t>=1){dust.splice(di,1);continue;}
+        d.x+=d.vx+Math.sin(d.t*6.2832*d.tw+d.ph)*fxw*0.00018;d.y+=d.vy;
+        var da=Math.sin(d.t*3.14159)*(0.1+0.16*Math.sin(d.t*6.2832*d.tw*1.7+d.ph));
+        if(da<=0)continue;
+        c.globalAlpha=Math.min(0.3,da);c.fillStyle='rgba(255,248,235,1)';
+        c.beginPath();c.arc(d.x,d.y,d.sz,0,6.2832);c.fill();}
+      c.restore();c.globalAlpha=1;}
     if(bokeh.length){c.save();c.globalCompositeOperation='lighter';  // additive — per-particle radial gradient (crisper + per-orb hue; a touch more per-frame cost than the sprite)
       for(var bi=bokeh.length-1;bi>=0;bi--){var bo=bokeh[bi];bo.t+=bo.dt;
         if(bo.t>=1){bokeh.splice(bi,1);continue;}

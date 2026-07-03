@@ -4,6 +4,7 @@ applyTheme(new URLSearchParams(location.search).get("theme")||localStorage.theme
 
 let TRACKS = [], GENRES = [], MONTHS = [], currentPlan = null;
 let PRODUCER = 'Beats', COVER = null;  // for the in-app turntable label
+window.__fxHue = null;  // null = auto (cover-art seeded, drifting)
 let DECK = [], deckCur = -1, dactx, danalyser, ddata;
 let reelSrc = null, reelStartAt = 0, reelDur = 0;  // reel plays the beat via Web Audio (no <audio> → no Chrome fullscreen media bar)
 
@@ -286,6 +287,7 @@ function openReelOpts(){
   document.getElementById('ro-cassette').classList.toggle('on', cassette);
   document.querySelectorAll('#reelopts [data-rofx]').forEach(ch =>
     ch.classList.toggle('off', ov.classList.contains('off-'+ch.dataset.rofx)));
+  document.getElementById('ro-hueauto').classList.toggle('off', window.__fxHue!=null);
   document.getElementById('ro-crewrow').style.display = stemMode ? '' : 'none';  // dancers only exist in remix
   document.getElementById('ro-crew').classList.toggle('off', !ov.classList.contains('crewreel'));
   applyReelSize();
@@ -309,6 +311,8 @@ function reelToggleCrew(){
   const on=document.getElementById('ov').classList.toggle('crewreel');
   document.getElementById('ro-crew').classList.toggle('off', !on); layoutCrew();
 }
+function reelHueAuto(){ window.__fxHue=null; document.getElementById('ro-hueauto').classList.remove('off'); }
+function reelHueSet(v){ window.__fxHue=Number(v); document.getElementById('ro-hueauto').classList.add('off'); }
 // the panel's effect chips mirror the main fx chips (flip an off-<name> class on #ov)
 document.querySelectorAll('#reelopts [data-rofx]').forEach(function(ch){
   ch.onclick=function(){ ch.classList.toggle('off',
@@ -646,6 +650,7 @@ if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalys
   scene:document.getElementById('ov'),
   getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'clabel':'label'),
   flash:document.querySelector('#ov .flash'), getCover:()=>COVER,
+  hueOverride:()=>window.__fxHue,
   getSkin:()=>document.getElementById('ov').classList.contains('cassette-mode')?'cassette':'vinyl',
   fxOn:(n)=>!document.getElementById('ov').classList.contains('off-'+n),
   isPlaying:()=>window.__stemPlaying || window.__reelPlaying || !!(audioEl && !audioEl.paused),
