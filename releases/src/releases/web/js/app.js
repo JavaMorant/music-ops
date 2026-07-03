@@ -688,6 +688,7 @@ audioEl.addEventListener('play',()=>{ if(stemMode)return; deckInitViz(); ovSetPl
 audioEl.addEventListener('pause',()=>{ if(!stemMode) ovSetPlaying(false); });
 audioEl.addEventListener('ended',()=>{
   if(stemMode) return;
+  if(_recording){ ovSetPlaying(false); return; }  // recording: the end card is the outro — never auto-advance, or the next beat bleeds into the reel
   if(document.getElementById('ov').classList.contains('show') && deckCur>=0 && deckCur<DECK.length-1) deckSelect(deckCur+1);
   else ovSetPlaying(false);
 });
