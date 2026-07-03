@@ -396,3 +396,11 @@ class TestSharedDeckModule:
         c, _ = client
         css = c.get("/static/deck/deck.css").text
         assert ".vinyl .lring" in css and "closest-side" in css
+
+    def test_app_has_cinematic_fx_layer(self, client):
+        c, _ = client
+        page = c.get("/").text
+        assert 'class="fx-vhs"' in page and 'class="fx-vig"' in page
+        assert 'data-fx="vhs"' in page and 'data-fx="vignette"' in page
+        css = c.get("/static/deck/deck.css").text
+        assert ".off-vhs .fx-vhs" in css and ".off-vignette .fx-vig" in css

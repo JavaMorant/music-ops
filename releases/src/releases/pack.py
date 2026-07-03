@@ -141,6 +141,7 @@ __DECK_CSS__
     background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+  .fx-vig,.fx-vhs{position:fixed;inset:0;z-index:6;}
   .pfx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;}
   .flash{position:fixed;inset:0;pointer-events:none;z-index:7;opacity:0;}
   .hook{font-weight:800;font-size:19px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
@@ -195,6 +196,7 @@ __DECK_CSS__
   <button class="fxchip" data-fx="particles">Particles</button>
   <button class="fxchip" data-fx="shake">Shake</button>
   <button class="fxchip" data-fx="heat">Heat</button>
+  <button class="fxchip" data-fx="vhs">VHS</button><button class="fxchip" data-fx="vignette">Vignette</button><button class="fxchip" data-fx="dust">Dust</button>
 </div>
 <div class="wrap">
   <h1>__PACK_NAME__</h1>
@@ -211,6 +213,7 @@ __DECK_CSS__
   <footer>Made with releases · serve this folder or drop it on a static host to share</footer>
 </div>
 <canvas class="pfx" id="pfx"></canvas>
+<div class="fx-vig"></div><div class="fx-vhs"></div>
 <div class="fx"></div>
 <div class="flash"></div>
 <audio id="audio"></audio>
