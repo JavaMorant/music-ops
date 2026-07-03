@@ -386,3 +386,8 @@ class TestSharedDeckModule:
         assert '/static/css/app.css' in html and '/static/js/app.js' in html
         assert c.get("/static/deck/deck.js").text.count("function deckSetSkin") == 1
         assert "<style>" not in html.split("deck-module")[0]  # no inline app stylesheet left
+
+    def test_deck_css_serves_cassette_fidelity(self, client):
+        c, _ = client
+        css = c.get("/static/deck/deck.css").text
+        assert "--pk:" in css and ".cassette .reel .hub" in css and ".cassette .screw" in css
