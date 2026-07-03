@@ -169,7 +169,7 @@ releases web                 # → http://127.0.0.1:8765  (localhost only)
 - **Cinematic FX chips.** A row of toggles in the deck bar layers film grain and
   motion on top: **Smoke**, **Particles**, **Shake**, **Heat**, **VHS**
   (grain + tracking + chroma bleed, applied to the cassette), **Vignette**, and
-  **Dust** (drifting motes on the canvas). Flip each on or off live. The
+  **Dust** (drifting motes on the canvas, over the vinyl). Flip each on or off live. The
   reel-setup panel carries the same chips plus a **Hue** slider (drag to pin the
   palette, **Auto** to let it drift with the music) and **Title card** / **End
   card** toggles that stamp a recorded reel with an opening title and a closing
