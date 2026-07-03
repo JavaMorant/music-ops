@@ -137,8 +137,7 @@ _PLAYER_TEMPLATE = r"""<!DOCTYPE html>
 __DECK_CSS__
   /* 9:16 reel mode: scale the shared deck; the rest of reel layout is below */
   body.reel .deck{width:min(82vw,58vh);height:min(82vw,58vh);margin:0 auto 26px;}
-  .fx{position:fixed;inset:0;pointer-events:none;z-index:5;
-    background:radial-gradient(125% 85% at 50% 42%,transparent 52%,rgba(0,0,0,.5) 100%);}
+  .fx{position:fixed;inset:0;pointer-events:none;z-index:5;}  /* grain only; vignette is the toggleable .fx-vig layer */
   .fx::after{content:"";position:absolute;inset:0;opacity:.045;mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
   .fx-vig,.fx-vhs{position:fixed;inset:0;z-index:6;}

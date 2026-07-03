@@ -420,3 +420,14 @@ def test_pack_viz_has_dust_and_hue_override(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
     html = (out / "index.html").read_text(encoding="utf-8")
     assert "dustSpawn" in html and "hueOverride" in html   # shared viz inlined via __VIZ_JS__
+
+
+def test_pack_omits_app_only_controls(tmp_path):
+    # recording, title/end cards, and the hue slider are app-only — packs never record,
+    # so those controls must not leak into the exported player (guards app/pack scope).
+    out = tmp_path / "out" / "p"
+    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="tcard"' not in html and 'id="ecard"' not in html
+    assert 'id="ro-hue"' not in html
+    assert 'data-rofx="titlecard"' not in html and 'data-rofx="endcard"' not in html
