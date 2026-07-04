@@ -42,6 +42,19 @@ class EngineError(RuntimeError):
     """A safety check failed; the filesystem was left untouched."""
 
 
+class PartialApplyError(EngineError):
+    """Apply failed *after* the run was journaled and some actions may already
+    have executed. Distinct from a plain ``EngineError`` (which is raised by
+    preflight, before anything changes): recovery here is ``undo <run_id>``, not
+    a retry, and the caller must never report "nothing changed"."""
+
+    def __init__(self, run_id: str, journal: "Journal", cause: BaseException) -> None:
+        self.run_id = run_id
+        self.journal = journal
+        super().__init__(f"apply failed partway through run {run_id}: {cause}")
+        self.__cause__ = cause
+
+
 def _norm(path: Path) -> str:
     """Case-folded absolute path, for collision/containment comparisons.
 
@@ -266,69 +279,82 @@ def apply_plan(plan: Plan, runs_dir: Path, *, backup: bool = True, full_backup: 
     run_dir.mkdir(parents=True, exist_ok=True)
     write_journal(journal)
 
-    # Safety net: back up at-risk files before the first move, then re-journal
-    # so the backup is part of the audit trail.
-    if backup:
-        journal.backup = _backup_sources(plan, run_dir, full_backup)
-        write_journal(journal)
-
-    # Back up the rekordbox XML *before* anything moves, so even a crash
-    # mid-apply leaves undo able to restore the collection.
-    if plan.rekordbox_xml is not None:
-        rb_backup = run_dir / "rekordbox.orig.xml"
-        shutil.copy2(plan.rekordbox_xml, rb_backup)
-        journal.rekordbox = {
-            "original": str(plan.rekordbox_xml),
-            "backup": str(rb_backup),
-            "rewritten": False,
-        }
-        write_journal(journal)
-
-    # Tag repairs run first, on the files' current (pre-move) paths. For each we
-    # read the OLD values and journal them *before* writing the new ones, so a
-    # crash still leaves undo able to restore exactly what was there.
-    for tedit in journal.tag_edits:
-        try:
-            tedit.old = tags.read_tags(tedit.path, tedit.new.keys())
+    # Past this point the run exists on disk and actions may execute, so any
+    # failure is a PARTIAL apply (recover with `undo`), never "nothing changed".
+    try:
+        # Safety net: back up at-risk files before the first move, then re-journal
+        # so the backup is part of the audit trail.
+        if backup:
+            journal.backup = _backup_sources(plan, run_dir, full_backup)
             write_journal(journal)
-            tags.write_tags(tedit.path, tedit.new)
-        except tags.TagError:
-            # One unwritable file must not abort the whole batch — leave this edit
-            # PENDING (never written, so undo skips it) and move on. preflight
-            # already rejects formats it knows can't carry tags.
-            continue
-        tedit.status = DONE
-        write_journal(journal)
 
-    for entry in journal.actions:
-        _safe_move(entry.action.src, entry.action.dest)
-        entry.status = DONE
-        write_journal(journal)
+        # Back up the rekordbox XML *before* anything moves, so even a crash
+        # mid-apply leaves undo able to restore the collection.
+        if plan.rekordbox_xml is not None:
+            rb_backup = run_dir / "rekordbox.orig.xml"
+            shutil.copy2(plan.rekordbox_xml, rb_backup)
+            journal.rekordbox = {
+                "original": str(plan.rekordbox_xml),
+                "backup": str(rb_backup),
+                "rewritten": False,
+            }
+            write_journal(journal)
 
-    # Now that every file is at its new home, point rekordbox at the new paths.
-    # Arm the journal's restore flag and flush it *before* touching the XML —
-    # journal-before-execute again — so a crash during the rewrite still leaves
-    # undo able (and obliged) to restore the collection. If the crash lands
-    # before the rewrite runs, the backup is byte-identical to the original, so
-    # the restore is a harmless no-op.
-    if plan.rekordbox_xml is not None:
-        # Start from every literal move, then overlay the plan's explicit
-        # redirects (which send a quarantined dup's cues to the kept copy).
-        # Overlaying — not replacing — means a partial redirect map can never
-        # leave a moved file with a dead Location.
-        path_map = {a.action.src: a.action.dest for a in journal.actions}
-        path_map.update(plan.location_redirects or {})
-        journal.rekordbox["rewritten"] = True
+        # Tag repairs run first, on the files' current (pre-move) paths. For each we
+        # read the OLD values and journal them *before* writing the new ones, so a
+        # crash still leaves undo able to restore exactly what was there.
+        for tedit in journal.tag_edits:
+            try:
+                tedit.old = tags.read_tags(tedit.path, tedit.new.keys())
+                write_journal(journal)
+                tags.write_tags(tedit.path, tedit.new)
+            except tags.TagError:
+                # One unwritable file must not abort the whole batch — leave this edit
+                # PENDING (never written, so undo skips it) and move on. preflight
+                # already rejects formats it knows can't carry tags.
+                continue
+            tedit.status = DONE
+            write_journal(journal)
+
+        for entry in journal.actions:
+            # A crash in the tiny window between os.rename and this flush can leave
+            # a completed move recorded as PENDING. We don't add a pre-move flush
+            # (a second write per action, and a new action state to serialize);
+            # instead undo_run reconciles PENDING actions against the real
+            # filesystem, so a move that happened is still reversed.
+            _safe_move(entry.action.src, entry.action.dest)
+            entry.status = DONE
+            write_journal(journal)
+
+        # Now that every file is at its new home, point rekordbox at the new paths.
+        # Arm the journal's restore flag and flush it *before* touching the XML —
+        # journal-before-execute again — so a crash during the rewrite still leaves
+        # undo able (and obliged) to restore the collection. If the crash lands
+        # before the rewrite runs, the backup is byte-identical to the original, so
+        # the restore is a harmless no-op.
+        if plan.rekordbox_xml is not None:
+            # Start from every literal move, then overlay the plan's explicit
+            # redirects (which send a quarantined dup's cues to the kept copy).
+            # Overlaying — not replacing — means a partial redirect map can never
+            # leave a moved file with a dead Location.
+            path_map = {a.action.src: a.action.dest for a in journal.actions}
+            path_map.update(plan.location_redirects or {})
+            journal.rekordbox["rewritten"] = True
+            write_journal(journal)
+            rekordbox.rewrite_locations(plan.rekordbox_xml, path_map, plan.rekordbox_xml)
+            # Then ADD any brand-new tracks (inbox imports) + their playlist. This
+            # runs after the rewrite and operates on disjoint paths (the new tracks
+            # aren't in the collection yet). It's covered by the same XML backup, so
+            # undo restores byte-for-byte — the `rewritten` flag is already armed.
+            if plan.rekordbox_additions:
+                rekordbox.add_tracks_and_playlist(
+                    plan.rekordbox_xml, plan.rekordbox_additions, plan.rekordbox_playlist
+                )
+    except Exception as exc:
+        # Leave the journal in APPLYING (not APPLIED) so it stays undoable, record
+        # exactly how far we got, and surface the partial state distinctly.
         write_journal(journal)
-        rekordbox.rewrite_locations(plan.rekordbox_xml, path_map, plan.rekordbox_xml)
-        # Then ADD any brand-new tracks (inbox imports) + their playlist. This
-        # runs after the rewrite and operates on disjoint paths (the new tracks
-        # aren't in the collection yet). It's covered by the same XML backup, so
-        # undo restores byte-for-byte — the `rewritten` flag is already armed.
-        if plan.rekordbox_additions:
-            rekordbox.add_tracks_and_playlist(
-                plan.rekordbox_xml, plan.rekordbox_additions, plan.rekordbox_playlist
-            )
+        raise PartialApplyError(run_id, journal, exc) from exc
 
     journal.status = APPLIED
     write_journal(journal)
@@ -368,8 +394,27 @@ def undo_run(run_id: str, runs_dir: Path, *, library_root: Path | None = None) -
             f"journal library root {journal.library_root} does not match {library_root}"
         )
     root = library_root or journal.library_root
-    for entry in journal.actions:
+
+    def _applied(entry: JournalAction) -> bool:
+        """Did this action's move actually happen on disk?
+
+        DONE is the normal case. A crash between the move and its journal flush
+        can leave a completed move recorded as PENDING; detect that from the
+        filesystem — dest present, src gone — so undo still reverses it rather
+        than stranding a silently-displaced file (never re-appliable either,
+        since preflight would then see the source missing).
+        """
         if entry.status == DONE:
+            return True
+        if entry.status == PENDING:
+            try:
+                return entry.action.dest.exists() and not entry.action.src.exists()
+            except OSError:
+                return False
+        return False
+
+    for entry in journal.actions:
+        if _applied(entry):
             if not _within(root, entry.action.src) or not _within(root, entry.action.dest):
                 raise EngineError(
                     f"refusing undo: action escapes library root {root}: {entry.action.src}"
@@ -380,9 +425,9 @@ def undo_run(run_id: str, runs_dir: Path, *, library_root: Path | None = None) -
                 f"refusing undo: tag-edit path escapes library root {root}: {tedit.path}"
             )
 
-    # Reverse the done moves in the opposite order they were applied.
+    # Reverse the applied moves in the opposite order they were applied.
     for entry in reversed(journal.actions):
-        if entry.status == DONE:
+        if _applied(entry):
             _safe_move(entry.action.dest, entry.action.src)
             entry.status = REVERTED
             write_journal(journal)

@@ -10,10 +10,12 @@ safe and reversible first, useful second.
 > AI **`organize`** front-door, reversible AI **`retag`** (tag repair), and the
 > newer **`organise`** engine — AcoustID/chromaprint fingerprint **identity** →
 > recording-level **`dedup_v2`** → AI **`classify_v2`** genres → reviewable plans,
-> plus guest-USB `.m3u8` export — are built and tested (215 passing). So
+> plus guest-USB `.m3u8` export — are built and tested (225 passing). So
 > audio-fingerprint / fuzzy dedupe **is** built (via `organise`). Not yet built:
-> reading rekordbox **database** BPM/key (pyrekordbox is used only for read-only
-> playlist lookup today) and a librosa/essentia key/BPM fallback.
+> reading rekordbox **database** BPM/key and a librosa/essentia key/BPM fallback.
+> pyrekordbox reads the DB for playlist lookup + pulse history; the `rekordbox_sync`
+> driver (`run_rb_sync.py`) also *writes* master.db (playlists/ratings) — the CLI
+> plan/apply flow never does.
 
 ## Safety model (non-negotiable)
 
@@ -174,9 +176,11 @@ changes as a review table (old → new per row, with the reason), **untick** any
 rows you don't want, then **Apply** — and **Undo** any run from the runs list. In
 `inbox` mode you can drag-and-drop files into the page to stage them in `Inbox/`.
 
-Safety: the server binds **127.0.0.1 only**, the library root is fixed at launch
-(no endpoint accepts a library path), the built plan is cached server-side and
-applied by id (client input is only which rows to keep), mutating routes carry an
+Safety: the server binds **127.0.0.1 only**; the apply/undo/dedupe-apply routes use
+the launch-time library root (client input is only which rows to keep of a
+server-side plan). The organise + pulse-ingest **preview** routes do accept a folder
+to scan, but they are dry-run — organise writes only reviewable plans, and ingest
+apply is disabled (use the journaled `librarian inbox`). Mutating routes carry an
 origin/host guard, and uploads are confined to the inbox. It is the same dry-run →
 review → apply → undo flow as the CLI — the web layer adds no new way to mutate
 the library. Unticking a row also drops that row's rekordbox addition/redirect, so
@@ -280,8 +284,8 @@ undo, origin guard, safe upload).
   heuristic. Fuzzy / audio-fingerprint dedupe lives in the separate `organise`
   engine (AcoustID + recording-level `dedup_v2`).
 - BPM/key come from existing tags only; reading rekordbox **database** BPM/key via
-  pyrekordbox and a librosa fallback are not wired up (pyrekordbox is used only for
-  read-only playlist lookup in `dedupe.py`).
+  pyrekordbox and a librosa fallback are not wired up (pyrekordbox reads the DB for
+  playlist lookup in `dedupe.py` + pulse history; only the `run_rb_sync` driver writes it).
 - `inbox` is a one-shot batch (run on demand), not a live watch daemon.
 - The web app is local-only (127.0.0.1), single-user; no auth token yet (origin/
   host guard + localhost bind only).

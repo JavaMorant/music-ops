@@ -18,13 +18,13 @@ import typer
 
 from . import ai
 from .cleanup import build_cleanup_plan
-from .engine import EngineError, apply_plan, undo_run
+from .engine import EngineError, PartialApplyError, apply_plan, undo_run
 from .inbox import InboxError, build_inbox_plan
 from .journal import APPLIED, DONE, list_runs
 from .metadata import read_meta
 from .model import Plan
 from .organize import OrganizeError, OrganizeSpec, build_organize_plan
-from .paths import audio_files
+from .paths import audio_files, default_runs_dir
 from .planner import build_plan
 from .retag import TagProposal, build_retag_plan
 from .tags import WRITABLE_EXTS
@@ -34,7 +34,28 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-DEFAULT_RUNS_DIR = Path(".librarian/runs")
+
+def _resolve_runs_dir(runs_dir: Optional[Path], library_root: Optional[Path] = None) -> Path:
+    """The runs dir to use: an explicit --runs-dir, else the shared default
+    (outside the library, one place for every run — see paths.default_runs_dir)."""
+    return runs_dir.absolute() if runs_dir else default_runs_dir(library_root)
+
+
+def _require_cue_safety(plan: Plan, no_rekordbox: bool) -> None:
+    """Refuse to apply file moves that would strand rekordbox cues, unless the
+    user explicitly opts out. Any moved/quarantined track rekordbox knows about
+    keeps its hot cues, memory cues and playlist entries only if the collection
+    XML is rewritten to the new path — so cue-safety is opt-OUT, never silent."""
+    if plan.actions and plan.rekordbox_xml is None and not no_rekordbox:
+        typer.secho(
+            f"\nRefused: {len(plan.actions)} file(s) would move with NO rekordbox XML.\n"
+            "Their hot cues, memory cues and playlist entries would point at dead paths.\n"
+            "Export your collection (rekordbox → File → Export Collection in xml format),\n"
+            "then re-run with  --rekordbox-xml <collection.xml>  to keep cues in sync —\n"
+            "or pass  --no-rekordbox  if this library isn't in rekordbox.",
+            fg="red", err=True,
+        )
+        raise typer.Exit(1)
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -110,21 +131,23 @@ def cleanup(
 @app.command()
 def organise(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root (or USB) to organise")],
-    apply: Annotated[bool, typer.Option("--apply", help="Apply the plans (gated; default dry-run holds everything)")] = False,
+    apply: Annotated[bool, typer.Option("--apply", help="Apply the REVIEWED plans from --out (gated; default dry-run holds everything)")] = False,
     acoustid_key: Annotated[Optional[str], typer.Option("--acoustid-key", help="AcoustID key (else env ACOUSTID_API_KEY or ~/DJ/.acoustid-key); improves identity on junk filenames")] = None,
-    classify: Annotated[bool, typer.Option("--classify/--no-classify", help="AI-classify into genres (default: on when a key is present; force on for clean-tagged libraries)")] = False,
-    out_dir: Annotated[Path, typer.Option("--out", help="Where to write plans + report")] = Path("organise-run"),
+    classify: Annotated[Optional[bool], typer.Option("--classify/--no-classify", help="AI-classify into genres. Unset = auto (on when a key is present); --no-classify forces the paid pass OFF even with a key")] = None,
+    out_dir: Annotated[Path, typer.Option("--out", help="Where to write (dry-run) / read (--apply) the plans + report")] = Path("organise-run"),
     rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="rekordbox XML to keep in sync")] = None,
+    no_rekordbox: Annotated[bool, typer.Option("--no-rekordbox", help="Apply file moves even without a rekordbox XML (cues for moved tracks WILL break)")] = False,
 ) -> None:
     """Organise a library/USB: identify → dedup v2 → classify → reviewable plans.
 
-    Dry-run by default (holds everything). With an AcoustID key it fingerprints,
-    identifies the real track, and classifies into the 24 buckets; without one it
-    dedups and does a deterministic folder migration, flagging the rest for the AI
-    pass. `--apply` executes the reviewed dedup + reorg plans via the undo journal.
+    Dry-run by default (holds everything, writing dedup-plan.json + reorg-plan.json
+    to --out). With an AcoustID key it fingerprints, identifies the real track, and
+    classifies into the genre buckets; without one it dedups and does a
+    deterministic folder migration, flagging the rest for the AI pass. `--apply`
+    executes the plans you REVIEWED in --out (it re-reads them, never recomputes),
+    via the undo journal.
     """
     from . import identity as idmod
-    from .engine import apply_plan
     from .organise import (build_dedup_plan, build_reorg_plan, build_usb_playlists,
                            read_usb_ratings)
     from .organise import organise as run_organise
@@ -132,8 +155,49 @@ def organise(
     root = library_root.absolute()
     rbx = rekordbox_xml.absolute() if rekordbox_xml else None
     key = acoustid_key or idmod.get_api_key()
-    run_ai = classify or bool(key)
+    # --classify/--no-classify is a real three-state: unset = auto (on when an
+    # AcoustID key is present), --classify forces the paid AI pass on, --no-classify
+    # forces it OFF even with a key (the key only improves identity; classification
+    # is a separate, paid step).
+    run_ai = classify if classify is not None else bool(key)
     is_usb = (root / "PIONEER" / "rekordbox" / "export.pdb").exists()
+
+    if apply and not is_usb:
+        # Apply the plans EXACTLY as reviewed: read them back from --out rather than
+        # recomputing, so what moves is what you saw (and there is no AcoustID /
+        # Anthropic re-spend). If the library drifted since the review, the engine's
+        # preflight refuses rather than silently moving different files.
+        dplan_path, rplan_path = out_dir / "dedup-plan.json", out_dir / "reorg-plan.json"
+        if not (dplan_path.exists() and rplan_path.exists()):
+            typer.secho(
+                f"No reviewed plans in {out_dir}/. Run  librarian organise {root}  first "
+                "(dry-run), review dedup-plan.json + reorg-plan.json, then re-run with --apply.",
+                fg="red", err=True)
+            raise typer.Exit(1)
+        dplan = Plan.from_dict(json.loads(dplan_path.read_text(encoding="utf-8")))
+        rplan = Plan.from_dict(json.loads(rplan_path.read_text(encoding="utf-8")))
+        for plan in (dplan, rplan):
+            _require_cue_safety(plan, no_rekordbox)
+        runs_dir = default_runs_dir(root)
+        for name, plan in (("dedup", dplan), ("reorg", rplan)):
+            if not plan.actions:
+                continue
+            try:
+                j = apply_plan(plan, runs_dir.absolute(), backup=True)
+            except PartialApplyError as exc:
+                typer.secho(f"\n{name} apply FAILED partway — the library is partially changed.",
+                            fg="red", err=True)
+                typer.secho(f"Run {exc.run_id} is recorded and undoable:  "
+                            f"librarian undo {exc.run_id}", fg="yellow", err=True)
+                raise typer.Exit(1)
+            except EngineError as exc:
+                typer.secho(f"Refused to apply {name} (nothing changed): {exc}", fg="red", err=True)
+                raise typer.Exit(1)
+            typer.echo(f"  applied {name}: "
+                       f"{sum(1 for a in j.actions if a.status == DONE)} ({j.run_id})")
+        typer.echo(f"Undo with:  librarian undo <run-id>  (runs dir: {runs_dir})")
+        return
+
     typer.echo(f"Organising {root} — {'guest USB' if is_usb else 'library'} · "
                f"identity: {'AcoustID' if key else 'tags/filename (no key)'} · "
                f"classify: {'on' if run_ai else 'off'}")
@@ -150,6 +214,8 @@ def organise(
         typer.echo(f"  {summ['playlists']} importable playlists → {out_dir}")
         typer.echo("Import the .m3u8 into rekordbox → assign to a fresh stick → export. "
                    "Nothing on this stick was modified.")
+        if apply:
+            typer.echo("(A USB is import-only — there is nothing to --apply.)")
         return
 
     dplan = build_dedup_plan(root, res.dup_groups, rekordbox_xml=rbx)
@@ -159,18 +225,18 @@ def organise(
     d = res.dedup
     typer.echo(f"  files {res.total} → keepers {d['unique_keepers']} · drops {d['drops']} "
                f"(versions kept {d['distinct_versions_kept']})")
-    typer.echo(f"  reorg relocations {res.reorg_actions}"
-               + ("" if res.used_ai else f" · needs AI pass {res.needs_ai}"))
-    typer.echo(f"  plans → {out_dir}/dedup-plan.json, {out_dir}/reorg-plan.json")
-
-    if apply:
-        runs_dir = root / ".librarian" / "runs"
-        for plan in (dplan, rplan):
-            if plan.actions:
-                j = apply_plan(plan, runs_dir.absolute(), backup=True)
-                typer.echo(f"  applied {len([a for a in j.actions if a.status == DONE])} ({j.run_id})")
+    reorg_line = f"  reorg relocations {res.reorg_actions}"
+    if res.used_ai:
+        if res.unclassified:
+            reorg_line += f" · unclassified {res.unclassified} (no AI genre — left in place)"
     else:
-        typer.echo("\nDry run — nothing moved. Review the plans, then re-run with --apply.")
+        reorg_line += f" · needs AI pass {res.needs_ai}"
+    typer.echo(reorg_line)
+    typer.echo(f"  plans → {out_dir}/dedup-plan.json, {out_dir}/reorg-plan.json")
+    if (dplan.actions or rplan.actions) and rbx is None:
+        typer.secho("  ⚠ no --rekordbox-xml given — pass one before --apply to keep cues "
+                    "in sync (or --no-rekordbox to override).", fg="yellow")
+    typer.echo("\nDry run — nothing moved. Review the plans, then re-run with --apply.")
 
 
 @app.command()
@@ -407,17 +473,26 @@ def inbox(
 @app.command()
 def apply(
     plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Reviewed plan JSON from `librarian plan`")],
-    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals + backups are kept")] = DEFAULT_RUNS_DIR,
+    runs_dir: Annotated[Optional[Path], typer.Option("--runs-dir", help="Where undo journals + backups are kept (default: <library>/../.librarian-runs)")] = None,
     no_backup: Annotated[bool, typer.Option("--no-backup", help="Skip the pre-apply backup (only if you already have one)")] = False,
     full_backup: Annotated[bool, typer.Option("--full-backup", help="Back up the whole library, not just touched files")] = False,
+    no_rekordbox: Annotated[bool, typer.Option("--no-rekordbox", help="Apply file moves even without a rekordbox XML in the plan (cues for moved tracks WILL break)")] = False,
 ) -> None:
     """Execute a reviewed plan, journaling every move so it can be undone."""
     p = Plan.from_dict(json.loads(plan_file.read_text(encoding="utf-8")))
     if not p.actions and not p.tag_edits:
         typer.echo("Plan has nothing to apply.")
         raise typer.Exit(0)
+    _require_cue_safety(p, no_rekordbox)
+    rd = _resolve_runs_dir(runs_dir, p.library_root)
     try:
-        journal = apply_plan(p, runs_dir.absolute(), backup=not no_backup, full_backup=full_backup)
+        journal = apply_plan(p, rd, backup=not no_backup, full_backup=full_backup)
+    except PartialApplyError as exc:
+        typer.secho("\nApply FAILED partway — the library is partially changed, NOT unchanged.",
+                    fg="red", err=True)
+        typer.secho(f"Run {exc.run_id} is recorded and undoable:\n"
+                    f"  librarian undo {exc.run_id} --runs-dir {rd}", fg="yellow", err=True)
+        raise typer.Exit(1)
     except EngineError as exc:
         typer.secho(f"Refused to apply (nothing changed): {exc}", fg="red", err=True)
         raise typer.Exit(1)
@@ -440,17 +515,18 @@ def apply(
     if journal.rekordbox and journal.rekordbox.get("rewritten"):
         typer.echo(f"rekordbox XML updated: {journal.rekordbox['original']}")
     typer.echo(f"Run id: {journal.run_id}")
-    typer.echo(f"Undo with:  librarian undo {journal.run_id} --runs-dir {runs_dir}")
+    typer.echo(f"Undo with:  librarian undo {journal.run_id} --runs-dir {rd}")
 
 
 @app.command()
 def undo(
     run_id: Annotated[str, typer.Argument(help="Run id from a previous apply")],
-    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+    runs_dir: Annotated[Optional[Path], typer.Option("--runs-dir", help="Where undo journals are kept (default: ~/DJ/.librarian-runs or $LIBRARIAN_RUNS_DIR)")] = None,
 ) -> None:
     """Reverse a run completely — files and rekordbox XML back to before."""
+    rd = _resolve_runs_dir(runs_dir, None)
     try:
-        journal = undo_run(run_id, runs_dir.absolute())
+        journal = undo_run(run_id, rd)
     except EngineError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(1)
@@ -466,12 +542,13 @@ def undo(
 
 @app.command()
 def runs(
-    runs_dir: Annotated[Path, typer.Option("--runs-dir", help="Where undo journals are kept")] = DEFAULT_RUNS_DIR,
+    runs_dir: Annotated[Optional[Path], typer.Option("--runs-dir", help="Where undo journals are kept (default: ~/DJ/.librarian-runs or $LIBRARIAN_RUNS_DIR)")] = None,
 ) -> None:
     """List apply runs and their status."""
-    journals = list_runs(runs_dir.absolute())
+    rd = _resolve_runs_dir(runs_dir, None)
+    journals = list_runs(rd)
     if not journals:
-        typer.echo(f"No runs recorded under {runs_dir}.")
+        typer.echo(f"No runs recorded under {rd}.")
         return
     for j in journals:
         n = len(j.actions)

@@ -291,6 +291,13 @@ def create_app(config: AppConfig) -> FastAPI:
                      "export database and the CDJ would lose the tracks. Use Pulse to "
                      "organise it by play history instead (it never moves files).")
 
+    _INGEST_APPLY_DISABLED = (
+        "Ingest 'apply' is disabled here: it relocated, retagged and quarantined "
+        "files with raw os.rename — no plan review, no undo journal, no backup — "
+        "bypassing every safety guarantee. Use the journaled path instead: "
+        "`librarian inbox <root>` (dry-run → review → apply → undo). Preview stays "
+        "available above.")
+
     @app.post("/api/apply", dependencies=[Depends(guard_origin)])
     def post_apply(req: ApplyRequest, st: AppState = Depends(state)) -> dict:
         cfg = st.config
@@ -313,6 +320,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 subset, cfg.runs_dir, backup=req.backup, full_backup=req.full_backup
             )
             st.plans.pop(req.plan_id, None)  # single-use: consume on success
+            st.dedupe = None  # files moved/renamed — invalidate the cached dedupe analysis
         applied = sum(1 for a in journal.actions if a.status == DONE)
         return {
             "run_id": journal.run_id,
@@ -419,13 +427,15 @@ def create_app(config: AppConfig) -> FastAPI:
         drop = Path(req.folder).expanduser()
         if not drop.is_dir():
             return JSONResponse(status_code=400, content={"detail": f"not a folder: {drop}"})
+        if req.apply:
+            # The apply path bypasses the engine (raw os.rename, no journal/undo/
+            # backup) — refuse it. Preview (dry-run) below is safe.
+            raise HTTPException(status_code=409, detail=_INGEST_APPLY_DISABLED)
         lib = st.config.library_root
         plan = ingest.plan_ingest(drop, lib)
         out = {"drop": plan["drop"], "total": plan["total"],
                "survivors": len(plan["survivors"]), "dupes": len(plan["dupes"]),
                "by_genre": plan["by_genre"], "by_crate": plan["by_crate"], "applied": None}
-        if req.apply and plan["survivors"]:
-            out["applied"] = ingest.apply_ingest(lib, plan)
         return out
 
     @app.post("/api/organise", dependencies=[Depends(guard_origin)])
@@ -454,8 +464,8 @@ def create_app(config: AppConfig) -> FastAPI:
             summ = build_usb_playlists(res, out, ratings=read_usb_ratings(root))
             return {**base, "target": "usb", "playlists": summ["playlists"],
                     "by_bucket": summ["by_bucket"]}
-        dplan = build_dedup_plan(res.root, res.dup_groups)
-        rplan = build_reorg_plan(res)
+        dplan = build_dedup_plan(res.root, res.dup_groups, rekordbox_xml=st.config.rekordbox_xml)
+        rplan = build_reorg_plan(res, rekordbox_xml=st.config.rekordbox_xml)
         (out / "dedup-plan.json").write_text(_json.dumps(dplan.to_dict(), indent=2))
         (out / "reorg-plan.json").write_text(_json.dumps(rplan.to_dict(), indent=2))
         return {**base, "target": "library", "reorg_relocations": res.reorg_actions,

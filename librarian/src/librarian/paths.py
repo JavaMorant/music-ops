@@ -12,6 +12,29 @@ QUARANTINE_DIRNAME = "_quarantine"
 # Audio file types the librarian organises. Lower-case, with the dot.
 AUDIO_EXTS = {".mp3", ".wav", ".aiff", ".aif", ".flac", ".m4a", ".aac", ".ogg"}
 
+
+def default_runs_dir(library_root: Path | None = None) -> Path:
+    """Where undo journals + pre-apply backups live.
+
+    Two invariants drive this: backups must live OUTSIDE the library (so they are
+    never scanned, counted, or de-duplicated as library tracks), and every run
+    must land in ONE place (so ``librarian runs``/``undo`` can find them all).
+
+    Resolution order:
+      1. ``$LIBRARIAN_RUNS_DIR`` if set (explicit override),
+      2. a sibling of the library root — ``<root>/../.librarian-runs`` — when a
+         root is known (for ``~/DJ/library`` this is ``~/DJ/.librarian-runs``,
+         which is where the tool's runs already accumulate),
+      3. the personal default ``~/DJ/.librarian-runs`` for the rootless
+         ``undo``/``runs`` commands.
+    """
+    env = os.environ.get("LIBRARIAN_RUNS_DIR")
+    if env:
+        return Path(env).expanduser().absolute()
+    if library_root is not None:
+        return (Path(library_root).absolute().parent / ".librarian-runs")
+    return (Path.home() / "DJ" / ".librarian-runs")
+
 # Characters that can't (or shouldn't) appear in a path component.
 _ILLEGAL = re.compile(r"[/\\:\x00-\x1f]")
 
@@ -21,13 +44,22 @@ def is_audio(path: Path) -> bool:
 
 
 def audio_files(root: Path, *, extra_skip_dirs: frozenset[str] = frozenset()) -> list[Path]:
-    """Every audio file under ``root``, sorted, skipping the quarantine dir (and
-    any ``extra_skip_dirs`` by name) so it never re-plans set-aside files."""
+    """Every audio file under ``root``, sorted. Skips the quarantine dir, any
+    ``extra_skip_dirs`` by name, and any hidden (dot-prefixed) path component such
+    as ``.librarian`` — so the run backups and journals the tool stores under
+    ``.librarian`` are never scanned, counted, or de-duplicated as library tracks
+    (and macOS ``._*`` AppleDouble sidecars are ignored for free)."""
     skip = {QUARANTINE_DIRNAME, *extra_skip_dirs}
+
+    def visible(rel_parts: tuple[str, ...]) -> bool:
+        if skip & set(rel_parts):
+            return False
+        return not any(part.startswith(".") for part in rel_parts)
+
     return sorted(
         p
         for p in root.rglob("*")
-        if p.is_file() and is_audio(p) and not (skip & set(p.relative_to(root).parts))
+        if p.is_file() and is_audio(p) and visible(p.relative_to(root).parts)
     )
 
 
