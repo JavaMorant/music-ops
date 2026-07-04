@@ -24,7 +24,7 @@ from .metadata import read_meta
 from .model import MOVE, QUARANTINE, Action, Plan
 from .paths import audio_files, collision_free, norm_key, quarantine_dest, sanitize_component
 
-# Existing ~/DJ/library folders → the user's 24-bucket taxonomy. Used only when
+# Existing ~/DJ/library folders → the user's 23-bucket taxonomy. Used only when
 # no AcoustID key is available (a rough migration; the AI pass supersedes it).
 FOLDER_MIGRATION = {
     "Afro House": "Afrohouse", "Afrobeats": "Afrobeats", "Amapiano": "Amapiano",
@@ -51,6 +51,7 @@ class OrganiseResult:
     genres: dict = field(default_factory=dict)          # key -> genre
     reorg_actions: int = 0
     needs_ai: int = 0
+    unclassified: int = 0   # keepers the AI pass returned no genre for (left in place)
     used_ai: bool = False
 
 
@@ -118,9 +119,16 @@ def organise(
     needs_ai = sum(1 for fi in keepers
                    if not used_ai and (fi.path.parent.name in AMBIGUOUS_FOLDERS
                                        or fi.path.parent.name not in FOLDER_MIGRATION))
+    # When the AI pass ran, a keeper with no resolved genre (a failed/absent
+    # classify verdict) would otherwise vanish silently from the reorg plan, the
+    # playlists, AND every printed count. Count it so the accounting stays honest
+    # (these are left in place, not force-filed into a junk bucket).
+    unclassified = sum(1 for fi in keepers
+                       if used_ai and not _genre_for(fi, genres, used_ai))
     return OrganiseResult(root=root, total=len(paths), dedup=dedup_v2.summarise(groups),
                           keepers=keepers, dup_groups=groups, genres=genres,
-                          reorg_actions=reorg, needs_ai=needs_ai, used_ai=used_ai)
+                          reorg_actions=reorg, needs_ai=needs_ai,
+                          unclassified=unclassified, used_ai=used_ai)
 
 
 def build_dedup_plan(root: Path, groups, rekordbox_xml: Path | None = None) -> Plan:

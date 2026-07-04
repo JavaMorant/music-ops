@@ -68,3 +68,18 @@ def test_dedup_redirects_cues_to_keeper_not_quarantine(tmp_path):
         assert keeper == drop_to_keeper[a.src]  # points at the kept copy...
         assert keeper != a.dest                 # ...not the quarantine reject
         assert keeper.exists()                  # the keeper stays in the library
+
+
+def test_unclassified_keepers_are_counted_not_dropped_c13(tmp_path):
+    """When the AI pass runs but returns no genre for a keeper, it must be COUNTED
+    (and left in place) — never vanish silently from the reorg plan and every
+    printed total, which is what masked whole failed classify batches."""
+    _lib(tmp_path)
+    # run_ai on, but the injected classifier returns nothing for anyone.
+    res = organise.organise(tmp_path, key=None, run_ai=True,
+                            classify_call=lambda batch, model, effort: [])
+    assert res.used_ai is True
+    assert res.unclassified == res.dedup["unique_keepers"]  # all keepers accounted for
+    assert res.reorg_actions == 0
+    # left in place, not force-filed into a junk bucket
+    assert organise.build_reorg_plan(res).actions == []

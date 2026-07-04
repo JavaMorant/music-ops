@@ -27,10 +27,14 @@ _Last synced: 2026-06-29._
   are kept as-ingested (`tagclean` never renames). A consistent `Artist - Title`
   rename across `~/DJ/library` is still pending (`naming.target_stem` exists, used
   only by the cleanup/inbox path).
-- `[librarian]` **Apply the organise plans on `~/DJ`** — held by policy (plans-only).
-  Dedup / reorg / quarantine-recovery plans are generated but nothing is applied.
-  Guest-USB identity on junk filenames needs an AcoustID key (`~/DJ/.acoustid-key`
-  or `ACOUSTID_API_KEY`); the master library classifies fine without one.
+- `[librarian]` **The organise reorg WAS applied on `~/DJ` (2026-06-29)** — NOT plans-only
+  anymore. Three runs are on disk: a 7,295-move reorg, a 443-file dedup quarantine, and
+  a 1,392 tag-edit run (see the 2026-07 audit, `librarian/AUDIT-2026-07-02.md`). Genre
+  *folders* now follow the new buckets; genre *tags* still carry the retired leaf
+  taxonomy, and the 40 `_Playlists/*.m3u` are ~98% dead. Post-audit follow-ups: rebuild
+  the playlists from the move journals, reconcile tags→folders, and relocate the in-library
+  `.librarian/runs` backups (a data op held for review). Guest-USB identity on junk
+  filenames still needs an AcoustID key (`~/DJ/.acoustid-key` or `ACOUSTID_API_KEY`).
 - `[librarian]` **Ingest the ~1.1k staged files** — `~/DJ/inbox` holds ~1,146 files
   (incl. `_from-usb` / `_from-pioneerdj` recoveries) not yet folded into the library.
 - `[site]` **Deploy to Vercel** — `vercel.json` is in place but there's no `.vercel/`

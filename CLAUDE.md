@@ -20,7 +20,7 @@ site/         # EPK / music site (Astro static export → Vercel)
 All five tools have a working, tested core. Open work and recent history live in
 `TODO.md`; this session's notes/gotchas live in the project memory (auto-loaded).
 
-- **Tests are green:** librarian 215, clipper 199, releases 188, outreach 48.
+- **Tests are green:** librarian 225, clipper 199, releases 188, outreach 48.
   There is **no system `python`** — each tool has its own `.venv`; run tests with
   `cd <tool> && .venv/bin/python -m pytest -q`.
 - **Biggest recent change:** the librarian *organisation overhaul* (identity →
@@ -41,7 +41,8 @@ All five tools have a working, tested core. Open work and recent history live in
 
 ## Stack & conventions
 
-- Python 3.12 for all CLI tools; one `pyproject.toml` per tool.
+- Python 3.12+ for all CLI tools; one `pyproject.toml` per tool. (librarian's `.venv`
+  currently runs 3.13; `requires-python` is `>=3.12`.)
 - CLIs built with **Typer**; every command must have clear `--help`.
 - **pytest** for core logic (not exhaustive — focus on the engines:
   clipper segment selection, librarian plan/undo, outreach pipeline).

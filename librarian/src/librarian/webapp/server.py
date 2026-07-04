@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..paths import default_runs_dir
 from .app import create_app
 from .state import AppConfig
 
@@ -19,7 +20,9 @@ def serve(
 
     config = AppConfig(
         library_root=library_root,
-        runs_dir=runs_dir or (library_root / ".librarian" / "runs"),
+        # Outside the library, shared with the CLI — so run backups never pollute
+        # the tree and every entry point's runs land in one place (paths.default_runs_dir).
+        runs_dir=runs_dir or default_runs_dir(library_root),
         rekordbox_xml=rekordbox_xml,
         port=port,
     )

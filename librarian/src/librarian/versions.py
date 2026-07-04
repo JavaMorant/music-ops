@@ -36,8 +36,20 @@ _SOURCE_TOKENS = [
 
 _VERSION_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _VERSION_TOKENS) + r")\b", re.I)
 _SOURCE_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _SOURCE_TOKENS) + r")\b", re.I)
-_FEAT_RE = re.compile(r"\b(feat|ft|featuring|with)\b.*", re.I)
+# "with" is deliberately NOT a feat marker: it is an ordinary English word, and
+# treating it as one truncated real titles ("Dancing With A Stranger" → "dancing",
+# colliding with "Dancing") — merging two distinct songs and quarantining one.
+# Real featurings use feat/ft/featuring; the trailing credit after them is stripped.
+_FEAT_RE = re.compile(r"\b(feat|ft|featuring)\b.*", re.I)
 _BRACKET_RE = re.compile(r"[\(\[\{].*?[\)\]\}]")
+
+# Part/volume/disc numbers are IDENTITY-bearing — "(Pt 1)" and "(Pt 2)" are
+# different tracks, and "Sete (Pt 2)" and "Sete Pt 2" are the SAME one. Capture
+# the marker before brackets are stripped and fold a canonical token back into the
+# base, so both directions dedup correctly regardless of bracketing.
+_PART_RE = re.compile(r"\b(pt|part|vol|volume|disc|disk)\.?\s*(\d+)\b", re.I)
+_PART_CANON = {"pt": "pt", "part": "pt", "vol": "vol", "volume": "vol",
+               "disc": "disc", "disk": "disc"}
 
 
 def version_label(title: str) -> str | None:
@@ -68,9 +80,15 @@ def base_title(title: str) -> str:
     version tokens, and punctuation. Two titles share a ``base_title`` when they
     are the same underlying song regardless of version or source."""
     t = (title or "").lower()
+    m = _PART_RE.search(t)
+    part_sig = f"{_PART_CANON[m.group(1)]}{m.group(2)}" if m else ""
     t = _FEAT_RE.sub("", t)
     t = _BRACKET_RE.sub(" ", t)
     t = _VERSION_RE.sub(" ", t)
     t = _SOURCE_RE.sub(" ", t)
+    # Strip any part marker from the body too, so a bracketed "(Pt 2)" and an
+    # unbracketed "Pt 2" both reduce to the same base before the canonical token
+    # is appended once.
+    t = _PART_RE.sub(" ", t)
     t = re.sub(r"[^a-z0-9]+", "", t)
-    return t
+    return t + part_sig
