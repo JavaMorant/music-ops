@@ -419,3 +419,19 @@ class TestSharedDeckModule:
         assert 'data-rofx="titlecard"' in page and 'data-rofx="endcard"' in page
         js = c.get("/static/js/app.js").text
         assert "showTitleCard" in js and "showEndCard" in js
+
+    def test_app_chrome_accessibility_and_states(self, client):
+        # UI/UX clear-wins: live regions for feedback, focus-visible + real disabled
+        # styling, keyboard-operable toggles, a dismissable panel, and table states.
+        c, _ = client
+        page = c.get("/").text
+        assert 'aria-live' in page                      # feedback is announced to screen readers
+        assert 'id="toast"' in page and 'role="status"' in page
+        assert 'aria-label="Close panel"' in page       # #panel has a close affordance
+        css = c.get("/static/css/app.css").text
+        assert "button:disabled" in css                 # disabled Apply reads as inert
+        assert ":focus-visible" in css                  # visible keyboard focus
+        js = c.get("/static/js/app.js").text
+        assert "aria-pressed" in js                     # mix/master toggles are real buttons
+        assert "function hidePanel" in js               # panel is dismissable (+ Esc)
+        assert "tablestate" in js                       # loading / error / empty states

@@ -11,7 +11,7 @@
 <body>
 <header>
   <h1>Track List</h1>
-  <span class="sub" id="summary"></span>
+  <span class="sub" id="summary" role="status" aria-live="polite"></span>
   <span class="spacer"></span>
   <label class="sub">genre
     <select id="filter" onchange="render()"><option value="">all</option></select>
@@ -26,7 +26,7 @@
   <button id="dlBtn" onclick="downloadZip()">Download</button>
   <button onclick="buildPack()">Build pack</button>
   <button onclick="preview()">Preview plan</button>
-  <button class="primary" id="applyBtn" onclick="applyPlan()" disabled>Apply</button>
+  <button class="primary" id="applyBtn" onclick="applyPlan()" disabled title="Run Preview plan first">Apply</button>
   <button onclick="undoLast()">Undo last</button>
   <button onclick="showSends()">Sent</button>
   <select id="themepick" onchange="applyTheme(this.value)">
@@ -35,8 +35,11 @@
   </select>
 </header>
 
-<div id="panel">
-  <h2 id="panelTitle">Plan</h2>
+<div id="panel" role="region" aria-label="Plan and send history">
+  <div class="panelhead">
+    <h2 id="panelTitle" tabindex="-1">Plan</h2>
+    <button class="panelclose" aria-label="Close panel" onclick="hidePanel()">✕</button>
+  </div>
   <div id="planMoves"></div>
 </div>
 
@@ -50,10 +53,10 @@
 </table>
 
 <div id="player">
-  <div class="np" id="np">— nothing playing —</div>
+  <div class="np" id="np" aria-live="polite">— nothing playing —</div>
   <audio id="audio" controls></audio>
 </div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <div id="ov">
   <canvas class="pfx" id="ovpfx"></canvas>
