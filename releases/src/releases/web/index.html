@@ -13,23 +13,31 @@
   <h1>Track List</h1>
   <span class="sub" id="summary" role="status" aria-live="polite"></span>
   <span class="spacer"></span>
-  <label class="sub">genre
-    <select id="filter" onchange="render()"><option value="">all</option></select>
-  </label>
-  <label class="sub">month
-    <select id="mfilter" onchange="render()"><option value="">all</option></select>
-  </label>
-  <button onclick="loadTracks()">Refresh</button>
-  <button class="primary" id="deckBtn" onclick="openDeck()">▶ Play pack</button>
-  <button onclick="pickCover()">Cover</button>
-  <input type="file" id="coverInput" accept="image/*" style="display:none">
-  <button id="dlBtn" onclick="downloadZip()">Download</button>
-  <button onclick="buildPack()">Build pack</button>
-  <button onclick="preview()">Preview plan</button>
-  <button class="primary" id="applyBtn" onclick="applyPlan()" disabled title="Run Preview plan first">Apply</button>
-  <button onclick="undoLast()">Undo last</button>
-  <button onclick="showSends()">Sent</button>
-  <select id="themepick" onchange="applyTheme(this.value)">
+  <div class="hgroup" role="group" aria-label="View">
+    <label class="sub">genre
+      <select id="filter" onchange="render()"><option value="">all</option></select>
+    </label>
+    <label class="sub">month
+      <select id="mfilter" onchange="render()"><option value="">all</option></select>
+    </label>
+    <button onclick="loadTracks()">Refresh</button>
+  </div>
+  <div class="hgroup">
+    <button class="primary" id="deckBtn" onclick="openDeck()">▶ Play pack</button>
+  </div>
+  <div class="hgroup" role="group" aria-label="Export">
+    <button onclick="pickCover()">Cover</button>
+    <input type="file" id="coverInput" accept="image/*" style="display:none">
+    <button id="dlBtn" onclick="downloadZip()">Download</button>
+    <button onclick="buildPack()">Build pack</button>
+  </div>
+  <div class="hgroup" role="group" aria-label="Organize">
+    <button onclick="preview()">Preview plan</button>
+    <button class="primary" id="applyBtn" onclick="applyPlan()" disabled title="Run Preview plan first">Apply</button>
+    <button onclick="undoLast()">Undo last</button>
+    <button onclick="showSends()">Sent</button>
+  </div>
+  <select id="themepick" onchange="applyTheme(this.value)" aria-label="Theme">
     <option value="editorial">Editorial</option>
     <option value="classic">Classic</option>
   </select>
@@ -45,9 +53,9 @@
 
 <table>
   <thead><tr>
-    <th></th><th>Track</th><th>BPM / Key</th><th>Genre</th>
-    <th>Mix</th><th>Master</th><th>Artists</th><th>Month</th>
-    <th>Suitable for</th><th>Notes</th><th>Location</th>
+    <th scope="col"></th><th scope="col">Track</th><th scope="col">BPM / Key</th><th scope="col">Genre</th>
+    <th scope="col">Mix</th><th scope="col">Master</th><th scope="col">Artists</th><th scope="col">Month</th>
+    <th scope="col">Suitable for</th><th scope="col">Notes</th><th scope="col">Location</th>
   </tr></thead>
   <tbody id="rows"></tbody>
 </table>

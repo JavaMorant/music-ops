@@ -435,3 +435,12 @@ class TestSharedDeckModule:
         assert "aria-pressed" in js                     # mix/master toggles are real buttons
         assert "function hidePanel" in js               # panel is dismissable (+ Esc)
         assert "tablestate" in js                       # loading / error / empty states
+
+    def test_app_chrome_grouping_and_table_semantics(self, client):
+        # header controls are chunked into labelled groups (not a flat wall), the
+        # table headers are column-scoped, and the theme picker is labelled.
+        c, _ = client
+        page = c.get("/").text
+        assert 'class="hgroup"' in page
+        assert 'scope="col"' in page
+        assert 'aria-label="Theme"' in page
