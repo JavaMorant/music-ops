@@ -367,6 +367,19 @@ class TestTheme:
         # boot fallback in app.js flips to editorial
         assert '||"editorial"' in c.get("/static/js/app.js").text
 
+    def test_editorial_polish_is_theme_scoped(self, client):
+        # the visual-design pass ships as editorial-only decoration on shared
+        # surface tokens: each new token is defined once per theme (parity keeps
+        # classic a faithful flat revert), the chrome restyle is scoped under
+        # the editorial attribute, and motion respects prefers-reduced-motion.
+        c, _ = client
+        themes = c.get("/static/css/themes.css").text
+        for tok in ("--raise:", "--well:", "--hover:", "--line-soft:", "--good-bg:", "--good-fg:"):
+            assert themes.count(tok) == 2, tok
+        css = c.get("/static/css/app.css").text
+        assert "prefers-reduced-motion" in css
+        assert '[data-theme="editorial"] header button' in css
+
 
 class TestSharedDeckModule:
     def test_index_includes_shared_deck(self, client):
