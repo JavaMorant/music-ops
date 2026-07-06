@@ -735,7 +735,7 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None, adjacency: dict 
     avoid_names = {a.lower() for a in spec.avoid}
     pool = [c for c in pool
             if c.norm_key not in avoid_keys and c.artist.lower() not in avoid_names
-            and (spec.genre or "").lower() not in avoid_names
+            and (c.genre or "").lower() not in avoid_names
             and (spec.allow_low_bitrate or not c.low_bitrate)]
     if spec.bpm_range:
         lo, hi = spec.bpm_range
