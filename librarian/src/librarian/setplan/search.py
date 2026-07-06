@@ -68,10 +68,15 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None, adjacency: dict 
             anchors[0] = m
     musts = [m for q in spec.must_play if (m := _match(q, pool))]
     for j, m in enumerate(musts):
-        slot = min(n - 1, int(n * 0.5) + j)          # drop into the peak plateau
-        while slot in anchors and slot < n - 1:
-            slot += 1
-        anchors[slot] = m
+        preferred = min(n - 1, int(n * 0.5) + j)     # aim for the peak plateau
+        # Nearest free slot: forward from the preferred slot, then backward.
+        # Never overwrite a slot already held by another anchor (that would
+        # silently drop a requested must-play).
+        free = ([s for s in range(preferred, n) if s not in anchors]
+                or [s for s in range(preferred - 1, -1, -1) if s not in anchors])
+        if not free:
+            break                                    # every slot is already an anchor
+        anchors[free[0]] = m
 
     max_plays = max((c.plays for c in pool), default=1)
     used: set = set()
@@ -97,10 +102,16 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None, adjacency: dict 
         else:
             avail = [c for c in pool if c.path not in used and _in_block(c.genre, block, adjacency)
                      and c not in anchors.values()]
+            # Avoid repeating an artist within the last 6 slots — a hard filter,
+            # but fall back to the full set rather than leave a slot unfilled.
+            recent6 = {a.lower() for a in recent_artists[-6:]}
+            non_repeat = [c for c in avail if c.artist.lower() not in recent6]
+            avail = non_repeat or avail
             if spec.harmonic == "strict" and prev:
                 avail = [c for c in avail
                          if c.camelot is None
-                         or camelot.harmonic(prev.camelot, c.camelot, rising=rising) >= 0.85]
+                         or camelot.harmonic(prev.camelot, c.camelot, rising=rising,
+                                             mode=spec.harmonic) >= 0.85]
             scored = sorted((score_slot(c, prev, ctx) + (c,) for c in avail),
                             key=lambda r: r[0], reverse=True)
             if not scored:
