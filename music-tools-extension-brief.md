@@ -93,3 +93,29 @@ the quant/tech portfolio.
 Each is self-contained and well-specified — good for a long autonomous Fable session, then
 the `@reviewer` / `@test-runner` loop before merge. But none of them before the clipper ships
 clips and a couple of tracks are actually finished.
+
+---
+
+## Candidate — `crate` (fresh-crate discovery / anti-stale-set) — CAPTURED, not yet scheduled
+<!-- Added 2026-07-06 from a painkiller-vs-vitamin ideation pass. This is a GAP: every existing
+tool (librarian, the set-prep memo) operates on music you ALREADY OWN. Nothing goes outward to
+find NEW external tracks. remix-scout finds *remixable* candidates, not a fresh DJ-play crate.
+Painkiller-vs-vitamin verdict: borderline — becomes a real painkiller only if tied to
+edits/acapellas nobody else has; otherwise it's a vitamin ("prep some DJs enjoy"). Build only
+after the money-painkillers (booking deposits, PRS/PPL royalty recovery) if at all. -->
+
+A weekly **fresh-crate** feed: surface brand-new external releases that fit my sound
+(amapiano / afrobeats / UKG / rap) and aren't already overplayed, so sets stay current without
+hours of digging. Distinct from everything built so far:
+- **vs `librarian` / set-prep memo** — those organise and sequence the library I *already own*;
+  `crate` sources tracks I *don't* have yet.
+- **vs `finder`** — that indexes samples/loops in `ProducerLibrary` for production; `crate` is
+  DJ-play tracks for the floor.
+- **vs `remix-scout` (skill)** — that finds tracks worth *remixing*; `crate` finds tracks worth
+  *playing*.
+
+Rough shape: pull new-release + trending signals (per-genre), filter to my genres, down-rank
+the already-saturated, prefer tracks with available edits/acapellas, write candidates to the
+vault / a reviewable list (never auto-download). Reuses `remix-scout`'s signal plumbing.
+**Real product only if the edits/acapellas angle makes it a painkiller — otherwise it's a
+vitamin and stays parked.**
