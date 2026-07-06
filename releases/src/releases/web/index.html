@@ -77,7 +77,8 @@
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
     <button id="remixbtn" onclick="remixToggle()">🎛 Remix</button>
-    <button id="exportbtn" onclick="exportReel()">● Record reel</button>
+    <button class="primary" id="vidbtn" onclick="exportVideo()" title="One click: records the deck to a 1080x1920 mp4 — no screen share">⬇ Export video</button>
+    <button id="exportbtn" onclick="exportReel()" title="Fallback: capture this tab via screen share">● Record reel</button>
     <button id="cleantgl" onclick="deckClean()">⛶ Clean</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
     <button id="reeltgl" onclick="deckReel()">⤢ Reel</button>
@@ -126,6 +127,11 @@
       <div class="reelact"><button onclick="cancelReelOpts()">Cancel</button><button class="primary" onclick="startReel()">Start ▶</button></div>
     </div>
   </div>
+  <div class="exportov" id="exportov" role="region" aria-label="Video export">
+    <div class="exportstage" id="exportstage"></div>
+    <div class="exportstatus" id="exportstatus" role="status" aria-live="polite"></div>
+    <button id="exportstop" onclick="exportVideoStop()">■ Stop + save</button>
+  </div>
 </div>
 
 <datalist id="genres"></datalist>
@@ -134,6 +140,7 @@
 
 <script src="/api/turntable.js"></script>
 <script src="/static/deck/deck.js"></script>
+<script src="/static/js/export.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

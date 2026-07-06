@@ -395,6 +395,7 @@ document.addEventListener('fullscreenchange', ()=>{
 function deckClean(){ const on=document.getElementById('ov').classList.toggle('clean');
   document.getElementById('cleantgl').textContent=on?'⛶ Exit clean':'⛶ Clean'; deckSize(); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=document.getElementById('ov');
+  if(_exporting){ exportVideoStop(); return; }  // Esc finishes the one-click export early (still saves)
   if(document.getElementById('panel').classList.contains('show')){ hidePanel(); return; }
   if(document.getElementById('reelopts').classList.contains('show')){ cancelReelOpts(); return; }
   if(ov.classList.contains('reel')){ exitReel(); return; }
@@ -630,12 +631,152 @@ function showEndCard(done){
   el.classList.add('show');
   setTimeout(() => { el.classList.remove('show'); if(done) done(); }, 1100);
 }
-// ---- one-click reel export: capture THIS tab (getDisplayMedia) in Clean mode so
+// ---- ONE-CLICK video export (the primary path): render the whole deck - skin,
+// cover label and reactive FX - onto a hidden 1080x1920 canvas (export.js) and
+// record it with canvas.captureStream() + a MediaStreamDestination for the audio.
+// NO screen-share prompt, always a perfect 9:16 frame, auto-stops at the end of
+// the beat, then mp4 (direct, or /api/tomp4 transcode) straight to downloads.
+// The tab-capture exportReel() below stays as a fallback.
+let _exporting = false, _expCtl = null;
+function expLoadImage(url){ return new Promise(function(res, rej){
+  const im = new Image(); im.crossOrigin = 'anonymous';
+  im.onload = function(){ res(im); }; im.onerror = function(){ rej(new Error('cover load failed')); };
+  im.src = url; }); }
+function expStatus(msg){ const el = document.getElementById('exportstatus'); if(el) el.textContent = msg; }
+function exportVideoStop(){  // second click / Esc / guard timer: finish early and save what we have
+  if(!_exporting || !_expCtl) return;
+  const c = _expCtl;
+  try{ if(c.src){ c.src.onended = null; c.src.stop(); } }catch(e){}
+  c.ren.setEnded();
+  if(c.rec.state !== 'inactive') c.rec.stop();
+}
+async function exportVideo(){
+  if(_exporting){ exportVideoStop(); return; }
+  if(_recording){ toast('Tab recording already running', true); return; }
+  if(stemMode){ toast('Exit remix first - export records the original beat', true); return; }
+  if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
+  if(!window.ttExportRender || !('captureStream' in HTMLCanvasElement.prototype) || !window.MediaRecorder){
+    toast('Canvas recording not supported in this browser', true); return; }
+  const t = DECK[deckCur], ov = document.getElementById('ov'), btn = document.getElementById('vidbtn');
+  const lbl0 = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Preparing...';
+  let ren = null, dest = null, src = null, stream = null;
+  try{
+    deckInitViz();
+    if(!dactx || !danalyser) throw new Error('Web Audio unavailable');
+    if(dactx.state === 'suspended') await dactx.resume();
+    audioEl.pause();  // only the export buffer should sound (it feeds the analyser + the recording)
+    const resp = await fetch('/api/audio?id=' + encodeURIComponent(t.id));
+    if(!resp.ok) throw new Error('could not load the beat');
+    const buf = await dactx.decodeAudioData(await resp.arrayBuffer());
+    let cimg = null;
+    if(COVER){ try{ cimg = await expLoadImage(COVER); }catch(e){ cimg = null; } }
+    const cs = getComputedStyle(document.documentElement);
+    const cv = (n, d) => (cs.getPropertyValue(n).trim() || d);
+    const playRef = {on: false, at: 0, dur: buf.duration || 1, ended: false};
+    ren = ttExportRender({
+      w: 1080, h: 1920,
+      getAnalyser: () => danalyser,
+      skin: ov.classList.contains('cassette-mode') ? 'cassette' : 'vinyl',
+      coverImg: cimg, producer: PRODUCER,
+      accent: cv('--accent', '#c9a227'), txt: cv('--txt', '#e8e4da'), dim: cv('--dim', '#9a9aa2'),
+      fontDisplay: cv('--font-display', 'Georgia,serif'),
+      hueOverride: () => window.__fxHue,
+      fxOn: n => !ov.classList.contains('off-' + n),
+      isPlaying: () => playRef.on,
+      getProgress: () => playRef.ended ? 1
+        : (playRef.on ? Math.max(0, Math.min(1, (dactx.currentTime - playRef.at)/playRef.dur)) : 0),
+      track: { name: t.name || '',
+        hook: [(t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
+          .filter(Boolean).join(' \u00b7 '),
+        meta: [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : '']
+          .filter(Boolean).join(' \u00b7 ') },
+    });
+    dest = dactx.createMediaStreamDestination();
+    danalyser.connect(dest);  // the analyser passes audio through - the recorder hears what the speakers hear
+    src = dactx.createBufferSource(); src.buffer = buf; src.connect(danalyser);
+    stream = new MediaStream([
+      ren.canvas.captureStream(60).getVideoTracks()[0],
+      dest.stream.getAudioTracks()[0],
+    ]);
+    const mp4mime = ['video/mp4;codecs=h264,aac','video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
+    const webmmime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+    const mime = mp4mime || webmmime;
+    if(!mime) throw new Error('no supported recording format');
+    const direct = !!mp4mime;
+    const rec = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 24_000_000, audioBitsPerSecond: 192_000});
+    const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    const ctl = _expCtl = {rec, src, ren, dest, stream, guard: 0};
+    rec.onstop = async () => {
+      clearTimeout(ctl.guard);
+      _exporting = false; window.__exporting = false; _expCtl = null;
+      ren.stop();
+      try{ danalyser.disconnect(dest); }catch(e){}
+      try{ src.disconnect(); }catch(e){}
+      stream.getTracks().forEach(tk => tk.stop());
+      btn.textContent = lbl0; btn.disabled = false;
+      const fname = ((t && t.name) || 'reel').replace(/[\\/]/g,'_') + '.mp4';
+      try{
+        if(!chunks.length) throw new Error('nothing was recorded');
+        const blob = new Blob(chunks, {type: direct ? 'video/mp4' : 'video/webm'});
+        let mp4;
+        if(direct){ mp4 = blob; }
+        else{
+          expStatus('Transcoding to mp4...'); toast('Transcoding to mp4...');
+          const r = await fetch('/api/tomp4', {method:'POST', headers:{'Content-Type':'video/webm'}, body: blob});
+          if(!r.ok){ const er = await r.json().catch(()=>({detail:r.statusText})); throw new Error(er.detail); }
+          mp4 = await r.blob();
+        }
+        const url = URL.createObjectURL(mp4);
+        const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+        URL.revokeObjectURL(url);
+        expStatus('Saved - check your downloads');
+        toast('Exported ' + fname + ' - check your downloads');
+      }catch(err){ expStatus('Export failed'); toast('Export failed: ' + err.message, true); }
+      setTimeout(() => {
+        document.getElementById('exportov').classList.remove('show');
+        document.getElementById('exportstage').innerHTML = '';
+      }, 1200);
+    };
+    // show a live preview of EXACTLY what is being recorded (the canvas itself, scaled)
+    const stage = document.getElementById('exportstage');
+    stage.innerHTML = ''; stage.appendChild(ren.canvas);
+    document.getElementById('exportov').classList.add('show');
+    expStatus('Rendering + recording... auto-stops at the end of the beat');
+    _exporting = true; window.__exporting = true;  // ttRun's pauseDraw skips the live deck draw meanwhile
+    ren.start();
+    rec.start();
+    src.onended = () => {
+      if(!_exporting) return;
+      playRef.on = false; playRef.ended = true;
+      ren.setEnded();  // draws the outro card on the export canvas
+      const tail = ov.classList.contains('off-endcard') ? 500 : 1400;
+      setTimeout(() => { if(rec.state !== 'inactive') rec.stop(); }, tail);
+    };
+    const at = dactx.currentTime + 0.35;  // small lead-in: the video opens on the title card
+    src.start(at); playRef.at = at; playRef.on = true;
+    btn.textContent = '\u25a0 Stop export'; btn.disabled = false;
+    toast('Recording the reel - no screen share needed');
+    ctl.guard = setTimeout(exportVideoStop, Math.min(180000, (buf.duration + 4)*1000));
+  }catch(e){
+    _exporting = false; window.__exporting = false; _expCtl = null;
+    if(ren) ren.stop();
+    if(dest){ try{ danalyser.disconnect(dest); }catch(e2){} }
+    if(src){ try{ src.disconnect(); }catch(e2){} }
+    if(stream) stream.getTracks().forEach(tk => tk.stop());
+    document.getElementById('exportov').classList.remove('show');
+    document.getElementById('exportstage').innerHTML = '';
+    btn.textContent = lbl0; btn.disabled = false;
+    toast('Export failed: ' + e.message, true);
+  }
+}
+// ---- fallback reel export: capture THIS tab (getDisplayMedia) in Clean mode so
 // the recording is EXACTLY the live web render with no UI chrome, + tab audio, then
 // transcode to mp4. A captured tab keeps rendering even if you look away. ----
 let _recording = false;
 async function exportReel(){
   if(_recording) return;
+  if(_exporting){ toast('One-click export already running', true); return; }
   if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){ toast('Tab recording needs Chrome/Edge', true); return; }
   const ov = document.getElementById('ov'), btn = document.getElementById('exportbtn');
@@ -688,6 +829,7 @@ async function exportReel(){
 }
 // shared turntable visualizer (glowing spectrum + halo + progress ring + beat throb/shake)
 if (window.ttRun) ttRun({ canvas:ocanvas, audio:audioEl, getAnalyser:()=>danalyser,
+  pauseDraw:()=>!!window.__exporting,  // one-click export owns the frame budget while it records
   fxCanvas:document.getElementById('ovpfx'), smokeAt:()=>deckSmokeAt(document.getElementById('ov')),
   scene:document.getElementById('ov'),
   getLabel:()=>document.getElementById(document.getElementById('ov').classList.contains('cassette-mode')?'clabel':'label'),
