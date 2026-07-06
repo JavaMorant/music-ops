@@ -1,14 +1,23 @@
 @font-face{font-family:Fraunces;src:url(/static/fonts/fraunces.woff2) format("woff2");font-weight:100 900;font-display:swap;}
 
+/* Surface tokens (both themes, same names — parity is tested):
+   raise = raised controls (buttons), well = sunken fields (inputs/selects),
+   line-soft = quiet hairlines, hover = row-hover wash, good-bg/good-fg = the
+   "done" pill/badge pair. Classic values are the exact literals the old flat
+   look hardcoded, so Classic stays a faithful revert. */
 [data-theme="classic"]{
   --bg:#0d0d10; --panel:#16161c; --line:#26262f; --txt:#e7e7ea; --dim:#8a8a96;
   --accent:#c9a227; --good:#3fb950; --warn:#d29922; --bad:#f85149;
   --accent-ink:#10100a; --record:#f85149; --remix:#c9a227;
+  --raise:#20202a; --well:#101016; --line-soft:#1c1c24; --hover:#13131a;
+  --good-bg:#1d2b1d; --good-fg:#8be398;
   --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; --radius-card:0px;
 }
 [data-theme="editorial"]{
-  --bg:#0b0b0e; --panel:#14141a; --line:#2a2831; --txt:#ecebe6; --dim:#96959e;
+  --bg:#0b0b0e; --panel:#14141a; --line:#2a2831; --txt:#ecebe6; --dim:#a3a2ac;
   --accent:#d4aa5e; --accent-ink:#1a1408; --record:#b3352c; --remix:#b98ede;
   --good:#7fae86; --warn:#d9a441; --bad:#c0483c;
+  --raise:#1c1b23; --well:#0e0e13; --line-soft:#211f28; --hover:#191921;
+  --good-bg:#182018; --good-fg:#a9cbae;
   --font-display:"Fraunces",Georgia,serif; --radius-card:12px;
 }

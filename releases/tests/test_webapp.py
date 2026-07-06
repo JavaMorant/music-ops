@@ -367,6 +367,19 @@ class TestTheme:
         # boot fallback in app.js flips to editorial
         assert '||"editorial"' in c.get("/static/js/app.js").text
 
+    def test_editorial_polish_is_theme_scoped(self, client):
+        # the visual-design pass ships as editorial-only decoration on shared
+        # surface tokens: each new token is defined once per theme (parity keeps
+        # classic a faithful flat revert), the chrome restyle is scoped under
+        # the editorial attribute, and motion respects prefers-reduced-motion.
+        c, _ = client
+        themes = c.get("/static/css/themes.css").text
+        for tok in ("--raise:", "--well:", "--hover:", "--line-soft:", "--good-bg:", "--good-fg:"):
+            assert themes.count(tok) == 2, tok
+        css = c.get("/static/css/app.css").text
+        assert "prefers-reduced-motion" in css
+        assert '[data-theme="editorial"] header button' in css
+
 
 class TestSharedDeckModule:
     def test_index_includes_shared_deck(self, client):
@@ -419,3 +432,28 @@ class TestSharedDeckModule:
         assert 'data-rofx="titlecard"' in page and 'data-rofx="endcard"' in page
         js = c.get("/static/js/app.js").text
         assert "showTitleCard" in js and "showEndCard" in js
+
+    def test_app_chrome_accessibility_and_states(self, client):
+        # UI/UX clear-wins: live regions for feedback, focus-visible + real disabled
+        # styling, keyboard-operable toggles, a dismissable panel, and table states.
+        c, _ = client
+        page = c.get("/").text
+        assert 'aria-live' in page                      # feedback is announced to screen readers
+        assert 'id="toast"' in page and 'role="status"' in page
+        assert 'aria-label="Close panel"' in page       # #panel has a close affordance
+        css = c.get("/static/css/app.css").text
+        assert "button:disabled" in css                 # disabled Apply reads as inert
+        assert ":focus-visible" in css                  # visible keyboard focus
+        js = c.get("/static/js/app.js").text
+        assert "aria-pressed" in js                     # mix/master toggles are real buttons
+        assert "function hidePanel" in js               # panel is dismissable (+ Esc)
+        assert "tablestate" in js                       # loading / error / empty states
+
+    def test_app_chrome_grouping_and_table_semantics(self, client):
+        # header controls are chunked into labelled groups (not a flat wall), the
+        # table headers are column-scoped, and the theme picker is labelled.
+        c, _ = client
+        page = c.get("/").text
+        assert 'class="hgroup"' in page
+        assert 'scope="col"' in page
+        assert 'aria-label="Theme"' in page

@@ -15,25 +15,35 @@ async function api(path, opts) {
 }
 function toast(msg, bad) {
   const t = document.getElementById('toast');
+  t.setAttribute('aria-live', bad ? 'assertive' : 'polite');  // errors interrupt; successes wait their turn
   t.textContent = msg; t.style.borderColor = bad ? 'var(--bad)' : 'var(--good)';
   t.style.display = 'block'; clearTimeout(t._t); t._t = setTimeout(()=>t.style.display='none', 3500);
 }
 
 async function loadTracks() {
-  const data = await api('/api/tracks');
-  TRACKS = data.tracks; GENRES = data.genres; MONTHS = data.months || [];
-  PRODUCER = data.producer || 'Beats'; COVER = data.cover || null;
-  document.getElementById('genres').innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
-  document.getElementById('months').innerHTML = MONTHS.map(m=>`<option value="${m}">`).join('');
-  const f = document.getElementById('filter'), cur = f.value;
-  f.innerHTML = '<option value="">all</option>' + GENRES.map(g=>`<option>${g}</option>`).join('')
-              + '<option value="unknown">unknown</option>';
-  f.value = cur;
-  const mf = document.getElementById('mfilter'), mcur = mf.value;
-  mf.innerHTML = '<option value="">all</option>' + MONTHS.map(m=>`<option>${m}</option>`).join('');
-  mf.value = mcur;
-  updateRappers();
-  render();
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '<tr><td colspan="11" class="tablestate">Loading tracks…</td></tr>';
+  try {
+    const data = await api('/api/tracks');
+    TRACKS = data.tracks; GENRES = data.genres; MONTHS = data.months || [];
+    PRODUCER = data.producer || 'Beats'; COVER = data.cover || null;
+    document.getElementById('genres').innerHTML = GENRES.map(g=>`<option value="${g}">`).join('');
+    document.getElementById('months').innerHTML = MONTHS.map(m=>`<option value="${m}">`).join('');
+    const f = document.getElementById('filter'), cur = f.value;
+    f.innerHTML = '<option value="">all</option>' + GENRES.map(g=>`<option>${g}</option>`).join('')
+                + '<option value="unknown">unknown</option>';
+    f.value = cur;
+    const mf = document.getElementById('mfilter'), mcur = mf.value;
+    mf.innerHTML = '<option value="">all</option>' + MONTHS.map(m=>`<option>${m}</option>`).join('');
+    mf.value = mcur;
+    updateRappers();
+    render();
+  } catch(e) {
+    toast(e.message, true);
+    document.getElementById('summary').textContent = 'Failed to load';
+    rows.innerHTML = `<tr><td colspan="11" class="tablestate">Couldn't load tracks — ${esc(e.message)}. `
+      + `<button onclick="loadTracks()">Retry</button></td></tr>`;
+  }
 }
 
 function updateRappers() {
@@ -54,8 +64,16 @@ function render() {
   document.getElementById('summary').textContent =
     `${shown.length} of ${TRACKS.length} tracks · ${GENRES.length} genres · ${MONTHS.length} months`;
   document.getElementById('dlBtn').textContent = `Download ${shown.length}`;
-  document.getElementById('rows').innerHTML = shown.map(rowHtml).join('');
+  const rows = document.getElementById('rows');
+  if (!shown.length) {
+    const msg = TRACKS.length ? 'No tracks match this filter.' : 'No tracks yet.';
+    const clear = (fg || fm) ? ' <button onclick="clearFilters()">Clear filters</button>' : '';
+    rows.innerHTML = `<tr><td colspan="11" class="tablestate">${msg}${clear}</td></tr>`;
+  } else {
+    rows.innerHTML = shown.map(rowHtml).join('');
+  }
 }
+function clearFilters(){ document.getElementById('filter').value=''; document.getElementById('mfilter').value=''; render(); }
 
 async function downloadZip() {
   const fg = document.getElementById('filter').value;
@@ -116,13 +134,13 @@ function rowHtml(t) {
                       : `<span class="loose">${t.location}</span>`;
   const g = t.genre === 'unknown' ? '' : t.genre;
   return `<tr data-id="${t.id}">
-    <td><button class="play" onclick="play('${t.id}')" ${t.taggable?'':'title="not mp3"'}>▶</button></td>
+    <td><button class="play" onclick="play('${t.id}')" aria-label="Play ${esc(t.name)}" ${t.taggable?'':'title="not mp3"'}>▶</button></td>
     <td class="name">${esc(t.name)}${sentBadge(t)}</td>
     <td class="meta">${t.bpm?t.bpm+' bpm':''} ${t.key||''}</td>
     <td><input class="ginput" list="genres" value="${esc(g)}" placeholder="${t.genre}"
          onchange="setGenre('${t.id}', this.value)"></td>
-    <td><span class="pill ${t.mix==='mixed'?'on':'off'}" onclick="toggle('${t.id}','mix','${t.mix}')">${t.mix}</span></td>
-    <td><span class="pill ${t.master==='mastered'?'on':'off'}" onclick="toggle('${t.id}','master','${t.master}')">${t.master}</span></td>
+    <td><button type="button" class="pill ${t.mix==='mixed'?'on':'off'}" aria-pressed="${t.mix==='mixed'}" aria-label="Mix ${t.mix} — toggle" onclick="toggle('${t.id}','mix','${t.mix}')">${t.mix}</button></td>
+    <td><button type="button" class="pill ${t.master==='mastered'?'on':'off'}" aria-pressed="${t.master==='mastered'}" aria-label="Master ${t.master} — toggle" onclick="toggle('${t.id}','master','${t.master}')">${t.master}</button></td>
     <td><input class="ginput" style="width:150px" value="${esc(t.artists)}" placeholder="—"
          onchange="setText('${t.id}','artists',this.value)"></td>
     <td><input class="ginput" list="months" style="width:88px" value="${esc(t.month)}" placeholder="—"
@@ -137,6 +155,7 @@ function rowHtml(t) {
 function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function sentBadge(t){ return (t.sent_to && t.sent_to.length)
   ? ` <span class="senttag" title="Sent to: ${esc(t.sent_to.join(', '))}">✓ ${t.sent_to.length}</span>` : ''; }
+function hidePanel(){ document.getElementById('panel').classList.remove('show'); }
 async function showSends(){
   try{
     const {sends} = await api('/api/sends');
@@ -145,6 +164,7 @@ async function showSends(){
       ? sends.map(s=>`<div class="move"><b>${esc(s.contact)}</b> — ${esc(s.pack)} · ${s.count} beats · ${new Date(s.sent_at*1000).toLocaleDateString()}</div>`).join('')
       : '<div class="move">No sends logged yet — build a pack and log who you sent it to.</div>';
     document.getElementById('panel').classList.add('show');
+    document.getElementById('panelTitle').focus();
   }catch(e){ toast(e.message, true); }
 }
 
@@ -375,6 +395,7 @@ document.addEventListener('fullscreenchange', ()=>{
 function deckClean(){ const on=document.getElementById('ov').classList.toggle('clean');
   document.getElementById('cleantgl').textContent=on?'⛶ Exit clean':'⛶ Clean'; deckSize(); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const ov=document.getElementById('ov');
+  if(document.getElementById('panel').classList.contains('show')){ hidePanel(); return; }
   if(document.getElementById('reelopts').classList.contains('show')){ cancelReelOpts(); return; }
   if(ov.classList.contains('reel')){ exitReel(); return; }
   if(ov.classList.contains('clean') && !_recording){ ov.classList.remove('clean');
@@ -706,6 +727,7 @@ async function preview() {
                       : '<div class="move">No folder moves — marks already filed.</div>')
       + p.notes.map(n=>`<div class="move" style="color:var(--warn)">· ${esc(n)}</div>`).join('');
     document.getElementById('panel').classList.add('show');
+    document.getElementById('panelTitle').focus();
   } catch(e){ toast(e.message, true); }
 }
 function base(p){ return p.split('/').pop(); }
@@ -738,4 +760,4 @@ async function undoLast() {
 loadTracks().then(()=>{
   const q = new URLSearchParams(location.search);
   if (q.has('deck')) { openDeck(); if (q.get('skin')==='cassette') deckSkin(); if (q.has('reel')) deckReel(); if (q.has('clean')) deckClean(); }
-});
+}).catch(()=>{});
