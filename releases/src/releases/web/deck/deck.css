@@ -45,69 +45,29 @@
 .arm .tip{position:absolute;left:0;top:50%;width:1px;height:1px;}  /* stylus anchor for the smoke origin */
 /* cassette skin (toggled with .cassette-mode) */
 .cassette{position:absolute;left:6%;top:24%;width:88%;height:52%;border-radius:14px;display:none;z-index:1;
-  background:
-    repeating-linear-gradient(180deg,rgba(255,255,255,.028) 0 1.2%,transparent 1.2% 4%),
-    linear-gradient(165deg,#3a3a45,#15151b);
-  border:1px solid #000;
-  box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.09),inset 0 0 0 2px rgba(255,255,255,.04);}
+  background:linear-gradient(165deg,#34343f,#16161c);border:1px solid #000;
+  box-shadow:0 16px 46px rgba(0,0,0,.6),inset 0 0 0 2px rgba(255,255,255,.05);}
 .cassette-mode .cassette{display:block;}
 .cassette-mode .vinyl,.cassette-mode .arm,.cassette-mode .gloss{display:none;}
-/* head-access opening along the bottom edge */
-.cassette:after{content:"";position:absolute;left:29%;right:29%;bottom:0;height:13%;
-  border:1px solid rgba(0,0,0,.6);border-bottom:none;border-radius:8px 8px 0 0;
-  background:linear-gradient(180deg,rgba(0,0,0,.12),rgba(0,0,0,.3));}
-.cassette .screw{position:absolute;width:4.2%;aspect-ratio:1;border-radius:50%;
-  background:
-    linear-gradient(45deg,transparent 44%,rgba(10,10,12,.9) 46% 54%,transparent 56%),
-    radial-gradient(circle at 38% 32%,#5c5c68,#22222a);
-  box-shadow:inset 0 0 0 1px #000,0 1px 1px rgba(255,255,255,.06);}
-.cassette .screw.s1{left:1.8%;top:3.4%;}.cassette .screw.s2{right:1.8%;top:3.4%;}
-.cassette .screw.s3{left:1.8%;bottom:3.4%;}.cassette .screw.s4{right:1.8%;bottom:3.4%;}
-/* capstan + pinch-roller holes flanking the head opening */
-.cassette .chole{position:absolute;bottom:4.5%;width:3%;aspect-ratio:1;border-radius:50%;
-  background:radial-gradient(circle at 42% 36%,#101014,#000 70%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);}
-.cassette .chole.c1{left:20%;}.cassette .chole.c2{left:26.5%;}
-.cassette .chole.c3{right:26.5%;}.cassette .chole.c4{right:20%;}
-/* printed-sticker label: paper + accent band + ruled title lines + side marker */
-.cassette .clabel{position:absolute;left:9%;right:9%;top:8%;height:26%;border-radius:5px;overflow:hidden;
-  background-color:#ece5d2;
-  background-image:linear-gradient(180deg,transparent 0 64%,rgba(70,50,20,.3) 64% 66%,transparent 66% 88%,rgba(70,50,20,.3) 88% 90%,transparent 90%);
-  background-size:cover;background-position:center;
-  display:flex;align-items:center;justify-content:center;padding-top:9%;
-  color:#241c0c;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
-  font-family:var(--font-display,sans-serif);font-size:clamp(10px,3vmin,15px);
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.25);}
-.cassette .clabel:before{content:"";position:absolute;left:0;right:0;top:0;height:30%;
-  background:linear-gradient(180deg,var(--accent),var(--accent));box-shadow:0 1px 0 rgba(0,0,0,.35);}
-.cassette .clabel:after{content:"A";position:absolute;left:3.5%;top:5%;height:20%;aspect-ratio:1;
-  background:rgba(0,0,0,.28);color:#f4efdf;border-radius:3px;display:flex;align-items:center;justify-content:center;
-  font-size:55%;font-weight:800;}
-.cassette .clabel.cover{color:transparent;box-shadow:inset 0 0 0 3px #ece5d2;}
-.cassette .clabel.cover:before,.cassette .clabel.cover:after{display:none;}
-.cassette .win{position:absolute;left:11%;right:11%;bottom:17%;height:44%;border-radius:10px;background:#0b0b0f;
-  box-shadow:inset 0 0 0 2px #000,inset 0 5px 14px rgba(0,0,0,.7),0 0 0 1.5px rgba(255,255,255,.045);
-  display:flex;align-items:center;justify-content:space-between;padding:0 8%;}
-.cassette .reel{width:32%;aspect-ratio:1;border-radius:50%;position:relative;}
-/* tape pack: wound tape around the hub; --pk 0..1 = how full this side is.
-   The left pack empties (1 - prog) while the right fills (prog) -- the whole
-   track's arc is visible at a glance. */
-.cassette .reel .pack{position:absolute;border-radius:50%;inset:calc(25% - var(--pk,.5)*25%);
-  background:
-    repeating-radial-gradient(circle at 50% 50%,rgba(255,255,255,.045) 0 1.5%,transparent 1.5% 3.5%),
-    radial-gradient(circle at 42% 36%,#241a10 0 58%,#150e08 78%,#2c2114 96%,#0a0705 100%);
-  box-shadow:inset 0 0 8px rgba(0,0,0,.85),0 0 4px rgba(0,0,0,.6);}
-.cassette .reel.l .pack{--pk:calc(1 - var(--prog,0));}
-.cassette .reel.r .pack{--pk:var(--prog,0);}
-/* cream 6-tooth hub (spins; carries the --heat brake-disc glow) */
-.cassette .reel .hub{position:absolute;inset:26%;border-radius:50%;
-  background:repeating-conic-gradient(#ede6d3 0 34deg,#c7bfaa 34deg 60deg);
-  box-shadow:inset 0 0 0 2px #8f8770,0 0 calc(var(--heat,0)*22px) rgba(255,45,0,calc(var(--heat,0)*0.8));
-  animation:spin 1.7s linear infinite;animation-play-state:paused;}
-.cassette .reel .hub:before{content:"";position:absolute;inset:0;border-radius:50%;opacity:calc(var(--heat,0)*0.7);
-  background:radial-gradient(circle at 50% 50%,#ff5a1e 0 55%,#a01400 78%,transparent 80%);}
-.cassette .reel .hub:after{content:"";position:absolute;left:50%;top:50%;width:16%;height:16%;margin:-8% 0 0 -8%;border-radius:50%;background:#0b0b0f;}
-.cassette .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;margin-top:-1.5px;background:#1c130b;box-shadow:0 1px 0 rgba(255,255,255,.05);}
-.playing .cassette .hub{animation-play-state:running;}
+.cassette .clabel{position:absolute;left:9%;right:9%;top:8%;height:26%;border-radius:6px;overflow:hidden;
+  background:radial-gradient(circle at 50% 30%,var(--accent),#8a6f17);background-size:cover;background-position:center;
+  display:flex;align-items:center;justify-content:center;color:#1a1405;font-weight:800;text-transform:uppercase;
+  letter-spacing:.05em;font-size:clamp(10px,3vmin,15px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.2);}
+.cassette .clabel.cover{color:transparent;}
+.cassette .win{position:absolute;left:11%;right:11%;bottom:15%;height:48%;border-radius:10px;background:#0b0b0f;
+  box-shadow:inset 0 0 0 2px #000,inset 0 5px 14px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:space-between;padding:0 9%;}
+.cassette .reel{width:31%;aspect-ratio:1;border-radius:50%;position:relative;
+  background:repeating-conic-gradient(#34343e 0 18deg,#14141a 18deg 36deg);
+  box-shadow:inset 0 0 0 3px #000;animation:spin 1.7s linear infinite;animation-play-state:paused;}
+/* the reel hubs heat up like brake discs as the track plays (--heat 0..1) */
+.cassette .reel:before{content:"";position:absolute;inset:24%;border-radius:50%;
+  background:radial-gradient(circle at 40% 35%,#3a3a44,#1c1c22);
+  background:radial-gradient(circle at 40% 35%,color-mix(in srgb,#3a3a44,#ff3a00 calc(var(--heat,0)*88%)),color-mix(in srgb,#1c1c22,#7a1400 calc(var(--heat,0)*82%)));
+  box-shadow:inset 0 0 0 2px #000,inset 0 0 calc(var(--heat,0)*16px) rgba(255,70,0,calc(var(--heat,0)*0.9)),0 0 calc(var(--heat,0)*30px) rgba(255,45,0,calc(var(--heat,0)*0.85));
+  filter:brightness(calc(1 + var(--heat,0)*0.6));}
+.cassette .reel:after{content:"";position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#000;z-index:2;}
+.cassette .tape{position:absolute;left:24%;right:24%;top:50%;height:3px;background:#42424c;}
+.playing .cassette .reel{animation-play-state:running;}
 /* fixed room-light: two soft specular bands the disc spins under */
 .gloss{position:absolute;left:14%;top:14%;width:72%;height:72%;border-radius:50%;pointer-events:none;z-index:2;
   background:

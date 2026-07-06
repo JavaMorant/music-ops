@@ -253,7 +253,7 @@ def test_brake_heat_and_smoke_present(tmp_path):
     # reel hubs heat up like brake discs; full redness by ~a third of the way in
     assert "--heat" in idx and "heat=Math.min(1,pr*3)" in idx
     assert "((ct-20)/dur)*3" in idx                              # the vinyl groove stays cold for the first ~20s, then ramps
-    assert "var(--heat,0)*22px" in idx                           # the hub glows red-hot with heat (box-shadow scales with --heat)
+    assert "var(--heat,0)*16px" in idx                           # the reel hub glows red-hot with heat (box-shadow scales with --heat)
     assert "setProperty('--heat'" in idx
     # smoke rises from the hot reels / the stylus, denser + redder over time
     assert "function puff" in idx and "smoke.push" in idx
@@ -298,7 +298,7 @@ def test_fx_toggles_present(tmp_path):
 def test_cassette_skin_present(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "B", bpm=140)], tmp_path / "out" / "p", _meta())
     idx = (tmp_path / "out" / "p" / "index.html").read_text()
-    assert 'class="cassette"' in idx and 'class="reel l"' in idx and 'class="reel r"' in idx   # the cassette + L/R reels
+    assert 'class="cassette"' in idx and 'class="reel"' in idx   # the cassette + its reels
     assert "cassette-mode" in idx and 'id="skinbtn"' in idx      # toggle to switch skins
     assert "getSkin" in idx                                       # visualizer is skin-aware
     assert "baseY-len/2" in idx and "played=fxp<=prc" in idx      # mirrored seek-style cassette waveform
@@ -382,18 +382,6 @@ def test_pack_theme_flag(tmp_path):
     packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta(), theme="classic")
     html = (out / "index.html").read_text(encoding="utf-8")
     assert 'data-theme="classic"' in html
-
-
-def test_pack_cassette_has_spooling_and_shell_detail(tmp_path):
-    out = tmp_path / "out" / "p"
-    packmod.build_pack([_track(tmp_path, "x.mp3", "Beat", bpm=140)], out, _meta())
-    html = (out / "index.html").read_text(encoding="utf-8")
-    # tape packs spool with progress: left empties, right fills
-    assert 'class="reel l"' in html and 'class="reel r"' in html
-    assert 'class="pack"' in html and 'class="hub"' in html
-    assert "--pk:calc(1 - var(--prog,0))" in html and "--pk:var(--prog,0)" in html
-    # shell detail present
-    assert 'class="screw s1"' in html and 'class="chole c1"' in html
 
 
 def test_pack_vinyl_has_ring_text_and_groove_detail(tmp_path):
