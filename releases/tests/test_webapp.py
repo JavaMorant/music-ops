@@ -452,3 +452,45 @@ class TestSharedDeckModule:
         assert 'class="hgroup"' in page
         assert 'scope="col"' in page
         assert 'aria-label="Theme"' in page
+
+
+class TestOneClickExport:
+    """The one-click video export: the deck is rendered onto an offscreen
+    1080x1920 canvas recorded via canvas.captureStream + MediaRecorder — no
+    getDisplayMedia prompt — mixed with the beat through a
+    MediaStreamAudioDestinationNode, then mp4 (direct or /api/tomp4)."""
+
+    def test_export_button_and_overlay_served(self, client):
+        c, _ = client
+        page = c.get("/").text
+        assert 'id="vidbtn"' in page and 'exportVideo()' in page   # the one-click button
+        assert 'id="exportov"' in page and 'id="exportstatus"' in page  # live preview + status
+        assert 'id="exportstop"' in page                           # stop early, still saves
+        assert '/static/js/export.js' in page                      # renderer is loaded
+        # the old prompt-based capture stays available as a fallback
+        assert 'id="exportbtn"' in page and 'exportReel()' in page
+
+    def test_export_renderer_served_and_fixed_9x16(self, client):
+        c, _ = client
+        r = c.get("/static/js/export.js")
+        assert r.status_code == 200
+        js = r.text
+        assert "function ttExportRender" in js
+        assert "1080" in js and "1920" in js               # fixed 9:16 export frame
+        assert "getDisplayMedia" not in js                 # renderer never screen-shares
+        assert js.isascii()                                # packs/app JS stay ASCII
+
+    def test_export_pipeline_is_prompt_free(self, client):
+        c, _ = client
+        js = c.get("/static/js/app.js").text
+        assert "async function exportVideo" in js
+        assert "captureStream" in js                       # canvas capture, not a screen share
+        assert "createMediaStreamDestination" in js        # beat audio into the recording
+        assert js.count("getDisplayMedia") > 0             # fallback path retained
+        assert "'/api/tomp4'" in js                        # webm recordings still transcode
+        assert "pauseDraw" in js                           # live deck yields the frame budget
+
+    def test_export_overlay_styles_present(self, client):
+        c, _ = client
+        css = c.get("/static/css/app.css").text
+        assert ".exportov" in css and ".exportstatus" in css
