@@ -40,3 +40,39 @@ def test_artist_repeat_penalised():
     clean, _ = score_slot(cand, prev, _ctx(recent_artists=[]))
     repeat, _ = score_slot(cand, prev, _ctx(recent_artists=["repeat"]))
     assert clean - repeat >= 0.29
+
+
+def test_unknown_key_scores_neutral_not_punished():
+    # An unknown key must be treated as NEUTRAL (0.5), strictly better than a
+    # clashing key (~0.10) — never zero. If the invariant regressed to 0, the
+    # unknown-key track would score BELOW the clashing one.
+    prev = _c("A", "x", key=(8, "A"))
+    unknown = _c("B", "y", key=None, bpm=None)
+    clash = _c("C", "z", key=(2, "A"), bpm=None)   # 6 steps from 8A -> harmonic 0.10
+    s_unknown, _ = score_slot(unknown, prev, _ctx())
+    s_clash, _ = score_slot(clash, prev, _ctx())
+    assert s_unknown > s_clash
+    # the gap is exactly the harmonic weight * (0.5 - 0.10)
+    assert abs((s_unknown - s_clash) - 0.20 * (0.5 - 0.10)) < 1e-9
+
+
+def test_reason_cites_follows_history():
+    prev = _c("A", "x", key=(8, "A"))
+    cand = _c("B", "y", key=(8, "A"), plays=2)
+    ctx = _ctx(follows={prev.norm_key: {cand.norm_key: 4}})
+    _, reason = score_slot(cand, prev, ctx)
+    assert "4 set" in reason
+
+
+def test_reason_flags_missing_key():
+    prev = _c("A", "x", key=(8, "A"))
+    cand = _c("B", "y", key=None, plays=2)
+    _, reason = score_slot(cand, prev, _ctx())
+    assert "no key tag" in reason
+
+
+def test_reason_names_camelot_move():
+    prev = _c("A", "x", key=(8, "A"))
+    cand = _c("B", "y", key=(9, "A"), plays=2)
+    _, reason = score_slot(cand, prev, _ctx())
+    assert "8A" in reason and "9A" in reason
