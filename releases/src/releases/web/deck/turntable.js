@@ -2,7 +2,7 @@
 function ttRun(opts){
   var ctx=opts.canvas.getContext('2d'), fxctx=null;  // fxctx = full-screen particle canvas, if provided
   var bassAvg=0, eLong=0, eMid=0, shake=0, punch=0, flash=0, hue=42, lastDrop=0, seeded=false, dataArr=null, curEnergy=0;
-  var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], dust=[], smoothV=null, idleT=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe)
+  var sparks=[], embers=[], shocks=[], smoke=[], bokeh=[], dust=[], smoothV=null, idleT=0, vinylPulse=0;  // idleT drives the always-on motion; bokeh = soft floating background lights (Trap-Nation vibe); vinylPulse = eased kick level that makes the ring breathe
   var fxw=0, fxh=0, rcx=0, rcy=0, ref=0, fxLeft=0, fxTop=0, sclx=1, scly=1, curHeat=0, curProg=0, stylusAng=-0.7, stylusX=0, stylusY=0, hasStylus=false;  // particle field + record centre/scale + scene scale + heat + live stylus contact point (fx px)
   var fxSmoke=true, fxParticles=true, fxShake=true, fxHeat=true;  // per-effect on/off (set each frame from the page's toggles)
   function on(n){return !opts.fxOn||opts.fxOn(n);}  // an effect is ON unless the page switched it off
@@ -133,7 +133,7 @@ function ttRun(opts){
   function puff(x,y,heat){if(smoke.length>120)return;
     smoke.push({bx:x,x:x,y:y,vy:-(fxh*0.0012)*(0.8+Math.random()*0.5),r:ref*0.003,life:1,heat:heat,ph:Math.random()*6.2832,amp:ref*(0.01+Math.random()*0.016)});}
   function draw(energy,kick,playing,breath){
-    var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36,maxOuter=W*0.475;
+    var W=opts.canvas.width,cx=W/2,cy=W/2,R0=W*0.36;
     ctx.clearRect(0,0,W,W);
     // halo — always present and breathing, so the deck never goes fully dark
     var halo=0.05+energy*0.25+breath*0.03;
@@ -144,8 +144,8 @@ function ttRun(opts){
     if(!cassette && kick>0.02){ctx.save();ctx.globalAlpha=Math.min(0.9,kick*3.5);ctx.strokeStyle='hsl('+hue.toFixed(0)+',95%,72%)';
       ctx.lineWidth=W*0.006;ctx.beginPath();ctx.arc(cx,cy,R0*1.03,0,6.2832);ctx.stroke();ctx.restore();}
     // spectrum — eased frame-to-frame (flowing, not jittery), with an always-on
-    // idle shimmer and, on the disk, a slow continuous revolve.
-    var bars=cassette?80:96, half=bars/2, envAmp=playing?0.05:0.14, ringRot=idleT*0.08;
+    // idle shimmer. The vinyl ring is pinned (bass at the bottom, treble at the top).
+    var bars=cassette?80:96, half=bars/2, envAmp=playing?0.05:0.14;
     if(!smoothV||smoothV.length!==bars){smoothV=new Float32Array(bars);}
     ctx.save();ctx.shadowBlur=W*0.006;ctx.lineCap='round';  // smaller blur = cheaper per frame (96 bars); the sprite bokeh still frees budget if we ever want more glow
     if(cassette){var baseY=W*0.885,ctw=W*0.82,clx=W*0.09;ctx.lineWidth=W*0.012;  // sits in the gap below the cassette (bottom ~76%)
@@ -158,13 +158,26 @@ function ttRun(opts){
         var col=played?'hsl('+((hue+idx/half*46)%360).toFixed(0)+','+(80+v*20).toFixed(0)+'%,'+(56+v*20).toFixed(0)+'%)':'hsla(40,12%,'+(42+v*16).toFixed(0)+'%,.55)';
         ctx.strokeStyle=col;ctx.shadowColor=played?col:'transparent';ctx.beginPath();ctx.moveTo(x,baseY-len/2);ctx.lineTo(x,baseY+len/2);ctx.stroke();}}
     else{ctx.lineWidth=W*0.013;
-      for(var b=0;b<bars;b++){var j2=b<half?b:bars-1-b;
-        var raw2=dataArr?dataArr[Math.floor(j2/half*dataArr.length*0.7)]/255:0;
-        var env2=envAmp*(0.5+0.5*Math.sin(idleT*1.7+j2*0.5));
-        smoothV[b]+=(Math.max(raw2,env2)-smoothV[b])*0.35;var w2=smoothV[b];
-        var l2=Math.min(W*0.012+w2*w2*W*0.11,maxOuter-R0),a2=b/bars*6.2832-1.5708+ringRot,c2=Math.cos(a2),s2=Math.sin(a2);
-        var k2='hsl('+((hue+j2/half*40)%360).toFixed(0)+','+(72+w2*25).toFixed(0)+'%,'+(52+w2*20).toFixed(0)+'%)';
-        ctx.strokeStyle=k2;ctx.shadowColor=k2;ctx.beginPath();ctx.moveTo(cx+c2*R0,cy+s2*R0);ctx.lineTo(cx+c2*(R0+l2),cy+s2*(R0+l2));ctx.stroke();}}
+      // Trap-Nation ring: bass anchored at the BOTTOM centre (canvas +y is down, so
+      // +PI/2 = 6 o'clock), frequency climbing up BOTH sides (mirrored across the
+      // vertical axis) to treble at the TOP. Snappy attack with a slower meter-style
+      // fall, a perceptual (pow) bin map so the bass owns the bottom arc, kick-driven
+      // bass bars, level-scaled glow, white-hot peak tips, and the whole ring
+      // breathing outward on the beat.
+      vinylPulse=Math.max(vinylPulse*0.92,Math.min(1,kick*4));
+      var R0v=R0*(1+vinylPulse*0.022),maxV=W*0.483;
+      ctx.shadowBlur=W*(0.005+Math.min(0.012,(energy*0.8+vinylPulse*0.5)*0.014));
+      for(var b=0;b<bars;b++){var j2=b<half?b:bars-1-b,fp=j2/(half-1);
+        var raw2=dataArr?Math.min(1,dataArr[Math.floor(Math.pow(fp,1.7)*dataArr.length*0.5)]/255*(1+fp*0.55)):0;
+        var env2=envAmp*(0.5+0.5*Math.sin(idleT*1.7+j2*0.5)),tg2=Math.max(raw2,env2);
+        smoothV[b]+=(tg2-smoothV[b])*(tg2>smoothV[b]?0.65:0.18);var w2=smoothV[b];
+        var l2=Math.min(W*0.010+Math.pow(w2,1.5)*W*0.155+kick*(1-fp)*W*0.07,maxV-R0v);
+        var a2=b/bars*6.2832+1.5708,c2=Math.cos(a2),s2=Math.sin(a2);
+        var hb=((hue+fp*40)%360).toFixed(0),k2='hsl('+hb+','+(70+w2*30).toFixed(0)+'%,'+(50+w2*26).toFixed(0)+'%)';
+        ctx.strokeStyle=k2;ctx.shadowColor=k2;ctx.beginPath();ctx.moveTo(cx+c2*R0v,cy+s2*R0v);ctx.lineTo(cx+c2*(R0v+l2),cy+s2*(R0v+l2));ctx.stroke();
+        if(w2>0.7){ctx.save();ctx.globalAlpha=Math.min(1,(w2-0.7)*3)*0.85;var kw='hsl('+hb+',100%,88%)';
+          ctx.strokeStyle=kw;ctx.shadowColor=kw;ctx.lineWidth=W*0.008;
+          ctx.beginPath();ctx.moveTo(cx+c2*(R0v+l2*0.55),cy+s2*(R0v+l2*0.55));ctx.lineTo(cx+c2*(R0v+l2),cy+s2*(R0v+l2));ctx.stroke();ctx.restore();}}}
     ctx.restore();
     if(!cassette && (curProg>0 || playing)){var pr=curProg;
       ctx.save();ctx.strokeStyle='hsla('+hue.toFixed(0)+',90%,66%,.9)';ctx.lineCap='round';

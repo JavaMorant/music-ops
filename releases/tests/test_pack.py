@@ -233,7 +233,9 @@ def test_idle_animation_present(tmp_path):
     assert "idleT" in idx                                 # always-on motion clock
     assert "smoothV" in idx and "*0.35" in idx           # spectrum bars ease (flow, not jitter)
     assert "envAmp=playing?0.05:0.14" in idx             # idle shimmer keeps the bars alive when paused
-    assert "ringRot" in idx                               # the spectrum slowly revolves
+    assert "a2=b/bars*6.2832+1.5708" in idx              # vinyl ring pinned: bass at bottom centre, treble at top
+    assert "?0.65:0.18" in idx                            # snappy attack, slower meter-style fall
+    assert "vinylPulse" in idx                            # ring breathes outward on the kick
 
 
 def test_fullscreen_particles_and_shake(tmp_path):

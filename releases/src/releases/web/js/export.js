@@ -76,7 +76,7 @@ function ttExportRender(cfg){
   // ---- reactive state (ported from turntable.js) ----
   var hue = 42, bassAvg = 0, eLong = 0, eMid = 0, shake = 0, punch = 0, lastDrop = 0;
   var idleT = 0, dataArr = null, curEnergy = 0, curProg = 0, curHeat = 0, heatVal = 0, breath = 0;
-  var smoothV = null, playingNow = false;
+  var smoothV = null, playingNow = false, vinylPulse = 0;  // vinylPulse = eased kick level that makes the ring breathe
   var rot = 0, reelRot = 0, armA = 8;
   var sparks = [], embers = [], smoke = [], bokeh = [], dust = [];
   var running = false, raf = 0, lastNow = 0, startT = 0, endedAt = 0;
@@ -339,12 +339,12 @@ function ttExportRender(cfg){
   }
   function drawSpectrum(cyd, kick){
     var cassette = skin === 'cassette';
-    var R0 = D*0.36, maxOuter = D*0.475;
+    var R0 = D*0.36;
     var dxx = cx - D/2, dyy = cyd - D/2;
     if(!cassette && kick > 0.02){ ctx.save(); ctx.globalAlpha = Math.min(0.9, kick*3.5);
       ctx.strokeStyle = 'hsl(' + hue.toFixed(0) + ',95%,72%)'; ctx.lineWidth = D*0.006;
       circle(ctx, cx, cyd, R0*1.03); ctx.stroke(); ctx.restore(); }
-    var bars = cassette ? 80 : 96, half = bars/2, envAmp = playingNow ? 0.05 : 0.14, ringRot = idleT*0.08;
+    var bars = cassette ? 80 : 96, half = bars/2, envAmp = playingNow ? 0.05 : 0.14;
     if(!smoothV || smoothV.length !== bars) smoothV = new Float32Array(bars);
     ctx.save(); ctx.shadowBlur = D*0.006; ctx.lineCap = 'round';
     if(cassette){
@@ -361,16 +361,30 @@ function ttExportRender(cfg){
         ctx.strokeStyle = col; ctx.shadowColor = played ? col : 'transparent';
         ctx.beginPath(); ctx.moveTo(x, baseY - len/2); ctx.lineTo(x, baseY + len/2); ctx.stroke(); }
     } else {
+      // Trap-Nation ring (kept in lockstep with turntable.js): bass anchored at the
+      // BOTTOM centre (+PI/2, canvas y-down), frequency climbing up BOTH sides
+      // (mirrored across the vertical axis) to treble at the TOP. Snappy attack with
+      // a slower meter-style fall, a perceptual (pow) bin map so the bass owns the
+      // bottom arc, kick-driven bass bars, level-scaled glow, white-hot peak tips,
+      // and the whole ring breathing outward on the beat.
       ctx.lineWidth = D*0.013;
-      for(var b = 0; b < bars; b++){ var j2 = b < half ? b : bars-1-b;
-        var raw2 = dataArr ? dataArr[Math.floor(j2/half*dataArr.length*0.7)]/255 : 0;
-        var env2 = envAmp*(0.5 + 0.5*Math.sin(idleT*1.7 + j2*0.5));
-        smoothV[b] += (Math.max(raw2, env2) - smoothV[b])*0.35; var w2 = smoothV[b];
-        var l2 = Math.min(D*0.012 + w2*w2*D*0.11, maxOuter - R0);
-        var a2 = b/bars*TAU - PI/2 + ringRot, c2 = Math.cos(a2), s2 = Math.sin(a2);
-        var k2 = 'hsl(' + ((hue + j2/half*40)%360).toFixed(0) + ',' + (72 + w2*25).toFixed(0) + '%,' + (52 + w2*20).toFixed(0) + '%)';
+      vinylPulse = Math.max(vinylPulse*0.92, Math.min(1, kick*4));
+      var R0v = R0*(1 + vinylPulse*0.022), maxV = D*0.483;
+      ctx.shadowBlur = D*(0.005 + Math.min(0.012, (curEnergy*0.8 + vinylPulse*0.5)*0.014));
+      for(var b = 0; b < bars; b++){ var j2 = b < half ? b : bars-1-b, fp = j2/(half-1);
+        var raw2 = dataArr ? Math.min(1, dataArr[Math.floor(Math.pow(fp, 1.7)*dataArr.length*0.5)]/255*(1 + fp*0.55)) : 0;
+        var env2 = envAmp*(0.5 + 0.5*Math.sin(idleT*1.7 + j2*0.5)), tg2 = Math.max(raw2, env2);
+        smoothV[b] += (tg2 - smoothV[b])*(tg2 > smoothV[b] ? 0.65 : 0.18); var w2 = smoothV[b];
+        var l2 = Math.min(D*0.010 + Math.pow(w2, 1.5)*D*0.155 + kick*(1 - fp)*D*0.07, maxV - R0v);
+        var a2 = b/bars*TAU + PI/2, c2 = Math.cos(a2), s2 = Math.sin(a2);
+        var hb = ((hue + fp*40)%360).toFixed(0);
+        var k2 = 'hsl(' + hb + ',' + (70 + w2*30).toFixed(0) + '%,' + (50 + w2*26).toFixed(0) + '%)';
         ctx.strokeStyle = k2; ctx.shadowColor = k2;
-        ctx.beginPath(); ctx.moveTo(cx + c2*R0, cyd + s2*R0); ctx.lineTo(cx + c2*(R0 + l2), cyd + s2*(R0 + l2)); ctx.stroke(); }
+        ctx.beginPath(); ctx.moveTo(cx + c2*R0v, cyd + s2*R0v); ctx.lineTo(cx + c2*(R0v + l2), cyd + s2*(R0v + l2)); ctx.stroke();
+        if(w2 > 0.7){ ctx.save(); ctx.globalAlpha = Math.min(1, (w2 - 0.7)*3)*0.85;
+          var kw = 'hsl(' + hb + ',100%,88%)';
+          ctx.strokeStyle = kw; ctx.shadowColor = kw; ctx.lineWidth = D*0.008;
+          ctx.beginPath(); ctx.moveTo(cx + c2*(R0v + l2*0.55), cyd + s2*(R0v + l2*0.55)); ctx.lineTo(cx + c2*(R0v + l2), cyd + s2*(R0v + l2)); ctx.stroke(); ctx.restore(); } }
     }
     ctx.restore();
   }
