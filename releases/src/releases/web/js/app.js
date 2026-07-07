@@ -274,7 +274,7 @@ function deckSelect(i){
   const dot=document.getElementById('ovbpmdot');
   if(t.bpm){ dot.style.display='inline-block'; dot.style.animationDuration=(60/t.bpm).toFixed(3)+'s'; } else { dot.style.display='none'; }
   const hook=document.getElementById('ovhook');
-  hook.textContent=[(t.genre&&t.genre!=='unknown')?t.genre.toUpperCase():'', t.bpm?t.bpm+' BPM':''].filter(Boolean).join(' · ');
+  hook.textContent=[t.name, (t.genre&&t.genre!=='unknown')?t.genre.toUpperCase():'', t.bpm?t.bpm+' BPM':''].filter(Boolean).join(' · ');
   hook.classList.remove('pop'); void hook.offsetWidth; hook.classList.add('pop');
   [...document.getElementById('ovlist').children].forEach((li,j)=>li.classList.toggle('active',j===i));
   audioEl.play().catch(()=>{});
@@ -687,7 +687,7 @@ async function exportVideo(){
       getProgress: () => playRef.ended ? 1
         : (playRef.on ? Math.max(0, Math.min(1, (dactx.currentTime - playRef.at)/playRef.dur)) : 0),
       track: { name: t.name || '',
-        hook: [(t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
+        hook: [t.name, (t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
           .filter(Boolean).join(' \u00b7 '),
         meta: [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : '']
           .filter(Boolean).join(' \u00b7 ') },
