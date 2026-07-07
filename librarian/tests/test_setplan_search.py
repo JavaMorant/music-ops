@@ -67,3 +67,12 @@ def test_no_artist_repeat_within_6_with_duplicate_artists():
     for i in range(len(plan.slots)):
         window = [plan.slots[j].candidate.artist for j in range(max(0, i - 5), i)]
         assert plan.slots[i].candidate.artist not in window
+
+
+from librarian.cli import _parse_journey
+
+
+def test_parse_journey_string():
+    assert _parse_journey("amapiano:60,afrobeats:40") == [("amapiano", 0.6), ("afrobeats", 0.4)]
+    assert _parse_journey("") == []
+    assert _parse_journey("house") == [("house", 1.0)]

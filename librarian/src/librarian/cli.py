@@ -91,6 +91,24 @@ def _print_plan(plan: Plan) -> None:
             typer.echo(f"      reason: {t.reason}")
 
 
+def _parse_journey(s: str) -> list[tuple[str, float]]:
+    """'amapiano:60,afrobeats:40' -> [('amapiano',0.6),('afrobeats',0.4)]; 'house' -> [('house',1.0)]."""
+    s = (s or "").strip()
+    if not s:
+        return []
+    parts = []
+    for chunk in s.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" in chunk:
+            name, pct = chunk.rsplit(":", 1)
+            parts.append((name.strip(), float(pct) / 100.0))
+        else:
+            parts.append((chunk, 1.0))
+    return parts
+
+
 @app.command()
 def plan(
     library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root to scan")],
@@ -237,6 +255,62 @@ def organise(
         typer.secho("  ⚠ no --rekordbox-xml given — pass one before --apply to keep cues "
                     "in sync (or --no-rekordbox to override).", fg="yellow")
     typer.echo("\nDry run — nothing moved. Review the plans, then re-run with --apply.")
+
+
+@app.command()
+def setplan(
+    library_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, help="Library root")],
+    minutes: Annotated[int, typer.Option("--minutes", help="Set length in minutes")] = 90,
+    journey: Annotated[str, typer.Option("--journey", help="Genre blocks, e.g. 'amapiano:60,afrobeats:40'")] = "",
+    arc: Annotated[str, typer.Option("--arc", help="Energy arc: warmup|build|peak|closing|journey")] = "peak",
+    freshness: Annotated[float, typer.Option("--freshness", help="0=proven bangers … 1=surface the unplayed")] = 0.3,
+    harmonic: Annotated[str, typer.Option("--harmonic", help="strict|loose|off")] = "loose",
+    must: Annotated[list[str], typer.Option("--must", help="Must-play track query (repeatable)")] = [],
+    avoid: Annotated[list[str], typer.Option("--avoid", help="Track/artist/genre to exclude (repeatable)")] = [],
+    opener: Annotated[Optional[str], typer.Option("--opener", help="Force this track first")] = None,
+    out_dir: Annotated[Path, typer.Option("--out", help="Where to write the plan + exports")] = Path("setplan-run"),
+) -> None:
+    """Build an ordered set from the library — harmonic + BPM + energy arc + your own play history.
+
+    Read-only: reads tags + rekordbox/USB play history, writes a plan and exports. Moves nothing.
+    """
+    from .setplan.spec import GigSpec
+    from .setplan.pool import build_pool
+    from .setplan.search import build_set
+    from .setplan.export import to_m3u8, to_markdown
+
+    root = library_root.absolute()
+    # Best-effort history: read every mounted CDJ stick; degrade to none if unavailable.
+    sessions: list[list[str]] = []
+    try:
+        from . import pulse_usb
+        for vol in pulse_usb.find_usbs():
+            sess, _meta, _fmts = pulse_usb.read_stick(vol)
+            sessions.extend(s["tracks"] for s in sess if s.get("tracks"))
+    except Exception:
+        pass  # history is optional; the engine works without it
+
+    spec = GigSpec(minutes=minutes, journey=_parse_journey(journey), arc=arc,
+                   freshness=freshness, harmonic=harmonic, must_play=list(must),
+                   avoid=list(avoid), opener=opener)
+    typer.echo(f"Prepping {minutes}min {arc} set from {root} · history: {len(sessions)} past set(s)")
+    cands, follows = build_pool(root, sessions=sessions)
+    plan = build_set(cands, spec, follows=follows)
+    if not plan.slots:
+        typer.secho("No candidates matched — loosen the journey/BPM filters.", fg="yellow")
+        raise typer.Exit(1)
+
+    for s in plan.slots:
+        c = s.candidate
+        key = f"{c.camelot[0]}{c.camelot[1]}" if c.camelot else "--"
+        bpm = f"{int(c.bpm)}" if c.bpm else "--"
+        typer.echo(f"{s.index + 1:>2} +{int(s.clock_min):>3}m  {c.artist} - {c.title}  [{bpm} {key}]")
+        typer.echo(f"      {s.reason}")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    to_m3u8(plan, out_dir / "set.m3u8")
+    to_markdown(plan, out_dir / "set.md")
+    typer.echo(f"\nExports → {out_dir}/set.m3u8, {out_dir}/set.md  (nothing in the library was changed)")
 
 
 @app.command()
