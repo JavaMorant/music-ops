@@ -5,119 +5,247 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>pulse — librarian</title>
 <style>
+  /* ── design tokens — duplicated verbatim across index/pulse/dedupe ────── */
   :root {
-    --bg:#0e0f12; --panel:#16181d; --line:#262a31; --text:#e7e9ee; --dim:#8b909b;
-    --accent:#7aa2ff; --warm:#e0a85b; --ok:#5fd08a; --bad:#ff6b6b; --cold:#6fb3d2;
+    color-scheme: dark;
+    --bg:#0a0b0e; --panel:#111318; --raised:#181b21; --inset:#07080b;
+    --line:#20242c; --line-2:#2c313b;
+    --text:#e9ebf1; --dim:#99a0ac; --faint:#606672;
+    --accent:#7da7ff; --accent-ink:#071019;
+    --ok:#56d38f; --warm:#e5ab5b; --bad:#f07d7d; --cold:#74b8d8;
+    --accent-tint:rgba(125,167,255,.13); --ok-tint:rgba(86,211,143,.11);
+    --warm-tint:rgba(229,171,91,.12); --bad-tint:rgba(240,125,125,.10);
+    --move:var(--accent); --quarantine:var(--warm);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --r-sm:7px; --r-md:11px; --r-lg:14px;
+    --shadow-1:inset 0 1px 0 rgba(255,255,255,.03), 0 1px 2px rgba(0,0,0,.35);
+    --shadow-2:0 12px 32px rgba(0,0,0,.45);
+    --ease:cubic-bezier(.25,.6,.3,1);
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-    font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex;
-    align-items:center; gap:16px; }
-  .brand { font-size:14px; font-weight:700; letter-spacing:.02em; color:var(--dim); }
-  .tabs { display:flex; gap:4px; }
+  ::selection { background:rgba(125,167,255,.3); }
+  *::-webkit-scrollbar { width:10px; height:10px; }
+  *::-webkit-scrollbar-track { background:transparent; }
+  *::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:99px;
+    border:3px solid transparent; background-clip:content-box; }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.55 var(--font);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+
+  /* ── app bar (shared chrome) ───────────────────────────────────────────── */
+  header { position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:14px;
+    padding:10px 22px; border-bottom:1px solid var(--line);
+    background:rgba(10,11,14,.82); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+  .brand { display:inline-flex; align-items:center; gap:9px; font-size:13.5px; font-weight:650;
+    letter-spacing:.05em; color:var(--text); }
+  .brand::before { content:""; width:9px; height:9px; border-radius:3px;
+    background:linear-gradient(135deg,var(--accent),#5b74d6);
+    box-shadow:0 0 8px rgba(125,167,255,.45); }
+  .tabs { display:flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:10px;
+    background:rgba(255,255,255,.02); }
   .tab { display:inline-flex; align-items:center; gap:7px; text-decoration:none; color:var(--dim);
-    font-size:13px; font-weight:600; padding:6px 13px; border-radius:8px; border:1px solid transparent; line-height:1; }
-  .tab:hover { color:var(--text); background:#1c1f25; }
-  .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
-  .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
+    font-size:12.5px; font-weight:600; padding:5px 12px; border-radius:7px; line-height:1.4;
+    transition:color .14s var(--ease), background .14s var(--ease); }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--text); background:var(--raised); box-shadow:var(--shadow-1); }
+  .tab .dot { width:6px; height:6px; border-radius:50%; opacity:.4; transition:opacity .14s var(--ease); }
   .tab.active .dot { opacity:1; }
-  .rootlbl { color:var(--dim); font-size:12px; }
-  .rootsel { background:#1c1f25; color:var(--text); border:1px solid var(--line); border-radius:8px;
-    padding:6px 10px; font-size:12px; font-weight:600; max-width:240px; cursor:pointer; }
+  .rootlbl { color:var(--faint); font-size:10.5px; font-weight:650; letter-spacing:.12em;
+    text-transform:uppercase; }
+  .rootsel { appearance:none; -webkit-appearance:none; color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:6px 26px 6px 10px; font:600 12px/1.4 var(--font); max-width:240px;
+    cursor:pointer; transition:border-color .14s var(--ease), box-shadow .14s var(--ease);
+    background:var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2399a0ac' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 9px center / 10px; }
+  .rootsel:hover { border-color:var(--line-2); }
+  .rootsel:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint); }
   .rootsel:disabled { opacity:.5; cursor:not-allowed; }
-  body.scanning main { pointer-events:none; opacity:.5; }   /* lock everything while folding in */
-  header h1 { margin:0; font-size:18px; letter-spacing:.06em; font-weight:600; }
-  header .sub { color:var(--dim); font-size:12px; }
+  header .sub { color:var(--faint); font-size:10.5px; font-weight:650; letter-spacing:.14em;
+    text-transform:uppercase; }
   header .spacer { flex:1; }
-  button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px;
-    padding:7px 15px; font-weight:600; cursor:pointer; font-size:13px; }
-  button.ghost { background:#2a2f39; color:var(--text); }
-  main { max-width:1080px; margin:0 auto; padding:24px; }
-  h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim);
-    font-weight:600; margin:26px 0 12px; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-    padding:18px 20px; margin-bottom:16px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
-  .stat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-  .stat .n { font-size:30px; font-weight:700; letter-spacing:-.01em; }
-  .stat .l { color:var(--dim); font-size:12px; margin-top:2px; }
+  .spacer { flex:1; }
+
+  main { max-width:1080px; margin:0 auto; padding:24px 24px 90px; transition:opacity .2s var(--ease); }
+  body.scanning main { pointer-events:none; opacity:.45; }   /* lock everything while folding in */
+  body.scanning { cursor:progress; }
+
+  /* ── controls ──────────────────────────────────────────────────────────── */
+  button { font:600 13px/1.4 var(--font); letter-spacing:.01em; background:var(--accent);
+    color:var(--accent-ink); border:0; border-radius:var(--r-sm); padding:7px 15px; cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 1px 2px rgba(0,0,0,.3);
+    transition:filter .14s var(--ease), transform .14s var(--ease), background .14s var(--ease); }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:active:not(:disabled) { transform:translateY(1px); filter:brightness(.95); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.4; cursor:not-allowed; box-shadow:none; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line-2);
+    box-shadow:none; }
+  button.ghost:hover:not(:disabled) { filter:none; background:var(--raised); }
+  .field { background:var(--inset); border:1px solid var(--line); color:var(--text);
+    border-radius:var(--r-sm); padding:8px 11px; font:13px/1.4 var(--font);
+    transition:border-color .14s var(--ease), box-shadow .14s var(--ease); }
+  .field:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint); }
+  .field.mono { font:12px/1.5 var(--mono); }
+  .field::placeholder { color:var(--faint); }
+  .grow { flex:1; min-width:220px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+  /* segmented chips (source + recency window toggles) */
+  .chipbar { display:inline-flex; gap:2px; padding:2px; border:1px solid var(--line);
+    border-radius:8px; background:var(--inset); }
+  button.src { background:transparent; color:var(--dim); border:0; border-radius:6px;
+    padding:4px 10px; font:600 11.5px/1.4 var(--font); letter-spacing:.02em; text-transform:none;
+    cursor:pointer; box-shadow:none; transition:color .14s var(--ease), background .14s var(--ease); }
+  button.src:hover:not(:disabled) { filter:none; color:var(--text); }
+  button.src.on { background:var(--accent-tint); color:var(--accent); }
+
+  /* ── sections & panels ─────────────────────────────────────────────────── */
+  h2 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; font-weight:700;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin:30px 0 10px; }
+  h2 .muted { text-transform:none; letter-spacing:.01em; font-weight:500; font-size:12px;
+    color:var(--faint); }
+  .panel h2 { margin:16px 0 8px; }
+  .kdot { display:inline-block; width:7px; height:7px; border-radius:2px; flex:none; }
+  .kdot.warm { background:var(--warm); } .kdot.cold { background:var(--cold); }
+  .kdot.ok { background:var(--ok); } .kdot.faint { background:var(--faint); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
+    padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow-1); }
+  .tools { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+  @media (max-width:900px){ .tools { grid-template-columns:1fr; } }
+  .tools section { display:flex; flex-direction:column; }
+  .tools section h2 { margin-top:2px; }
+  .tools .panel { flex:1; }
+  .muted { color:var(--dim); font-size:12px; }
+  .muted b { color:var(--text); font-weight:600; }
+  code { font-family:var(--mono); font-size:11.5px; background:var(--inset);
+    border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+
+  /* ── stat tiles ────────────────────────────────────────────────────────── */
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .stat { background:var(--inset); border:1px solid var(--line); border-radius:9px; padding:12px 14px; }
+  .stat .n { font-size:24px; font-weight:700; letter-spacing:-.02em; line-height:1.2;
+    font-variant-numeric:tabular-nums; }
+  .stat .l { color:var(--faint); font-size:10.5px; font-weight:650; letter-spacing:.1em;
+    text-transform:uppercase; margin-top:3px; }
   .stat.accent .n { color:var(--accent); } .stat.warm .n { color:var(--warm); }
   .stat.ok .n { color:var(--ok); } .stat.cold .n { color:var(--cold); }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; }
   @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+
+  /* ── ranked lists, transitions, bars ───────────────────────────────────── */
   ol.list { margin:0; padding:0; list-style:none; }
-  ol.list li { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  ol.list li .rank { color:var(--dim); width:20px; text-align:right; font-variant-numeric:tabular-nums; }
-  ol.list li .lab { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  ol.list li .cnt { color:var(--dim); font-variant-numeric:tabular-nums; }
-  .bars div { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:13px; }
-  .bars .name { width:130px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .bars .track { flex:1; height:8px; background:#0e0f12; border-radius:99px; overflow:hidden; }
-  .bars .fill { height:100%; background:var(--accent); border-radius:99px; }
-  .stickname { font-weight:600; font-size:15px; }
-  .pill { font-size:11px; padding:1px 8px; border-radius:99px; background:rgba(122,162,255,.16); color:var(--accent); }
-  .src { background:#2a2f39; color:var(--dim); border:0; border-radius:6px; padding:4px 10px; font-size:11px;
-    font-weight:600; cursor:pointer; text-transform:none; letter-spacing:0; margin-left:4px; }
-  .src.on { background:var(--accent); color:#0b0d12; }
-  .muted { color:var(--dim); font-size:12px; }
-  .banner { padding:11px 14px; border-radius:9px; margin:10px 0; font-size:13px; }
-  .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
-  .skel { color:var(--dim); padding:14px 0; }
-  a.nav { color:var(--dim); text-decoration:none; font-size:12px; }
-  a.nav:hover { color:var(--text); }
+  ol.list li { display:flex; gap:10px; align-items:baseline; padding:6px 0;
+    border-bottom:1px solid var(--line); font-size:13px; }
+  ol.list li:last-child { border-bottom:0; }
+  ol.list li .rank { color:var(--faint); width:20px; text-align:right; flex:none;
+    font-variant-numeric:tabular-nums; font-size:11px; }
+  ol.list li .lab { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  ol.list li .cnt { color:var(--dim); font-variant-numeric:tabular-nums; font-size:12px;
+    white-space:nowrap; }
+  .tcnt { width:36px; flex:none; color:var(--accent); font-weight:650; font-size:12px;
+    font-variant-numeric:tabular-nums; }
+  .arr { color:var(--faint); }
+  .runrow { display:flex; gap:10px; align-items:baseline; padding:6px 0;
+    border-bottom:1px solid var(--line); font-size:13px; }
+  .runrow:last-child { border-bottom:0; }
+  .bars div { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:12.5px; }
+  .bars .name { width:140px; color:var(--dim); overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; }
+  .bars .track { flex:1; height:6px; background:var(--inset); border-radius:99px; overflow:hidden; }
+  .bars .fill { display:block; height:100%; border-radius:99px;
+    background:linear-gradient(90deg,rgba(125,167,255,.45),var(--accent)); }
+  .bars .cnt { color:var(--dim); min-width:34px; text-align:right; font-size:12px;
+    font-variant-numeric:tabular-nums; }
+
+  /* ── sticks & sets ─────────────────────────────────────────────────────── */
+  .stickrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+  .stickname { display:inline-flex; align-items:center; gap:8px; font-weight:650; font-size:15px;
+    letter-spacing:.01em; }
+  .stickname::before { content:""; width:16px; height:16px; flex:none; opacity:.8;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.2' y='5' width='9.6' height='6' rx='1.6' fill='none' stroke='%2399a0ac' stroke-width='1.5'/%3E%3Cpath d='M10.8 6.6h3.2v2.8h-3.2z' fill='none' stroke='%2399a0ac' stroke-width='1.3'/%3E%3C/svg%3E") center/contain no-repeat; }
+  .pill { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:2px 8px; border-radius:99px; background:var(--accent-tint); color:var(--accent);
+    line-height:1.6; white-space:nowrap; }
+  .pill.warm { background:var(--warm-tint); color:var(--warm); }
+  .winrow { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .wlab { color:var(--faint); font-size:10.5px; font-weight:650; letter-spacing:.1em;
+    text-transform:uppercase; }
+  .recfield { width:100%; margin-top:8px; }
+  .spark { display:flex; align-items:flex-end; gap:1px; height:30px; margin-top:12px; }
+  .spark span { flex:1; min-height:2px; border-radius:2px 2px 0 0;
+    background:linear-gradient(180deg,var(--accent),rgba(125,167,255,.25)); }
+  .sparklbl { color:var(--faint); font-size:11px; margin-top:3px; }
+
+  /* ── feedback states ───────────────────────────────────────────────────── */
+  .banner { display:flex; gap:10px; align-items:flex-start; padding:11px 14px;
+    border-radius:var(--r-sm); border:1px solid; margin:10px 0; font-size:13px; }
+  .banner::before { font-weight:700; line-height:1.55; }
+  .banner.ok { background:var(--ok-tint); color:var(--ok); border-color:rgba(86,211,143,.25); }
+  .banner.ok::before { content:"✓"; }
+  .banner.bad { background:var(--bad-tint); color:var(--bad); border-color:rgba(240,125,125,.25); }
+  .banner.bad::before { content:"✕"; }
+  .skel { display:flex; align-items:center; gap:10px; color:var(--dim); font-size:13px;
+    padding:16px 0; }
+  .skel::before { content:""; width:14px; height:14px; border-radius:50%; flex:none;
+    border:2px solid var(--line-2); border-top-color:var(--accent);
+    animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(1turn); } }
 </style>
 </head>
 <body>
 <header>
   <span class="brand">librarian</span>
   <nav class="tabs">
-    <a class="tab" href="/"><span class="dot" style="background:#7aa2ff"></span>Review</a>
-    <a class="tab active" href="/pulse.html"><span class="dot" style="background:#5fd08a"></span>Pulse</a>
-    <a class="tab" href="/dedupe.html"><span class="dot" style="background:#e0a85b"></span>Duplicates</a>
+    <a class="tab" href="/"><span class="dot" style="background:#7da7ff"></span>Review</a>
+    <a class="tab active" href="/pulse.html"><span class="dot" style="background:#56d38f"></span>Pulse</a>
+    <a class="tab" href="/dedupe.html"><span class="dot" style="background:#e5ab5b"></span>Duplicates</a>
   </nav>
-  <span class="rootlbl">working in:</span>
+  <span class="rootlbl">working in</span>
   <select id="rootSel" class="rootsel"><option>…</option></select>
   <span class="spacer"></span>
   <span class="sub">library intelligence</span>
   <button id="refresh" class="ghost" data-lock>↻ refresh</button>
 </header>
 <main>
-  <h2>Add music <span class="muted">— fold a folder into the library</span></h2>
-  <div class="panel">
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <input id="ingFolder" type="text" value="~/DJ/inbox"
-        style="flex:1;min-width:240px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:12px" />
-      <button id="ingPreview" class="ghost">Preview</button>
-      <button id="ingApply" disabled>Fold in</button>
-    </div>
-    <div class="muted" style="margin-top:8px">Classifies + acoustic-dedupes the folder against the library, then files survivors into the flat genres and refreshes crates. Preview moves nothing.</div>
-    <div id="ingOut"></div>
+  <div class="tools">
+    <section>
+      <h2>Add music <span class="muted">— fold a folder into the library</span></h2>
+      <div class="panel">
+        <div class="row">
+          <input id="ingFolder" type="text" value="~/DJ/inbox" class="field mono grow" />
+          <button id="ingPreview" class="ghost">Preview</button>
+          <button id="ingApply" disabled>Fold in</button>
+        </div>
+        <div class="muted" style="margin-top:8px">Classifies + acoustic-dedupes the folder against the library, then files survivors into the flat genres and refreshes crates. Preview moves nothing.</div>
+        <div id="ingOut"></div>
+      </div>
+    </section>
+    <section>
+      <h2>Organise <span class="muted">— identify → dedup v2 → genre, as reviewable plans</span></h2>
+      <div class="panel">
+        <div class="row">
+          <input id="orgFolder" type="text" value="~/DJ/library" class="field mono grow" />
+          <button id="orgRun" class="ghost">Organise (plan)</button>
+        </div>
+        <div class="muted" style="margin-top:8px">Recording-level dedup (keeps distinct versions) + genre reorg into the 24 buckets. With an AcoustID key it identifies the real track first; without one it dedups + folder-migrates. Writes reviewable plans, moves nothing.</div>
+        <div id="orgOut"></div>
+      </div>
+    </section>
   </div>
 
-  <h2>Organise <span class="muted">— identify → dedup v2 → genre, as reviewable plans</span></h2>
-  <div class="panel">
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <input id="orgFolder" type="text" value="~/DJ/library"
-        style="flex:1;min-width:240px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:12px" />
-      <button id="orgRun" class="ghost">Organise (plan)</button>
-    </div>
-    <div class="muted" style="margin-top:8px">Recording-level dedup (keeps distinct versions) + genre reorg into the 24 buckets. With an AcoustID key it identifies the real track first; without one it dedups + folder-migrates. Writes reviewable plans, moves nothing.</div>
-    <div id="orgOut"></div>
-  </div>
-
-  <h2 style="display:flex;align-items:center;gap:10px">Your sticks <span class="muted">— what you actually play</span>
+  <h2>Your sticks <span class="muted">— what you actually play</span>
     <span style="flex:1"></span>
-    <span id="srcToggle">
+    <span id="srcToggle" class="chipbar">
       <button class="src on" data-src="all">Combined</button><button class="src" data-src="DL">DL</button><button class="src" data-src="DL+">DL+</button>
     </span></h2>
   <div id="usb"><div class="skel">reading mounted USBs…</div></div>
 
   <h2>What I play after… <span class="muted">— set-builder</span></h2>
   <div class="panel">
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <input id="afterTrack" type="text" placeholder="type a track — e.g. one dance"
-        style="flex:1;min-width:200px;background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px"/>
+    <div class="row">
+      <input id="afterTrack" type="text" placeholder="type a track — e.g. one dance" class="field grow"/>
       <button id="afterBtn">find</button>
     </div>
     <div id="afterOut"></div>
@@ -140,7 +268,7 @@ function stat(n, l, cls) {
   return `<div class="stat ${cls||""}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
 }
 function listOl(items, fmt) {
-  if (!items || !items.length) return '<div class="muted">nothing yet</div>';
+  if (!items || !items.length) return '<div class="muted" style="padding:6px 0">nothing yet</div>';
   return `<ol class="list">${items.map((it, i) =>
     `<li><span class="rank">${i+1}</span><span class="lab">${esc(fmt.lab(it))}</span>`
     + `<span class="cnt">${esc(fmt.cnt(it))}</span></li>`).join("")}</ol>`;
@@ -156,8 +284,8 @@ function bars(items) {
 function transHtml(items) {
   if (!items || !items.length) return '<div class="muted" style="padding:6px 0">No transitions repeated yet — keep playing out.</div>';
   return `<ol class="list">${items.map(t =>
-    `<li><span class="cnt" style="width:30px;text-align:left;color:var(--accent);font-weight:600">${t.count}×</span>`
-    + `<span class="lab">${esc(t.from)} <span style="color:var(--accent)">→</span> ${esc(t.to)}</span></li>`).join("")}</ol>`;
+    `<li><span class="tcnt">${t.count}×</span>`
+    + `<span class="lab">${esc(t.from)} <span class="arr">→</span> ${esc(t.to)}</span></li>`).join("")}</ol>`;
 }
 
 let usbSource = "all";
@@ -174,8 +302,8 @@ async function organiseStick(si) {
       { method: "POST", headers: { "Content-Type": "application/json" } });
     const d = await r.json();
     if (!r.ok) { out.innerHTML = `<div class="banner bad">${esc(d.detail || "error")}</div>`; return; }
-    out.innerHTML = `<div class="banner" style="background:rgba(95,208,138,.12);color:var(--ok);border:1px solid rgba(95,208,138,.3)">✓ Wrote ${d.crates.length} crates → <code>${esc(d.folder)}</code></div>`
-      + `<div class="muted" style="margin:6px 0 2px">` + d.crates.map(c => `${esc(c.name)} <b style="color:var(--text)">${c.tracks}</b>`).join(" · ") + `</div>`
+    out.innerHTML = `<div class="banner ok">Wrote ${d.crates.length} crates → <code>${esc(d.folder)}</code></div>`
+      + `<div class="muted" style="margin:6px 0 2px">` + d.crates.map(c => `${esc(c.name)} <b>${c.tracks}</b>`).join(" · ") + `</div>`
       + `<div class="muted">Import the <b>.m3u8</b> files into rekordbox → assign to this stick → re-export.`
       + (d.needs_paths ? ` <span style="color:var(--warm)">Some tracks had no on-stick path — those are tracklists to match by title.</span>` : "") + `</div>`;
   } catch (e) { out.innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
@@ -189,22 +317,22 @@ async function loadUsb() {
     usbSticks = d.sticks;
     const winChips = WINDOW_PRESETS.map(n =>
       `<button class="src${n === usbWindow ? " on" : ""}" onclick="setUsbWindow(${n})">${n >= 9999 ? "All" : n}</button>`).join("");
-    $("usb").innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><span class="muted">Recency window:</span><span id="usbWinToggle">${winChips}</span></div>`
+    $("usb").innerHTML = `<div class="winrow"><span class="wlab">Recency window</span><span id="usbWinToggle" class="chipbar">${winChips}</span></div>`
       + d.sticks.map((s, si) => {
       if (s.error) return `<div class="panel"><div class="stickname">${esc(s.name)}</div><div class="banner bad">${esc(s.error)}</div></div>`;
       if (!s.sessions) return `<div class="panel">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span class="stickname">🎛 ${esc(s.name)}</span>${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}</div>
-        <div class="muted" style="margin-top:10px">${(s.loaded||0).toLocaleString()} tracks loaded · <b style="color:var(--text)">no sets played off this stick yet</b> — gig with it and pulse fills in.</div></div>`;
+        <div class="stickrow">
+          <span class="stickname">${esc(s.name)}</span>${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}</div>
+        <div class="muted" style="margin-top:10px">${(s.loaded||0).toLocaleString()} tracks loaded · <b>no sets played off this stick yet</b> — gig with it and pulse fills in.</div></div>`;
       const bpm = s.bpm_range ? ` · BPM ${s.bpm_range.low}–${s.bpm_range.high}` : "";
       return `<div class="panel">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
-          <span class="stickname">🎛 ${esc(s.name)}</span>
+        <div class="stickrow">
+          <span class="stickname">${esc(s.name)}</span>
           ${(s.formats||[]).map(f=>`<span class="pill">${esc(f)}</span>`).join("")}
-          ${s.live ? "" : '<span class="pill" style="background:rgba(224,168,91,.16);color:var(--warm)">📼 archived</span>'}
+          ${s.live ? "" : '<span class="pill warm">archived</span>'}
           <span class="muted">${s.sessions} sets · avg ${s.avg_per_set}/set (${s.set_lengths.min}–${s.set_lengths.max})${bpm}</span>
-          <span style="flex:1"></span>
-          <button class="ghost" onclick="organiseStick(${si})" title="Build play-history crates as importable playlists — never touches the stick's database">📦 Organise → crates</button></div>
+          <span class="spacer"></span>
+          <button class="ghost" onclick="organiseStick(${si})" title="Build play-history crates as importable playlists — never touches the stick's database">Organise → crates</button></div>
         <div id="org-${si}"></div>
         <div class="cards" style="margin:14px 0">
           ${stat(s.distinct_played.toLocaleString(),"distinct tracks played")}
@@ -212,25 +340,25 @@ async function loadUsb() {
           ${stat(s.sessions.toLocaleString(),"sets logged","ok")}
           ${stat(s.window.toLocaleString(),"recent window","cold")}
         </div>
-        <h2 style="margin-top:4px">🔀 Transitions you repeat <span class="muted">— last ${s.trans_window} sets</span></h2>
+        <h2 style="margin-top:4px">Transitions you repeat <span class="muted">— last ${s.trans_window} sets</span></h2>
         ${transHtml(s.transitions)}
-        <h2 style="margin-top:14px">🎚️ Genre flow <span class="muted">— how you move between styles</span></h2>
+        <h2 style="margin-top:14px">Genre flow <span class="muted">— how you move between styles</span></h2>
         ${transHtml((s.genre_flow||[]).map(g=>({from:g.from,to:g.to,count:g.count})))}
         <div class="grid2" style="margin-top:14px">
-          <div><h2 style="margin-top:0">🔥 Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
-          <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
+          <div><h2 style="margin-top:0"><span class="kdot warm"></span>Hot right now</h2>${listOl(s.hot, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
+          <div><h2 style="margin-top:0"><span class="kdot cold"></span>Going cold</h2>${listOl(s.cold, {lab:t=>t.label, cnt:t=>t.plays+"× · "+t.sets+" sets"})}</div>
         </div>
         <div class="grid2">
-          <div><h2 style="margin-top:0">▶ Openers</h2>${listOl(s.openers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
-          <div><h2 style="margin-top:0">⏹ Closers</h2>${listOl(s.closers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
+          <div><h2 style="margin-top:0">Openers</h2>${listOl(s.openers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
+          <div><h2 style="margin-top:0">Closers</h2>${listOl(s.closers, {lab:t=>t.label, cnt:t=>t.count+"×"})}</div>
         </div>
         <h2>What you play — by genre</h2>${bars(s.genre_lean)}
         <div class="grid2" style="margin-top:14px">
-          <div><h2 style="margin-top:0">🏆 Crowd-pleasers <span class="muted">— % of sets</span></h2>${listOl(s.crowd_pleasers, {lab:t=>t.label, cnt:t=>t.pct+"% · "+t.sets+" sets"})}</div>
-          <div><h2 style="margin-top:0">💤 One-hit wonders <span class="muted">— played once</span></h2>${listOl(s.one_hit_wonders, {lab:t=>t.label, cnt:t=>""})}</div>
+          <div><h2 style="margin-top:0"><span class="kdot ok"></span>Crowd-pleasers <span class="muted">— % of sets</span></h2>${listOl(s.crowd_pleasers, {lab:t=>t.label, cnt:t=>t.pct+"% · "+t.sets+" sets"})}</div>
+          <div><h2 style="margin-top:0"><span class="kdot faint"></span>One-hit wonders <span class="muted">— played once</span></h2>${listOl(s.one_hit_wonders, {lab:t=>t.label, cnt:t=>""})}</div>
         </div>
-        ${(s.signature_runs&&s.signature_runs.length) ? `<h2>🔗 Signature runs <span class="muted">— your repeated 3-track moves</span></h2>`
-          + s.signature_runs.map(r=>`<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13px"><span style="color:var(--accent);font-weight:600">${r.count}×</span> ${esc(r.tracks.join(" → "))}</div>`).join("") : ""}
+        ${(s.signature_runs&&s.signature_runs.length) ? `<h2>Signature runs <span class="muted">— your repeated 3-track moves</span></h2>`
+          + s.signature_runs.map(r=>`<div class="runrow"><span class="tcnt">${r.count}×</span><span class="lab">${esc(r.tracks.join(" → "))}</span></div>`).join("") : ""}
         </div>`;
     }).join("");
   } catch (e) { $("usb").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
@@ -251,8 +379,8 @@ async function loadDesktop() {
         ${stat(d.untouched.toLocaleString(),"untouched in window","warm")}
       </div>
       <div class="grid2">
-        <div><h2 style="margin-top:0">🔥 Staples</h2>${listOl(d.staples, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
-        <div><h2 style="margin-top:0">❄️ Going cold</h2>${listOl(d.cold, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
+        <div><h2 style="margin-top:0"><span class="kdot warm"></span>Staples</h2>${listOl(d.staples, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
+        <div><h2 style="margin-top:0"><span class="kdot cold"></span>Going cold</h2>${listOl(d.cold, {lab:t=>t.label, cnt:t=>t.sets+" sets"})}</div>
       </div>
       <h2>Recent set lean</h2>${bars(d.genre_lean)}
     </div>`;
@@ -283,7 +411,7 @@ async function ingest(apply) {
     let html = `<div class="cards" style="margin:14px 0">
       ${stat(d.total, "scanned")}${stat(d.survivors, "to add", "ok")}${stat(d.dupes, "dupes skipped", "warm")}</div>`;
     if (d.applied) {
-      html = `<div class="banner" style="background:rgba(95,208,138,.12);color:var(--ok);border:1px solid rgba(95,208,138,.3)">✓ Folded in ${d.applied.filed} · ${d.applied.quarantined} dupes quarantined · crates: ${esc(d.applied.crates_updated.join(", ") || "none")}</div>` + html;
+      html = `<div class="banner ok">Folded in ${d.applied.filed} · ${d.applied.quarantined} dupes quarantined · crates: ${esc(d.applied.crates_updated.join(", ") || "none")}</div>` + html;
     }
     if (Object.keys(d.by_genre).length) html += `<h2 style="margin-top:6px">${d.applied ? "Filed into" : "Would file into"}</h2>` + bars(toItems(d.by_genre));
     if (Object.keys(d.by_crate).length) html += `<h2>${d.applied ? "Joined crates" : "Would join crates"}</h2>` + bars(toItems(d.by_crate));
@@ -309,11 +437,10 @@ async function loadSets() {
 function setCard(s, i) {
   const tl = s.tracks.map((t, j) =>
     `<li><span class="rank">${j+1}</span><span class="lab">${esc(t)}</span></li>`).join("");
-  const inp = "background:#0e0f12;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 9px";
   return `<div class="panel">
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div class="row">
       <span class="pill">${esc(s.fmt)}</span>
-      <input id="nm${i}" type="text" value="${esc(s.name)}" style="flex:1;min-width:160px;${inp}"/>
+      <input id="nm${i}" type="text" value="${esc(s.name)}" class="field grow" style="min-width:160px"/>
       <span class="muted">${s.n} tracks</span>
       <button class="ghost" onclick="toggleTl(${i})">tracklist</button>
       <button class="ghost" onclick="exportSet('${esc(s.key)}')">export</button>
@@ -321,7 +448,7 @@ function setCard(s, i) {
       <button onclick="saveSet(${i},'${esc(s.key)}')">save</button>
     </div>
     <input id="rec${i}" type="text" placeholder="link a recording — file path (optional)" value="${esc(s.recording||'')}"
-      style="width:100%;margin-top:8px;font-family:ui-monospace,monospace;font-size:12px;${inp}"/>
+      class="field mono recfield"/>
     ${spark(s.bpms)}
     <ol class="list" id="tl${i}" style="display:none;margin-top:10px">${tl}</ol>
   </div>`;
@@ -353,9 +480,9 @@ function spark(bpms) {
   const b = (bpms||[]).filter(x=>x>0);
   if (b.length < 2) return "";
   const mn = Math.min(...b), mx = Math.max(...b), rng = (mx-mn)||1;
-  return `<div style="display:flex;align-items:flex-end;gap:1px;height:30px;margin-top:10px">`
-    + b.map(x=>`<span title="${x} BPM" style="flex:1;background:var(--accent);border-radius:1px;height:${20+70*(x-mn)/rng}%"></span>`).join("")
-    + `</div><div class="muted" style="font-size:11px;margin-top:2px">⚡ energy arc · BPM ${mn}–${mx} across the set</div>`;
+  return `<div class="spark">`
+    + b.map(x=>`<span title="${x} BPM" style="height:${20+70*(x-mn)/rng}%"></span>`).join("")
+    + `</div><div class="sparklbl">energy arc · BPM ${mn}–${mx} across the set</div>`;
 }
 
 function load() {
@@ -389,7 +516,7 @@ async function organiseLibrary() {
       ${stat(dd.unique_keepers.toLocaleString(), "keepers", "ok")}
       ${stat(dd.drops.toLocaleString(), "dupes → quarantine", "warm")}
       ${stat(dd.distinct_versions_kept.toLocaleString(), "versions kept", "accent")}</div>
-      <div class="muted">Identity: ${esc(d.identity)} · reorg relocations: <b style="color:var(--text)">${d.reorg_relocations.toLocaleString()}</b>${d.used_ai ? "" : ` · needs AI pass: ${d.needs_ai.toLocaleString()}`}</div>
+      <div class="muted">Identity: ${esc(d.identity)} · reorg relocations: <b>${d.reorg_relocations.toLocaleString()}</b>${d.used_ai ? "" : ` · needs AI pass: ${d.needs_ai.toLocaleString()}`}</div>
       <div class="muted" style="margin-top:6px">Plans written to <code>${esc(d.out)}</code> — nothing moved. Review, then <code>librarian apply</code>.</div>`;
   } catch (e) { $("orgOut").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
   $("orgRun").disabled = false;
