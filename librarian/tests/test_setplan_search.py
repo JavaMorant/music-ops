@@ -183,3 +183,15 @@ def test_parse_bpm_range():
         _parse_bpm_range("fast")
     with pytest.raises(typer.BadParameter):
         _parse_bpm_range("128-108")
+
+
+def test_truncated_segment_surfaces_unplaced_mustplay():
+    # Pool too small to fill the set: a matched must-play that can't be placed must
+    # land in unmatched, never vanish silently (the "worst gig failure").
+    pool = _pool(3)                        # 3 tracks
+    target = pool[2]
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)], must_play=[target.title])
+    plan = build_set(pool, spec)
+    titles = {s.candidate.title for s in plan.slots}
+    if target.title not in titles:         # if truncation dropped it
+        assert any(target.title in u for u in plan.unmatched)

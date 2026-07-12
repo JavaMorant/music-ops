@@ -185,7 +185,14 @@ async function runPlan(e) {
   $("spOut").innerHTML = '<div class="banner">building…</div>';
   const r = await fetch("/api/setplan", {method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify(req())});
-  if (!r.ok) { $("spOut").innerHTML = `<div class="banner bad">${esc((await r.json()).detail || r.status)}</div>`; return false; }
+  if (!r.ok) {
+    let msg = "HTTP " + r.status;
+    try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail
+      : Array.isArray(j.detail) ? j.detail.map(d => d.msg || JSON.stringify(d)).join("; ")
+      : JSON.stringify(j.detail || j); } catch (e) {}
+    $("spOut").innerHTML = `<div class="banner bad">${esc(msg)}</div>`;
+    return false;
+  }
   PLAN = (await r.json()).plan;
   render();
   return false;

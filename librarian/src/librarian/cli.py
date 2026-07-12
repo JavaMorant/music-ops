@@ -270,7 +270,7 @@ def setplan(
     beam: Annotated[int, typer.Option("--beam", help="Beam width (1 = greedy)")] = 8,
     seed: Annotated[Optional[int], typer.Option("--seed", help="Reroll seed (reproducible)")] = None,
     export: Annotated[str, typer.Option("--export", help="Comma list: m3u8,md,xml")] = "m3u8,md",
-    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", help="Collection XML (needed for xml export)")] = None,
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="Collection XML (needed for xml export)")] = None,
     playlist_name: Annotated[Optional[str], typer.Option("--playlist-name", help="Playlist name for xml export")] = None,
 ) -> None:
     """Build an ordered set from the library — harmonic + BPM + energy arc + your own play history.

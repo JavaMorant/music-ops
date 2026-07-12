@@ -205,6 +205,15 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None,
     prev = None
     recent: list[str] = []
     clock = 0.0
+    # Truncation (pool exhaustion) can leave later anchors unplaced — surface any
+    # matched opener/must-play that never made it into the set, never drop it silently.
+    placed_paths = {c.path for _, c, _ in chosen}
+    for a_idx, a_cand in anchors.items():
+        if a_cand.path not in placed_paths and a_cand not in unmatched:
+            label = kinds.get(a_idx, "must-play")
+            q = spec.opener if label == "opener" else None
+            # prefer the original query text when we have it; fall back to "artist - title"
+            unmatched.append(q or f"{a_cand.artist} - {a_cand.title}".strip(" -"))
     for out_idx, (idx, cand, kind) in enumerate(sorted(chosen)):
         ctx, block, rising = _slot_ctx(idx, n, pool, spec, follows, adjacency,
                                        max_plays, recent[-6:])

@@ -83,3 +83,12 @@ def test_setplan_page_has_no_js_string_sinks(tmp_path):
     page = client.get("/setplan.html").text
     assert 'onclick="swap(' not in page
     assert "data-swap-path" in page and "data-swap-i" in page
+
+
+def test_setplan_bad_input_returns_readable_error_not_500(tmp_path):
+    client, root = _client(tmp_path)
+    make_library(root, ["A - x.mp3"])
+    # empty-ish minutes coerces to 0 -> gt=0 fails -> 422 with structured detail
+    r = client.post("/api/setplan", json={"minutes": 0})
+    assert r.status_code == 422
+    assert isinstance(r.json()["detail"], list)   # the shape the page must now stringify
