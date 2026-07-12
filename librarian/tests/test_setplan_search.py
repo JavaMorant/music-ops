@@ -86,3 +86,54 @@ def test_unmatched_must_and_opener_are_reported():
     assert "No Such Track" in plan.unmatched
     assert "Ghost Opener" in plan.unmatched
     assert len(plan.slots) == spec.n_slots()   # the set still builds
+
+
+def _k(artist, title, key, bpm=120.0):
+    # identical genre/bpm/plays so ONLY harmonic distance differentiates
+    return _c(artist, title, bpm=bpm, key=key)
+
+
+def test_beam_routes_into_anchor_better_than_greedy():
+    # 4 slots (12 min @ 20 tph), must-play anchor lands at slot 2 (int(4*0.5)).
+    # From the 8A opener, greedy's locally-best chain strands it far from the
+    # 5A anchor; beam(8) finds the 7A -> 6A route (6A -> 5A is a 0.90 handover).
+    from librarian import camelot as C
+    pool = [
+        _k("Op", "Opener", (8, "A")),
+        _k("A1", "Nine", (9, "A")), _k("A2", "Ten", (10, "A")),
+        _k("B1", "Seven", (7, "A")), _k("B2", "Six", (6, "A")),
+        _k("Anch", "Anchor", (5, "A")),
+    ]
+    spec = GigSpec(minutes=12, journey=[("amapiano", 1.0)],
+                   opener="Opener", must_play=["Anchor"])
+    greedy = build_set(pool, spec, beam_width=1)
+    beam = build_set(pool, spec, beam_width=8)
+    anchor_slot = next(i for i, s in enumerate(beam.slots) if s.candidate.title == "Anchor")
+    g_prev = greedy.slots[anchor_slot - 1].candidate
+    b_prev = beam.slots[anchor_slot - 1].candidate
+    g_h = C.harmonic(g_prev.camelot, (5, "A"), rising=True)
+    b_h = C.harmonic(b_prev.camelot, (5, "A"), rising=True)
+    assert b_h >= g_h
+    assert b_h >= 0.85          # beam genuinely lands a clean handover
+
+
+def test_pinned_slot_is_respected_and_labelled():
+    pool = _pool(20)
+    target = pool[7]
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)])
+    plan = build_set(pool, spec, pinned={3: str(target.path)})
+    assert plan.slots[3].candidate.path == target.path
+    assert "locked" in plan.slots[3].reason
+
+
+def test_unresolvable_pin_reported_not_silent():
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)])
+    plan = build_set(_pool(20), spec, pinned={2: "/nope/ghost.mp3"})
+    assert "/nope/ghost.mp3" in plan.unmatched
+
+
+def test_same_seed_same_plan():
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)], seed=42)
+    a = build_set(_pool(30), spec, beam_width=8)
+    b = build_set(_pool(30), spec, beam_width=8)
+    assert [s.candidate.path for s in a.slots] == [s.candidate.path for s in b.slots]
