@@ -559,6 +559,12 @@ function ttExportRender(cfg){
       ctx.font = '600 ' + Math.round(FW*0.021) + 'px ' + fontB;
       ctx.fillStyle = dimCol;
       ctx.fillText((track.meta || producer).toUpperCase(), cx, nY + FW*0.055);
+      if(track.tag){  // persistent producer credit - rides along on reposts
+        try{ ctx.letterSpacing = '2px'; }catch(e){}
+        ctx.font = '600 ' + Math.round(FW*0.019) + 'px ' + fontB;
+        ctx.fillStyle = accA(0.9);
+        ctx.fillText(track.tag, cx, nY + FW*0.1);
+      }
     }
     ctx.restore();
   }
@@ -574,6 +580,11 @@ function ttExportRender(cfg){
     if(isEnd){
       fitFont(ctx, '700', Math.round(FW*0.062), fontD, producer, FW*0.86);
       ctx.fillStyle = txtCol; ctx.fillText(producer, FW/2, FH/2);
+      if(track.tag){
+        try{ ctx.letterSpacing = '3px'; }catch(e){}
+        ctx.font = '500 ' + Math.round(FW*0.02) + 'px ' + fontB;
+        ctx.fillStyle = accent; ctx.fillText(track.tag, FW/2, FH/2 + FW*0.06);
+      }
     } else {
       fitFont(ctx, '700', Math.round(FW*0.062), fontD, track.name || '', FW*0.86);
       ctx.fillStyle = txtCol; ctx.fillText(track.name || '', FW/2, FH/2 - FW*0.012);
@@ -585,9 +596,18 @@ function ttExportRender(cfg){
   }
 
   // ---- the frame loop ----
+  var bgTimer = 0;
+  // hidden tabs pause requestAnimationFrame, which would freeze the recording;
+  // fall back to a timer there (the export keeps playing audio, so Chrome
+  // exempts the tab from aggressive timer throttling and rendering continues).
+  function schedule(){
+    if(typeof document !== 'undefined' && document.hidden){
+      bgTimer = setTimeout(function(){ frame(performance.now()); }, 16);
+    } else { raf = requestAnimationFrame(frame); }
+  }
   function frame(now){
     if(!running) return;
-    raf = requestAnimationFrame(frame);
+    schedule();
     var dt = lastNow ? Math.min(0.05, (now - lastNow)/1000) : 0.016;
     lastNow = now;
     idleT += dt;
@@ -655,8 +675,9 @@ function ttExportRender(cfg){
   }
 
   function start(){ if(running) return; running = true;
-    startT = performance.now(); lastNow = 0; raf = requestAnimationFrame(frame); }
-  function stop(){ running = false; if(raf) cancelAnimationFrame(raf); raf = 0; }
+    startT = performance.now(); lastNow = 0; schedule(); }
+  function stop(){ running = false; if(raf) cancelAnimationFrame(raf); raf = 0;
+    if(bgTimer) clearTimeout(bgTimer); bgTimer = 0; }
   function setEnded(){ if(!endedAt) endedAt = performance.now(); }
 
   return {canvas: canvas, start: start, stop: stop, setEnded: setEnded};

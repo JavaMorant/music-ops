@@ -65,6 +65,10 @@
   <audio id="audio" controls></audio>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="capcard" role="region" aria-label="Post caption">
+  <div class="caphead"><span>Caption — ready to paste</span><button onclick="capCopy()">Copy</button><button onclick="capClose()" aria-label="Close caption">✕</button></div>
+  <textarea id="captext" rows="6" spellcheck="false" aria-label="Generated caption"></textarea>
+</div>
 
 <div id="ov">
   <canvas class="pfx" id="ovpfx"></canvas>
@@ -123,6 +127,8 @@
       <div class="reelrow"><span>Hue</span>
         <div class="rofx"><button class="fxchip" id="ro-hueauto" onclick="reelHueAuto()">Auto</button>
         <input type="range" id="ro-hue" min="0" max="360" value="42" oninput="reelHueSet(this.value)"></div></div>
+      <div class="reelrow"><span>Tag</span>
+        <div class="rofx"><input type="text" id="ro-tag" maxlength="60" oninput="reelTagSet(this.value)" placeholder="prod. @you" aria-label="Producer tag shown on exports"></div></div>
       <div class="reelhint">Top buttons hide while you record — press <b>Esc</b> to leave reel mode. The beat starts <b>5 seconds</b> after you press Start, so you have time to hit record in OBS.</div>
       <div class="reelact"><button onclick="cancelReelOpts()">Cancel</button><button class="primary" onclick="startReel()">Start ▶</button></div>
     </div>

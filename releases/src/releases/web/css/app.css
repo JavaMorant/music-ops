@@ -26,6 +26,16 @@
   .panelclose:hover { color:var(--txt); }
   .tablestate { padding:22px 12px; color:var(--dim); text-align:center; }
   .tablestate button { margin-left:8px; }
+  #capcard { position:fixed; right:18px; bottom:96px; z-index:60; width:min(340px,86vw);
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+    display:none; box-shadow:0 18px 50px rgba(0,0,0,.45); }
+  #capcard.show { display:block; }
+  #capcard .caphead { display:flex; align-items:center; gap:8px; margin-bottom:8px;
+    font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  #capcard .caphead span { flex:1; }
+  #capcard textarea { width:100%; resize:vertical; background:var(--well,#101016); color:var(--txt);
+    border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12.5px; line-height:1.45; }
+  #ro-tag { width:200px; }
   select, input { background:var(--well); color:var(--txt); border:1px solid var(--line);
     border-radius:6px; padding:5px 8px; font-size:13px; }
   table { width:100%; border-collapse:collapse; }

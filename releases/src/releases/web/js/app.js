@@ -308,6 +308,7 @@ function openReelOpts(){
   document.querySelectorAll('#reelopts [data-rofx]').forEach(ch =>
     ch.classList.toggle('off', ov.classList.contains('off-'+ch.dataset.rofx)));
   document.getElementById('ro-hueauto').classList.toggle('off', window.__fxHue!=null);
+  document.getElementById('ro-tag').value = reelTag();
   document.getElementById('ro-crewrow').style.display = stemMode ? '' : 'none';  // dancers only exist in remix
   document.getElementById('ro-crew').classList.toggle('off', !ov.classList.contains('crewreel'));
   applyReelSize();
@@ -333,6 +334,41 @@ function reelToggleCrew(){
 }
 function reelHueAuto(){ window.__fxHue=null; document.getElementById('ro-hueauto').classList.remove('off'); }
 function reelHueSet(v){ window.__fxHue=Number(v); document.getElementById('ro-hueauto').classList.add('off'); }
+// ---- producer tag: stamped on every export + used in captions (editable in the reel panel) ----
+const _reelTagDef = 'prod. @dibsss · @def.sted';
+function reelTag(){ try{ const v = localStorage.reelTag; return v != null ? v : _reelTagDef; }catch(e){ return _reelTagDef; } }
+function reelTagSet(v){ try{ localStorage.reelTag = v; }catch(e){} }
+// ---- post caption: name + credit + genre-tuned hashtags, ready to paste ----
+function genreTags(g){
+  const map = {
+    'trap': ['#trap','#trapbeats','#traptypebeat'],
+    'drill': ['#drill','#ukdrill','#drillbeat'],
+    'jersey club': ['#jerseyclub','#jerseyclubmusic','#clubmusic'],
+    'gqom': ['#gqom','#southafricanmusic','#3step'],
+    'afrobeats': ['#afrobeats','#afrobeat','#afrofusion'],
+    'uk rap': ['#ukrap','#ukhiphop','#newukrap'],
+    'rnb': ['#rnb','#rnbbeats','#slowjam'],
+    'house': ['#house','#housemusic','#dance'],
+  };
+  const g2 = (g || '').toLowerCase();
+  const own = map[g2] || ((g2 && g2 !== 'unknown') ? ['#' + g2.replace(/[^a-z0-9]/g, '')] : []);
+  return own.concat(['#beats','#producer','#beatmaker','#typebeat','#newmusic']).slice(0, 8).join(' ');
+}
+function showCaption(t){
+  const lines = [
+    [t.name, reelTag()].filter(Boolean).join(' — '),
+    [t.bpm ? t.bpm + ' BPM' : '', t.key || '', (t.genre && t.genre !== 'unknown') ? t.genre : ''].filter(Boolean).join(' · '),
+    genreTags(t.genre),
+  ].filter(Boolean);
+  document.getElementById('captext').value = lines.join('\n');
+  document.getElementById('capcard').classList.add('show');
+}
+function capClose(){ document.getElementById('capcard').classList.remove('show'); }
+async function capCopy(){
+  const ta = document.getElementById('captext');
+  try{ await navigator.clipboard.writeText(ta.value); toast('Caption copied'); }
+  catch(e){ ta.select(); document.execCommand('copy'); toast('Caption copied'); }
+}
 // the panel's effect chips mirror the main fx chips (flip an off-<name> class on #ov)
 document.querySelectorAll('#reelopts [data-rofx]').forEach(function(ch){
   ch.onclick=function(){ ch.classList.toggle('off',
@@ -687,6 +723,7 @@ async function exportVideo(){
       getProgress: () => playRef.ended ? 1
         : (playRef.on ? Math.max(0, Math.min(1, (dactx.currentTime - playRef.at)/playRef.dur)) : 0),
       track: { name: t.name || '',
+        tag: reelTag(),
         hook: [t.name, (t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
           .filter(Boolean).join(' \u00b7 '),
         meta: [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : '']
@@ -732,6 +769,7 @@ async function exportVideo(){
         URL.revokeObjectURL(url);
         expStatus('Saved - check your downloads');
         toast('Exported ' + fname + ' - check your downloads');
+        showCaption(t);  // post text ready to paste alongside the video
       }catch(err){ expStatus('Export failed'); toast('Export failed: ' + err.message, true); }
       setTimeout(() => {
         document.getElementById('exportov').classList.remove('show');

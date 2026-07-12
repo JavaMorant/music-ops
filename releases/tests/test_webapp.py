@@ -494,3 +494,15 @@ class TestOneClickExport:
         c, _ = client
         css = c.get("/static/css/app.css").text
         assert ".exportov" in css and ".exportstatus" in css
+
+    def test_export_tag_caption_and_background_render(self, client):
+        # producer tag on the video + generated caption + hidden-tab render fallback
+        c, _ = client
+        page = c.get("/").text
+        assert 'id="ro-tag"' in page and 'id="capcard"' in page
+        js = c.get("/static/js/app.js").text
+        assert "reelTag" in js and "genreTags" in js and "showCaption" in js
+        assert "@dibsss" in js and "@def.sted" in js       # default credit handles
+        ex = c.get("/static/js/export.js").text
+        assert "track.tag" in ex                            # tag drawn into the frame
+        assert "document.hidden" in ex                      # keeps rendering when the tab is hidden
