@@ -1,8 +1,10 @@
 /* one-click reel export renderer (app-only). Draws the ENTIRE deck scene -
    background, reactive FX and the active skin (vinyl or cassette) - onto an
-   offscreen 1080x1920 canvas driven by the live AnalyserNode. The app records
-   that canvas with captureStream() + MediaRecorder: no screen-share prompt,
-   always a perfect 9:16 frame. The visuals are a Canvas2D port of the deck's
+   offscreen canvas driven by the live AnalyserNode. The frame is whatever
+   cfg.w x cfg.h says (9:16 1080x1920 by default, 1:1 and 16:9 presets in the
+   reel panel); the renderer picks a composition per aspect and the app records
+   the canvas with captureStream() + MediaRecorder: no screen-share prompt,
+   always a perfect frame. The visuals are a Canvas2D port of the deck's
    CSS look (deck/deck.css) and the turntable.js FX math (spectrum, halo,
    bokeh, embers, smoke, heat, kick reactions). The live DOM deck is never
    touched - this draws an independent copy at export resolution. */
@@ -15,13 +17,27 @@ function ttExportRender(cfg){
   var ctx = canvas.getContext('2d');
   var PI = Math.PI, TAU = PI * 2;
 
-  // composition: the deck box (the live .deck square) large + centred, a touch
-  // above the middle so the spectrum, texts and risers breathe below it
-  var D = Math.round(FW * 0.85);
-  var cx = FW / 2, cyBase = Math.round(FH * 0.45);
+  // composition: one renderer, three aspects. The deck box (the live .deck
+  // square) is the hero in every frame; the texts re-arrange around it.
+  //   port   (9:16) - deck above centre; hook on top, name/meta/tag stacked
+  //                   below (the original layout, byte-for-byte)
+  //   square (1:1)  - same centred stack, deck a touch smaller so the hook
+  //                   and the name block still breathe
+  //   land   (16:9) - deck LARGE (0.82 of frame HEIGHT) left of centre, an
+  //                   editorial type column left-aligned in the space it leaves
+  var AR = FW / FH;
+  var MODE = AR > 1.25 ? 'land' : (AR >= 0.8 ? 'square' : 'port');
+  var S = Math.min(FW, FH);    // text + overlay scale: equals FW in portrait, FH in landscape
+  var D = MODE === 'land' ? Math.round(FH * 0.82)
+        : MODE === 'square' ? Math.round(S * 0.70)
+        : Math.round(FW * 0.85);
+  var cx = MODE === 'land' ? Math.round(FW * 0.295) : FW / 2;
+  var cyBase = MODE === 'land' ? Math.round(FH * 0.5)
+             : MODE === 'square' ? Math.round(FH * 0.455)
+             : Math.round(FH * 0.45);
   var ref = D;                 // FX reference length (live: deck width in fx px)
   var scL = D / 520;           // scales fixed CSS px authored at the live reel deck size
-  var SHK = FW / 680;          // scales live screen-px shake to frame px
+  var SHK = S / 680;           // scales live screen-px shake to frame px
 
   var skin = cfg.skin === 'cassette' ? 'cassette' : 'vinyl';
   var producer = cfg.producer || 'Beats';
@@ -325,7 +341,7 @@ function ttExportRender(cfg){
     smoke.push({bx: x, x: x, y: y, vy: -(FH*0.0012)*(0.8 + Math.random()*0.5),
       r: ref*0.003, life: 1, heat: heat, ph: Math.random()*TAU, amp: ref*(0.01 + Math.random()*0.016)}); }
   function spawnSparks(k){ var n = Math.min(14, Math.floor(k*26) + Math.floor(curEnergy*10)), cyd = cyBase;
-    for(var j = 0; j < n; j++){ var a = Math.random()*TAU, sp = FW*0.004*(1 + Math.random()*3);
+    for(var j = 0; j < n; j++){ var a = Math.random()*TAU, sp = S*0.004*(1 + Math.random()*3);
       sparks.push({x: cx + Math.cos(a)*ref*0.36, y: cyd + Math.sin(a)*ref*0.36,
         vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, life: 1, h: (hue + Math.random()*50)%360}); } }
 
@@ -541,29 +557,67 @@ function ttExportRender(cfg){
   }
   function drawTexts(cyd){
     var dyy = cyd - D/2;
-    ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.save(); ctx.textBaseline = 'alphabetic';
+    if(MODE === 'land'){
+      // 16:9 - the deck owns the left of the frame; the type sits as a
+      // left-aligned lockup in the right-hand column, optically centred a
+      // touch above the middle, floating gently with the deck.
+      var drift = cyd - cyBase;
+      var x0 = cx + D/2 + S*0.06, maxW = FW - S*0.09 - x0;
+      ctx.textAlign = 'left';
+      if(track.hook){
+        try{ ctx.letterSpacing = '2px'; }catch(e){}
+        var hookTx = track.hook.toUpperCase();
+        fitFont(ctx, '800', Math.round(S*0.030), fontB, hookTx, maxW);
+        ctx.shadowColor = accA(0.4); ctx.shadowBlur = 28;
+        ctx.fillStyle = accent;
+        ctx.fillText(hookTx, x0, cyBase - S*0.135 + drift);
+        ctx.shadowBlur = 0;
+      }
+      if(track.name){
+        try{ ctx.letterSpacing = '0px'; }catch(e){}
+        var nYl = cyBase - S*0.005 + drift;
+        fitFont(ctx, '700', Math.round(S*0.072), fontD, track.name, maxW);
+        ctx.fillStyle = txtCol; ctx.fillText(track.name, x0, nYl);
+        try{ ctx.letterSpacing = '3px'; }catch(e){}
+        var metaTx = (track.meta || producer).toUpperCase();
+        fitFont(ctx, '600', Math.round(S*0.021), fontB, metaTx, maxW);
+        ctx.fillStyle = dimCol; ctx.fillText(metaTx, x0, nYl + S*0.052);
+        if(track.tag){  // persistent producer credit - rides along on reposts
+          try{ ctx.letterSpacing = '2px'; }catch(e){}
+          fitFont(ctx, '600', Math.round(S*0.019), fontB, track.tag, maxW);
+          ctx.fillStyle = accA(0.9);
+          ctx.fillText(track.tag, x0, nYl + S*0.094);
+        }
+      }
+      ctx.restore();
+      return;
+    }
+    // 9:16 + 1:1 - centred stack: hook above the deck, name/meta/tag below
+    // (S === FW in both, so the portrait numbers are the original ones)
+    ctx.textAlign = 'center';
     if(track.hook){
       try{ ctx.letterSpacing = '2px'; }catch(e){}
-      ctx.font = '800 ' + Math.round(FW*0.038) + 'px ' + fontB;
+      ctx.font = '800 ' + Math.round(S*0.038) + 'px ' + fontB;
       ctx.shadowColor = accA(0.4); ctx.shadowBlur = 28;
       ctx.fillStyle = accent;
-      ctx.fillText(track.hook.toUpperCase(), cx, dyy - FW*0.03);
+      ctx.fillText(track.hook.toUpperCase(), cx, dyy - S*0.03);
       ctx.shadowBlur = 0;
     }
     if(track.name){
       try{ ctx.letterSpacing = '0px'; }catch(e){}
-      var nY = dyy + D + FH*0.045;
-      fitFont(ctx, '700', Math.round(FW*0.05), fontD, track.name, FW*0.9);
+      var nY = dyy + D + (MODE === 'square' ? S*0.058 : FH*0.045);
+      fitFont(ctx, '700', Math.round(S*0.05), fontD, track.name, FW*0.9);
       ctx.fillStyle = txtCol; ctx.fillText(track.name, cx, nY);
       try{ ctx.letterSpacing = '3px'; }catch(e){}
-      ctx.font = '600 ' + Math.round(FW*0.021) + 'px ' + fontB;
+      ctx.font = '600 ' + Math.round(S*0.021) + 'px ' + fontB;
       ctx.fillStyle = dimCol;
-      ctx.fillText((track.meta || producer).toUpperCase(), cx, nY + FW*0.055);
+      ctx.fillText((track.meta || producer).toUpperCase(), cx, nY + S*0.055);
       if(track.tag){  // persistent producer credit - rides along on reposts
         try{ ctx.letterSpacing = '2px'; }catch(e){}
-        ctx.font = '600 ' + Math.round(FW*0.019) + 'px ' + fontB;
+        ctx.font = '600 ' + Math.round(S*0.019) + 'px ' + fontB;
         ctx.fillStyle = accA(0.9);
-        ctx.fillText(track.tag, cx, nY + FW*0.1);
+        ctx.fillText(track.tag, cx, nY + S*0.1);
       }
     }
     ctx.restore();
@@ -578,19 +632,19 @@ function ttExportRender(cfg){
     ctx.fillStyle = 'rgba(5,5,8,.88)'; ctx.fillRect(0, 0, FW, FH);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     if(isEnd){
-      fitFont(ctx, '700', Math.round(FW*0.062), fontD, producer, FW*0.86);
+      fitFont(ctx, '700', Math.round(S*0.062), fontD, producer, FW*0.86);
       ctx.fillStyle = txtCol; ctx.fillText(producer, FW/2, FH/2);
       if(track.tag){
         try{ ctx.letterSpacing = '3px'; }catch(e){}
-        ctx.font = '500 ' + Math.round(FW*0.02) + 'px ' + fontB;
-        ctx.fillStyle = accent; ctx.fillText(track.tag, FW/2, FH/2 + FW*0.06);
+        ctx.font = '500 ' + Math.round(S*0.02) + 'px ' + fontB;
+        ctx.fillStyle = accent; ctx.fillText(track.tag, FW/2, FH/2 + S*0.06);
       }
     } else {
-      fitFont(ctx, '700', Math.round(FW*0.062), fontD, track.name || '', FW*0.86);
-      ctx.fillStyle = txtCol; ctx.fillText(track.name || '', FW/2, FH/2 - FW*0.012);
+      fitFont(ctx, '700', Math.round(S*0.062), fontD, track.name || '', FW*0.86);
+      ctx.fillStyle = txtCol; ctx.fillText(track.name || '', FW/2, FH/2 - S*0.012);
       try{ ctx.letterSpacing = '3px'; }catch(e){}
-      ctx.font = '500 ' + Math.round(FW*0.022) + 'px ' + fontB;
-      ctx.fillStyle = accent; ctx.fillText((track.meta || '').toUpperCase(), FW/2, FH/2 + FW*0.05);
+      ctx.font = '500 ' + Math.round(S*0.022) + 'px ' + fontB;
+      ctx.fillStyle = accent; ctx.fillText((track.meta || '').toUpperCase(), FW/2, FH/2 + S*0.05);
     }
     ctx.restore();
   }

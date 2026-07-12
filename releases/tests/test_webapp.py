@@ -456,9 +456,10 @@ class TestSharedDeckModule:
 
 class TestOneClickExport:
     """The one-click video export: the deck is rendered onto an offscreen
-    1080x1920 canvas recorded via canvas.captureStream + MediaRecorder — no
-    getDisplayMedia prompt — mixed with the beat through a
-    MediaStreamAudioDestinationNode, then mp4 (direct or /api/tomp4)."""
+    canvas at the chosen aspect (9:16 1080x1920 default, 1:1, 16:9) recorded
+    via canvas.captureStream + MediaRecorder — no getDisplayMedia prompt —
+    mixed with the beat through a MediaStreamAudioDestinationNode, then mp4
+    (direct or /api/tomp4)."""
 
     def test_export_button_and_overlay_served(self, client):
         c, _ = client
@@ -470,15 +471,35 @@ class TestOneClickExport:
         # the old prompt-based capture stays available as a fallback
         assert 'id="exportbtn"' in page and 'exportReel()' in page
 
-    def test_export_renderer_served_and_fixed_9x16(self, client):
+    def test_export_renderer_served_multi_aspect(self, client):
         c, _ = client
         r = c.get("/static/js/export.js")
         assert r.status_code == 200
         js = r.text
         assert "function ttExportRender" in js
-        assert "1080" in js and "1920" in js               # fixed 9:16 export frame
+        assert "cfg.w || 1080" in js and "cfg.h || 1920" in js  # default frame stays 9:16
+        # per-aspect composition: layout mode + a min(FW,FH) text/overlay scale
+        assert "Math.min(FW, FH)" in js
+        assert "'land'" in js and "'square'" in js and "'port'" in js
+        assert "FH * 0.82" in js                           # 16:9: deck is the hero (~0.82 of height)
         assert "getDisplayMedia" not in js                 # renderer never screen-shares
         assert js.isascii()                                # packs/app JS stay ASCII
+
+    def test_aspect_picker_and_per_aspect_dims(self, client):
+        # segmented 9:16 / 1:1 / 16:9 control in the reel panel, remembered in
+        # localStorage, feeding the export canvas size
+        c, _ = client
+        page = c.get("/").text
+        for bid, label in (("ro-ar-916", "9:16"), ("ro-ar-11", "1:1"), ("ro-ar-169", "16:9")):
+            assert f'id="{bid}"' in page and f">{label}</button>" in page
+        js = c.get("/static/js/app.js").text
+        assert "function reelSetAspect" in js and "applyReelAspect" in js
+        assert "localStorage.setItem('reelAspect'" in js   # remembered like reelSize
+        assert "'9:16': [1080, 1920]" in js                # the three presets
+        assert "'1:1': [1080, 1080]" in js
+        assert "'16:9': [1920, 1080]" in js
+        assert "REEL_DIMS[reelAspect] || REEL_DIMS['9:16']" in js  # 9:16 stays the default
+        assert "w: dims[0], h: dims[1]" in js              # export canvas sized from the preset
 
     def test_export_pipeline_is_prompt_free(self, client):
         c, _ = client

@@ -312,6 +312,7 @@ function openReelOpts(){
   document.getElementById('ro-crewrow').style.display = stemMode ? '' : 'none';  // dancers only exist in remix
   document.getElementById('ro-crew').classList.toggle('off', !ov.classList.contains('crewreel'));
   applyReelSize();
+  applyReelAspect();
   document.getElementById('reelopts').classList.add('show');
 }
 function reelSetSkin(which){
@@ -328,6 +329,24 @@ function applyReelSize(){
   ['xs','s','m','l'].forEach(x=>{ const b=document.getElementById('ro-size-'+x); if(b) b.classList.toggle('on', x===reelSize); });
 }
 function reelSetSize(s){ reelSize=s; try{ localStorage.setItem('reelSize', s); }catch(e){} applyReelSize(); deckSize(); }
+// ---- export aspect: 9:16 (default) / 1:1 / 16:9, remembered like reelSize.
+// Only the one-click export reads it - export.js composes each frame itself.
+const REEL_DIMS = {'9:16': [1080, 1920], '1:1': [1080, 1080], '16:9': [1920, 1080]};
+const REEL_ASPECT_BTN = {'9:16': 'ro-ar-916', '1:1': 'ro-ar-11', '16:9': 'ro-ar-169'};
+let reelAspect = (function(){
+  try{ const a = localStorage.getItem('reelAspect'); return REEL_DIMS[a] ? a : '9:16'; }
+  catch(e){ return '9:16'; }
+})();
+function applyReelAspect(){
+  Object.keys(REEL_ASPECT_BTN).forEach(a => {
+    const b = document.getElementById(REEL_ASPECT_BTN[a]); if(b) b.classList.toggle('on', a === reelAspect);
+  });
+}
+function reelSetAspect(a){
+  if(!REEL_DIMS[a]) return;
+  reelAspect = a; try{ localStorage.setItem('reelAspect', a); }catch(e){}
+  applyReelAspect();
+}
 function reelToggleCrew(){
   const on=document.getElementById('ov').classList.toggle('crewreel');
   document.getElementById('ro-crew').classList.toggle('off', !on); layoutCrew();
@@ -668,9 +687,10 @@ function showEndCard(done){
   setTimeout(() => { el.classList.remove('show'); if(done) done(); }, 1100);
 }
 // ---- ONE-CLICK video export (the primary path): render the whole deck - skin,
-// cover label and reactive FX - onto a hidden 1080x1920 canvas (export.js) and
-// record it with canvas.captureStream() + a MediaStreamDestination for the audio.
-// NO screen-share prompt, always a perfect 9:16 frame, auto-stops at the end of
+// cover label and reactive FX - onto a hidden canvas at the chosen aspect
+// (9:16 1080x1920 default, 1:1 or 16:9 - export.js composes each) and record
+// it with canvas.captureStream() + a MediaStreamDestination for the audio.
+// NO screen-share prompt, always a perfect frame, auto-stops at the end of
 // the beat, then mp4 (direct, or /api/tomp4 transcode) straight to downloads.
 // The tab-capture exportReel() below stays as a fallback.
 let _exporting = false, _expCtl = null;
@@ -710,8 +730,9 @@ async function exportVideo(){
     const cs = getComputedStyle(document.documentElement);
     const cv = (n, d) => (cs.getPropertyValue(n).trim() || d);
     const playRef = {on: false, at: 0, dur: buf.duration || 1, ended: false};
+    const dims = REEL_DIMS[reelAspect] || REEL_DIMS['9:16'];
     ren = ttExportRender({
-      w: 1080, h: 1920,
+      w: dims[0], h: dims[1],
       getAnalyser: () => danalyser,
       skin: ov.classList.contains('cassette-mode') ? 'cassette' : 'vinyl',
       coverImg: cimg, producer: PRODUCER,
@@ -780,7 +801,7 @@ async function exportVideo(){
     const stage = document.getElementById('exportstage');
     stage.innerHTML = ''; stage.appendChild(ren.canvas);
     document.getElementById('exportov').classList.add('show');
-    expStatus('Rendering + recording... auto-stops at the end of the beat');
+    expStatus('Rendering + recording ' + reelAspect + ' (' + dims[0] + 'x' + dims[1] + ')... auto-stops at the end of the beat');
     _exporting = true; window.__exporting = true;  // ttRun's pauseDraw skips the live deck draw meanwhile
     ren.start();
     rec.start();

@@ -81,7 +81,7 @@
     <div class="ovtitle" id="ovtitle"></div>
     <div class="sp"></div>
     <button id="remixbtn" onclick="remixToggle()">🎛 Remix</button>
-    <button class="primary" id="vidbtn" onclick="exportVideo()" title="One click: records the deck to a 1080x1920 mp4 — no screen share">⬇ Export video</button>
+    <button class="primary" id="vidbtn" onclick="exportVideo()" title="One click: records the deck to an mp4 at the chosen aspect (9:16 / 1:1 / 16:9) — no screen share">⬇ Export video</button>
     <button id="exportbtn" onclick="exportReel()" title="Fallback: capture this tab via screen share">● Record reel</button>
     <button id="cleantgl" onclick="deckClean()">⛶ Clean</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
@@ -114,6 +114,8 @@
         <div class="seg"><button id="ro-vinyl" onclick="reelSetSkin('vinyl')">Vinyl</button><button id="ro-cassette" onclick="reelSetSkin('cassette')">Cassette</button></div></div>
       <div class="reelrow"><span>Size</span>
         <div class="seg"><button id="ro-size-xs" onclick="reelSetSize('xs')">XS</button><button id="ro-size-s" onclick="reelSetSize('s')">S</button><button id="ro-size-m" onclick="reelSetSize('m')">M</button><button id="ro-size-l" onclick="reelSetSize('l')">L</button></div></div>
+      <div class="reelrow"><span>Aspect</span>
+        <div class="seg" role="group" aria-label="Export aspect"><button id="ro-ar-916" onclick="reelSetAspect('9:16')">9:16</button><button id="ro-ar-11" onclick="reelSetAspect('1:1')">1:1</button><button id="ro-ar-169" onclick="reelSetAspect('16:9')">16:9</button></div></div>
       <div class="reelrow"><span>Effects</span>
         <div class="rofx">
           <button class="fxchip" data-rofx="smoke">Smoke</button>
