@@ -76,3 +76,14 @@ def test_reason_names_camelot_move():
     cand = _c("B", "y", key=(9, "A"), plays=2)
     _, reason = score_slot(cand, prev, _ctx())
     assert "8A" in reason and "9A" in reason
+
+
+def test_anchor_affinity_prefers_harmonic_handover():
+    from librarian.setplan.score import anchor_affinity
+    anchor = _c("X", "anchor", bpm=120.0, key=(5, "A"))
+    near = _c("A", "near", bpm=120.0, key=(6, "A"))      # 1 step from 5A
+    far = _c("B", "far", bpm=120.0, key=(11, "A"))       # 6 steps
+    assert anchor_affinity(near, anchor, mode="loose") > anchor_affinity(far, anchor, mode="loose")
+    unknown = _c("C", "unk", bpm=None, key=None)
+    a = anchor_affinity(unknown, anchor, mode="loose")   # neutral, never zero
+    assert a == 0.5 * 0.5 + 0.25 * 0.5

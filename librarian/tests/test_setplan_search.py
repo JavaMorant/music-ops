@@ -86,3 +86,112 @@ def test_unmatched_must_and_opener_are_reported():
     assert "No Such Track" in plan.unmatched
     assert "Ghost Opener" in plan.unmatched
     assert len(plan.slots) == spec.n_slots()   # the set still builds
+
+
+def _k(artist, title, key, bpm=120.0):
+    # identical genre/bpm/plays so ONLY harmonic distance differentiates
+    return _c(artist, title, bpm=bpm, key=key)
+
+
+def test_beam_routes_into_anchor_better_than_greedy():
+    # 4 slots (12 min @ 20 tph), must-play anchor lands at slot 2 (int(4*0.5)).
+    # From the 8A opener, greedy's locally-best chain strands it far from the
+    # 5A anchor; beam(8) finds the 7A -> 6A route (6A -> 5A is a 0.90 handover).
+    from librarian import camelot as C
+    pool = [
+        _k("Op", "Opener", (8, "A")),
+        _k("A1", "Nine", (9, "A")), _k("A2", "Ten", (10, "A")),
+        _k("B1", "Seven", (7, "A")), _k("B2", "Six", (6, "A")),
+        _k("Anch", "Anchor", (5, "A")),
+    ]
+    spec = GigSpec(minutes=12, journey=[("amapiano", 1.0)],
+                   opener="Opener", must_play=["Anchor"])
+    greedy = build_set(pool, spec, beam_width=1)
+    beam = build_set(pool, spec, beam_width=8)
+    anchor_slot = next(i for i, s in enumerate(beam.slots) if s.candidate.title == "Anchor")
+    g_prev = greedy.slots[anchor_slot - 1].candidate
+    b_prev = beam.slots[anchor_slot - 1].candidate
+    g_h = C.harmonic(g_prev.camelot, (5, "A"), rising=True)
+    b_h = C.harmonic(b_prev.camelot, (5, "A"), rising=True)
+    assert b_h >= g_h
+    assert b_h >= 0.85          # beam genuinely lands a clean handover
+
+
+def test_pinned_slot_is_respected_and_labelled():
+    pool = _pool(20)
+    target = pool[7]
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)])
+    plan = build_set(pool, spec, pinned={3: str(target.path)})
+    assert plan.slots[3].candidate.path == target.path
+    assert "locked" in plan.slots[3].reason
+
+
+def test_unresolvable_pin_reported_not_silent():
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)])
+    plan = build_set(_pool(20), spec, pinned={2: "/nope/ghost.mp3"})
+    assert "/nope/ghost.mp3" in plan.unmatched
+
+
+def test_same_seed_same_plan():
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)], seed=42)
+    a = build_set(_pool(30), spec, beam_width=8)
+    b = build_set(_pool(30), spec, beam_width=8)
+    assert [s.candidate.path for s in a.slots] == [s.candidate.path for s in b.slots]
+
+
+def test_opener_displaced_by_pin_is_reported():
+    pool = _pool(20)
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)], opener="Track5")
+    plan = build_set(pool, spec, pinned={0: str(pool[9].path)})
+    assert plan.slots[0].candidate.path == pool[9].path   # the pin held slot 0
+    assert "Track5" in plan.unmatched                     # the opener request surfaced
+
+
+def test_beam_multistep_lookahead_beats_greedy():
+    # Segment of length 2 before a pinned 5A anchor at slot 3. Greedy's locally
+    # best slot-1 pick ("X - Nine", 9A, 0.90 from the 8A opener) burns artist X,
+    # so the artist-repeat window then hard-filters the perfect closer
+    # ("X - Six", 6A -> 5A = 0.90 handover) out of slot 2, stranding greedy on a
+    # 0.10 handover. Beam (width >= 2) keeps the locally weaker "Y - EightB"
+    # (8B, 0.85) slot-1 path, preserving artist X for the 6A closer.
+    pool = [
+        _k("Op", "Opener", (8, "A")),
+        _k("X", "Nine", (9, "A")),
+        _k("X", "Six", (6, "A")),
+        _k("Y", "EightB", (8, "B")),
+        _k("Z", "Ten", (10, "A")),
+        _k("Anch", "Anchor", (5, "A")),
+    ]
+    from librarian import camelot as C
+    anchor_path = str(pool[5].path)
+    spec = GigSpec(minutes=12, journey=[("amapiano", 1.0)], opener="Opener")
+    greedy = build_set(pool, spec, beam_width=1, pinned={3: anchor_path})
+    beam = build_set(pool, spec, beam_width=8, pinned={3: anchor_path})
+    g_h = C.harmonic(greedy.slots[2].candidate.camelot, (5, "A"), rising=True)
+    b_h = C.harmonic(beam.slots[2].candidate.camelot, (5, "A"), rising=True)
+    assert b_h > g_h                      # STRICT: multi-step lookahead must win
+    assert b_h >= 0.85
+    assert beam.slots[2].candidate.title == "Six"
+
+
+def test_parse_bpm_range():
+    import pytest, typer
+    from librarian.cli import _parse_bpm_range
+    assert _parse_bpm_range("108-128") == (108, 128)
+    assert _parse_bpm_range("") is None
+    with pytest.raises(typer.BadParameter):
+        _parse_bpm_range("fast")
+    with pytest.raises(typer.BadParameter):
+        _parse_bpm_range("128-108")
+
+
+def test_truncated_segment_surfaces_unplaced_mustplay():
+    # Pool too small to fill the set: a matched must-play that can't be placed must
+    # land in unmatched, never vanish silently (the "worst gig failure").
+    pool = _pool(3)                        # 3 tracks
+    target = pool[2]
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)], must_play=[target.title])
+    plan = build_set(pool, spec)
+    titles = {s.candidate.title for s in plan.slots}
+    if target.title not in titles:         # if truncation dropped it
+        assert any(target.title in u for u in plan.unmatched)

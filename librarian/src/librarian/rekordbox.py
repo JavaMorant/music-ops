@@ -207,3 +207,90 @@ def add_tracks_and_playlist(
 
     _atomic_write(tree, out)
     return len(new_track_ids)
+
+
+def setlist_playlist(
+    xml_in: Path,
+    ordered: list[RekordboxAddition],
+    playlist_name: str,
+    xml_out: Path | None = None,
+) -> tuple[int, int]:
+    """(Re)build a playlist NODE containing ``ordered`` IN ORDER.
+
+    Unlike add_tracks_and_playlist (which playlists only newly-added tracks), a
+    setplan is almost entirely tracks rekordbox already knows: this references
+    EXISTING collection tracks by their TrackID (matched on Location) and adds
+    only the missing ones. The playlist node uses replace semantics — its
+    children are rebuilt from scratch every call — so re-export is deterministic
+    and set order (the product) is exact. Never guesses metadata; attributes
+    are written on a new TRACK only when present on the addition.
+    """
+    out = xml_out or xml_in
+    tree = ET.parse(xml_in)
+    root = tree.getroot()
+    collection = root.find("COLLECTION")
+    if collection is None:
+        raise ValueError("rekordbox XML has no <COLLECTION>")
+
+    loc_to_id: dict[str, str] = {}
+    existing_ids: list[int] = []
+    for track in collection.iter("TRACK"):
+        tid = track.get("TrackID")
+        loc = track.get("Location")
+        if tid and tid.isdigit():
+            existing_ids.append(int(tid))
+        if tid and loc and loc.startswith("file://"):
+            loc_to_id[_match_key(location_to_path(loc))] = tid
+    playlists = root.find("PLAYLISTS")
+    if playlists is None:
+        playlists = ET.SubElement(root, "PLAYLISTS")
+    # As in add_tracks_and_playlist: also reserve TrackIDs referenced by any
+    # playlist entry, so a dangling Key never gets silently reused for a new track.
+    for entry in playlists.iter("TRACK"):
+        key = entry.get("Key")
+        if key and key.isdigit():
+            existing_ids.append(int(key))
+    next_id = (max(existing_ids) + 1) if existing_ids else 1
+
+    added = 0
+    keys_in_order: list[str] = []
+    for add in ordered:
+        key = _match_key(add.location)
+        tid = loc_to_id.get(key)
+        if tid is None:
+            tid = str(next_id)
+            next_id += 1
+            attrs = {
+                "TrackID": tid,
+                "Name": add.name,
+                "Location": path_to_location(add.location.absolute()),
+            }
+            if add.artist:
+                attrs["Artist"] = add.artist
+            if add.genre:
+                attrs["Genre"] = add.genre
+            if add.total_time is not None:
+                attrs["TotalTime"] = str(add.total_time)
+            if add.average_bpm:
+                attrs["AverageBpm"] = add.average_bpm
+            if add.tonality:  # musical key — only when actually tagged
+                attrs["Tonality"] = add.tonality
+            if add.bitrate_kbps is not None:
+                attrs["BitRate"] = str(add.bitrate_kbps)
+            if add.kind:
+                attrs["Kind"] = add.kind
+            ET.SubElement(collection, "TRACK", attrs)  # no TEMPO/POSITION_MARK — never fabricated
+            loc_to_id[key] = tid
+            added += 1
+        keys_in_order.append(tid)
+    collection.set("Entries", str(len(collection.findall("TRACK"))))
+
+    node = _find_or_create_playlist(playlists, playlist_name)
+    for child in list(node):
+        node.remove(child)  # replace semantics: order is the product, re-export is deterministic
+    for tid in keys_in_order:
+        ET.SubElement(node, "TRACK", {"Key": tid})
+    node.set("Entries", str(len(keys_in_order)))
+
+    _atomic_write(tree, out)
+    return added, len(keys_in_order)

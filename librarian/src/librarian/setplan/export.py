@@ -14,6 +14,27 @@ def to_m3u8(plan, path: Path) -> None:
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def to_rekordbox_xml(plan, xml_in: Path, xml_out: Path, playlist_name: str) -> tuple[int, int]:
+    """Write the plan as an ordered rekordbox playlist (new XML at xml_out).
+
+    Returns (n tracks added to the collection, n playlist entries).
+    """
+    from ..model import RekordboxAddition
+    from .. import rekordbox
+
+    ordered = []
+    for s in plan.slots:
+        c = s.candidate
+        ordered.append(RekordboxAddition(
+            location=Path(c.path), name=c.title, artist=c.artist or None,
+            genre=c.genre or None,
+            total_time=int(c.length_s) if c.length_s else None,
+            average_bpm=f"{c.bpm:.2f}" if c.bpm else None,
+            tonality=None,  # we hold a Camelot tuple, not the tagged spelling — never guess
+        ))
+    return rekordbox.setlist_playlist(xml_in, ordered, playlist_name, xml_out=xml_out)
+
+
 def to_markdown(plan, path: Path) -> None:
     sp = plan.spec
     journey = " → ".join(f"{g} {int(f * 100)}%" for g, f in sp.journey) or "any"

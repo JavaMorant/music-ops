@@ -73,3 +73,15 @@ def score_slot(cand, prev, ctx) -> tuple[float, str]:
         parts.append(f"proven ({cand.plays} plays)")
     reason = "; ".join(parts[:2]) or "best fit for this slot"
     return base - penalty, reason
+
+
+def anchor_affinity(cand, anchor, *, mode: str) -> float:
+    """Terminal steering bonus: how well `cand` hands over into a fixed anchor.
+
+    Added to the LAST expansion of a beam segment so the search routes toward
+    the must-play instead of arriving with a train-wreck transition. Neutral
+    (never zero) on unknown key/BPM, like every other component.
+    """
+    h = camelot.harmonic(cand.camelot, anchor.camelot, rising=True, mode=mode)
+    t = _bpm_transition(cand.bpm, anchor.bpm)
+    return 0.5 * h + 0.25 * t

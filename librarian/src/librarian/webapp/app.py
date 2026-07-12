@@ -17,7 +17,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import ai
 from ..cleanup import build_cleanup_plan
@@ -88,6 +88,28 @@ class SetLabelRequest(BaseModel):
     key: str
     name: str | None = None
     recording: str | None = None
+
+
+class SetplanRequest(BaseModel):
+    minutes: int = Field(90, gt=0, le=720)            # cap: longest realistic set (12h)
+    journey: str = ""
+    arc: str = "peak"
+    freshness: float = Field(0.3, ge=0.0, le=1.0)
+    harmonic: Literal["strict", "loose", "off"] = "loose"
+    must: list[str] = []
+    avoid: list[str] = []
+    opener: str | None = None
+    bpm_range: str = ""
+    allow_low_bitrate: bool = False
+    tracks_per_hour: int = Field(20, gt=0, le=60)
+    beam: int = Field(8, ge=1, le=32)
+    seed: int | None = None
+
+
+class RerollRequest(BaseModel):
+    locks: dict[int, str] = {}      # slot index -> candidate path to pin
+    from_slot: int | None = None    # additionally pin every slot before this
+    seed: int | None = None
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -605,6 +627,128 @@ def create_app(config: AppConfig) -> FastAPI:
             fname = re.sub(r"[^\w .-]", "_", name)[:60] or "set"
             headers["Content-Disposition"] = f'attachment; filename="{fname}.html"'
         return HTMLResponse(doc, headers=headers)
+
+    def _setplan_pool(st: AppState):
+        """Tag pool (cached) + the play-history follow-graph off any mounted
+        sticks. Sessions are best-effort — a stick read failure never blocks
+        set building, it just loses the history-weighted scoring."""
+        from ..setplan import store
+        sessions: list[list[str]] = []
+        try:
+            from .. import pulse_usb
+            for vol in pulse_usb.find_usbs():
+                sess, _m, _f = pulse_usb.read_stick(vol)
+                sessions.extend(s["tracks"] for s in sess if s.get("tracks"))
+        except Exception:
+            pass
+        cache = st.config.runs_dir / "setplan-pool.json"
+        return store.load_pool_cached(st.config.library_root, cache, sessions=sessions)
+
+    def _load_setplan(plan_id: str, st: AppState) -> dict:
+        from ..setplan import store
+        try:
+            d = store.load_plan_dict(plan_id, st.config.runs_dir)
+        except ValueError:
+            raise HTTPException(400, "bad plan id")
+        if d is None:
+            raise HTTPException(404, "no such plan")
+        return d
+
+    @app.post("/api/setplan", dependencies=[Depends(guard_origin)])
+    def post_setplan(req: SetplanRequest, st: AppState = Depends(state)) -> dict:
+        from ..setplan import store
+        from ..setplan.search import build_set
+        from ..setplan.spec import ARC_NAMES, GigSpec, parse_journey
+        if req.arc not in ARC_NAMES:
+            raise HTTPException(400, f"unknown arc {req.arc!r}")
+        try:
+            journey = parse_journey(req.journey)
+            lo_hi = None
+            if req.bpm_range.strip():
+                lo, hi = (int(x) for x in req.bpm_range.split("-", 1))
+                if lo > hi:
+                    raise ValueError
+                lo_hi = (lo, hi)
+        except ValueError:
+            raise HTTPException(400, "bad journey or bpm_range")
+        spec = GigSpec(minutes=req.minutes, journey=journey, arc=req.arc,
+                       freshness=req.freshness, harmonic=req.harmonic,
+                       must_play=req.must, avoid=req.avoid, opener=req.opener,
+                       bpm_range=lo_hi, allow_low_bitrate=req.allow_low_bitrate,
+                       tracks_per_hour=req.tracks_per_hour, seed=req.seed)
+        cands, follows = _setplan_pool(st)
+        plan = build_set(cands, spec, follows=follows, beam_width=max(1, req.beam))
+        pid = store.save_plan(plan, st.config.runs_dir)
+        return {"plan": store.plan_to_dict(plan, pid)}
+
+    @app.get("/api/setplan/{plan_id}")
+    def get_setplan(plan_id: str, st: AppState = Depends(state)) -> dict:
+        return _load_setplan(plan_id, st)
+
+    @app.post("/api/setplan/{plan_id}/reroll", dependencies=[Depends(guard_origin)])
+    def post_setplan_reroll(plan_id: str, req: RerollRequest,
+                            st: AppState = Depends(state)) -> dict:
+        from ..setplan import store
+        from ..setplan.search import build_set
+        d = _load_setplan(plan_id, st)
+        spec = store.spec_from_dict(d["spec"])
+        spec.seed = req.seed if req.seed is not None else ((spec.seed or 0) + 1)
+        pins = {int(k): v for k, v in req.locks.items()}
+        if req.from_slot is not None:
+            for s in d["slots"]:
+                if s["index"] < req.from_slot:
+                    pins.setdefault(s["index"], s["candidate"]["path"])
+        cands, follows = _setplan_pool(st)
+        plan = build_set(cands, spec, follows=follows, beam_width=8, pinned=pins)
+        store.save_plan(plan, st.config.runs_dir, plan_id=plan_id)
+        return {"plan": store.plan_to_dict(plan, plan_id)}
+
+    @app.get("/api/setplan/{plan_id}/export")
+    def get_setplan_export(plan_id: str, fmt: Literal["m3u8", "md", "xml"],
+                           st: AppState = Depends(state)):
+        d = _load_setplan(plan_id, st)
+        lines_m3u, lines_md = [], []
+        if fmt == "m3u8":
+            lines_m3u.append("#EXTM3U")
+            for s in d["slots"]:
+                c = s["candidate"]
+                secs = int(c["length_s"] or -1)
+                lines_m3u.append(f"#EXTINF:{secs},{c['artist']} - {c['title']}")
+                lines_m3u.append(c["path"])
+            return PlainTextResponse("\n".join(lines_m3u) + "\n", media_type="audio/x-mpegurl",
+                                     headers={"Content-Disposition": f'attachment; filename="{plan_id}.m3u8"'})
+        if fmt == "md":
+            for s in d["slots"]:
+                c = s["candidate"]
+                key = f"{c['camelot'][0]}{c['camelot'][1]}" if c["camelot"] else "—"
+                bpm = int(c["bpm"]) if c["bpm"] else "—"
+                lines_md.append(f"{s['index'] + 1:>2}. **{c['artist']} — {c['title']}** · {bpm} BPM · {key}")
+                lines_md.append(f"    _{s['reason']}_")
+            return PlainTextResponse("\n".join(lines_md) + "\n", media_type="text/markdown",
+                                     headers={"Content-Disposition": f'attachment; filename="{plan_id}.md"'})
+        if st.config.rekordbox_xml is None:
+            raise HTTPException(409, "no rekordbox XML configured (start serve with --rekordbox-xml)")
+        from ..setplan.export import to_rekordbox_xml
+        from ..setplan import store as _store
+        from ..setplan.search import SetPlan, Slot
+        # rebuild a minimal SetPlan from the artifact for the exporter
+        from ..setplan.pool import Candidate, norm as _norm
+        slots = []
+        for s in d["slots"]:
+            c = s["candidate"]
+            slots.append(Slot(index=s["index"], reason=s["reason"], clock_min=s["clock_min"],
+                              candidate=Candidate(path=Path(c["path"]), artist=c["artist"] or "",
+                                                  title=c["title"], genre=c["genre"] or "",
+                                                  bpm=c["bpm"],
+                                                  camelot=tuple(c["camelot"]) if c["camelot"] else None,
+                                                  length_s=c["length_s"],
+                                                  norm_key=_norm(f"{c['artist']} {c['title']}"),
+                                                  low_bitrate=False)))
+        plan = SetPlan(spec=_store.spec_from_dict(d["spec"]), slots=slots)
+        out = st.config.runs_dir / f"setplan-{plan_id}.rekordbox.xml"
+        to_rekordbox_xml(plan, st.config.rekordbox_xml, out, f"setplan {plan_id}")
+        return PlainTextResponse(out.read_text(encoding="utf-8"), media_type="application/xml",
+                                 headers={"Content-Disposition": f'attachment; filename="{plan_id}.rekordbox.xml"'})
 
     if WEB_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

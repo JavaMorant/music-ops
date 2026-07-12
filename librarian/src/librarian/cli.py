@@ -11,6 +11,7 @@ The whole flow is reversible and dry-run-first:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -27,6 +28,7 @@ from .organize import OrganizeError, OrganizeSpec, build_organize_plan
 from .paths import audio_files, default_runs_dir
 from .planner import build_plan
 from .retag import TagProposal, build_retag_plan
+from .setplan.spec import parse_journey as _parse_journey
 from .tags import WRITABLE_EXTS
 
 app = typer.Typer(
@@ -91,22 +93,15 @@ def _print_plan(plan: Plan) -> None:
             typer.echo(f"      reason: {t.reason}")
 
 
-def _parse_journey(s: str) -> list[tuple[str, float]]:
-    """'amapiano:60,afrobeats:40' -> [('amapiano',0.6),('afrobeats',0.4)]; 'house' -> [('house',1.0)]."""
+def _parse_bpm_range(s: str) -> tuple[int, int] | None:
+    """'108-128' -> (108, 128); '' -> None; anything else -> BadParameter."""
     s = (s or "").strip()
     if not s:
-        return []
-    parts = []
-    for chunk in s.split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        if ":" in chunk:
-            name, pct = chunk.rsplit(":", 1)
-            parts.append((name.strip(), float(pct) / 100.0))
-        else:
-            parts.append((chunk, 1.0))
-    return parts
+        return None
+    m = re.fullmatch(r"(\d{2,3})\s*-\s*(\d{2,3})", s)
+    if not m or int(m.group(1)) > int(m.group(2)):
+        raise typer.BadParameter("expected LO-HI, e.g. 108-128", param_hint="--bpm-range")
+    return int(m.group(1)), int(m.group(2))
 
 
 @app.command()
@@ -269,13 +264,20 @@ def setplan(
     avoid: Annotated[list[str], typer.Option("--avoid", help="Track/artist/genre to exclude (repeatable)")] = [],
     opener: Annotated[Optional[str], typer.Option("--opener", help="Force this track first")] = None,
     out_dir: Annotated[Path, typer.Option("--out", help="Where to write the plan + exports")] = Path("setplan-run"),
+    bpm_range: Annotated[str, typer.Option("--bpm-range", help="Hard BPM filter, e.g. 108-128")] = "",
+    allow_low_bitrate: Annotated[bool, typer.Option("--allow-low-bitrate", help="Include <320kbps files")] = False,
+    tracks_per_hour: Annotated[int, typer.Option("--tracks-per-hour", help="Slot density")] = 20,
+    beam: Annotated[int, typer.Option("--beam", help="Beam width (1 = greedy)")] = 8,
+    seed: Annotated[Optional[int], typer.Option("--seed", help="Reroll seed (reproducible)")] = None,
+    export: Annotated[str, typer.Option("--export", help="Comma list: m3u8,md,xml")] = "m3u8,md",
+    rekordbox_xml: Annotated[Optional[Path], typer.Option("--rekordbox-xml", exists=True, dir_okay=False, help="Collection XML (needed for xml export)")] = None,
+    playlist_name: Annotated[Optional[str], typer.Option("--playlist-name", help="Playlist name for xml export")] = None,
 ) -> None:
     """Build an ordered set from the library — harmonic + BPM + energy arc + your own play history.
 
     Read-only: reads tags + rekordbox/USB play history, writes a plan and exports. Moves nothing.
     """
     from .setplan.spec import ARC_NAMES, GigSpec
-    from .setplan.pool import build_pool
     from .setplan.search import build_set
     from .setplan.export import to_m3u8, to_markdown
 
@@ -284,6 +286,13 @@ def setplan(
                                  param_hint="--arc")
     if harmonic not in ("strict", "loose", "off"):
         raise typer.BadParameter("must be strict, loose or off", param_hint="--harmonic")
+
+    fmts = {f.strip() for f in export.split(",") if f.strip()}
+    if not fmts <= {"m3u8", "md", "xml"}:
+        raise typer.BadParameter("choose from m3u8, md, xml", param_hint="--export")
+    if "xml" in fmts and rekordbox_xml is None:
+        raise typer.BadParameter("xml export needs --rekordbox-xml <collection.xml>",
+                                 param_hint="--export")
 
     root = library_root.absolute()
     # Best-effort history: read every mounted CDJ stick; degrade to none if unavailable.
@@ -298,10 +307,14 @@ def setplan(
 
     spec = GigSpec(minutes=minutes, journey=_parse_journey(journey), arc=arc,
                    freshness=freshness, harmonic=harmonic, must_play=list(must),
-                   avoid=list(avoid), opener=opener)
+                   avoid=list(avoid), opener=opener, seed=seed,
+                   bpm_range=_parse_bpm_range(bpm_range),
+                   allow_low_bitrate=allow_low_bitrate, tracks_per_hour=tracks_per_hour)
+    runs_dir = default_runs_dir(root)
     typer.echo(f"Prepping {minutes}min {arc} set from {root} · history: {len(sessions)} past set(s)")
-    cands, follows = build_pool(root, sessions=sessions)
-    plan = build_set(cands, spec, follows=follows)
+    from .setplan import store
+    cands, follows = store.load_pool_cached(root, runs_dir / "setplan-pool.json", sessions=sessions)
+    plan = build_set(cands, spec, follows=follows, beam_width=max(1, beam))
     for q in plan.unmatched:
         typer.secho(f"⚠ no match for {q!r} — not in the candidate pool "
                     "(check spelling; it may be filtered by genre or bitrate)", fg="yellow")
@@ -316,10 +329,19 @@ def setplan(
         typer.echo(f"{s.index + 1:>2} +{int(s.clock_min):>3}m  {c.artist} - {c.title}  [{bpm} {key}]")
         typer.echo(f"      {s.reason}")
 
+    plan_id = store.save_plan(plan, runs_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    to_m3u8(plan, out_dir / "set.m3u8")
-    to_markdown(plan, out_dir / "set.md")
-    typer.echo(f"\nExports → {out_dir}/set.m3u8, {out_dir}/set.md  (nothing in the library was changed)")
+    if "m3u8" in fmts:
+        to_m3u8(plan, out_dir / "set.m3u8")
+    if "md" in fmts:
+        to_markdown(plan, out_dir / "set.md")
+    if "xml" in fmts:
+        from .setplan.export import to_rekordbox_xml
+        added, entries = to_rekordbox_xml(plan, rekordbox_xml, out_dir / "setplan.rekordbox.xml",
+                                          playlist_name or f"setplan {plan_id}")
+        typer.echo(f"rekordbox: {entries} playlist entries ({added} new tracks) → {out_dir}/setplan.rekordbox.xml")
+    typer.echo(f"\nplan {plan_id} saved → {runs_dir}/setplan-{plan_id}.json")
+    typer.echo(f"Exports → {out_dir}  (nothing in the library was changed)")
 
 
 @app.command()
