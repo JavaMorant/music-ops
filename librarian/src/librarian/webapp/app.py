@@ -17,7 +17,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import ai
 from ..cleanup import build_cleanup_plan
@@ -91,18 +91,18 @@ class SetLabelRequest(BaseModel):
 
 
 class SetplanRequest(BaseModel):
-    minutes: int = 90
+    minutes: int = Field(90, gt=0, le=720)            # cap: longest realistic set (12h)
     journey: str = ""
     arc: str = "peak"
-    freshness: float = 0.3
+    freshness: float = Field(0.3, ge=0.0, le=1.0)
     harmonic: Literal["strict", "loose", "off"] = "loose"
     must: list[str] = []
     avoid: list[str] = []
     opener: str | None = None
     bpm_range: str = ""
     allow_low_bitrate: bool = False
-    tracks_per_hour: int = 20
-    beam: int = 8
+    tracks_per_hour: int = Field(20, gt=0, le=60)
+    beam: int = Field(8, ge=1, le=32)
     seed: int | None = None
 
 

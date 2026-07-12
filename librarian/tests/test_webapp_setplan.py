@@ -54,3 +54,13 @@ def test_setplan_validates_arc_and_guards_origin(tmp_path):
     evil = client.post("/api/setplan", json={"minutes": 9},
                        headers={"Origin": "http://evil.example"})
     assert evil.status_code in (400, 403)
+
+
+def test_setplan_rejects_absurd_bounds(tmp_path):
+    # A single crafted request must not be able to OOM the server (review finding).
+    client, root = _client(tmp_path)
+    make_library(root, ["A - x.mp3"])
+    assert client.post("/api/setplan", json={"minutes": 999999999999}).status_code == 422
+    assert client.post("/api/setplan", json={"minutes": 9, "beam": 10000}).status_code == 422
+    assert client.post("/api/setplan", json={"minutes": 9, "tracks_per_hour": 100000}).status_code == 422
+    assert client.post("/api/setplan", json={"minutes": 9, "freshness": 7}).status_code == 422
