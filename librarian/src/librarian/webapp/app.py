@@ -101,6 +101,7 @@ class SetplanRequest(BaseModel):
     opener: str | None = None
     bpm_range: str = ""
     allow_low_bitrate: bool = False
+    catalogue_only: bool = True
     tracks_per_hour: int = Field(20, gt=0, le=60)
     beam: int = Field(8, ge=1, le=32)
     seed: int | None = None
@@ -675,7 +676,8 @@ def create_app(config: AppConfig) -> FastAPI:
                        freshness=req.freshness, harmonic=req.harmonic,
                        must_play=req.must, avoid=req.avoid, opener=req.opener,
                        bpm_range=lo_hi, allow_low_bitrate=req.allow_low_bitrate,
-                       tracks_per_hour=req.tracks_per_hour, seed=req.seed)
+                       tracks_per_hour=req.tracks_per_hour, seed=req.seed,
+                       catalogue_only=req.catalogue_only)
         cands, follows = _setplan_pool(st)
         plan = build_set(cands, spec, follows=follows, beam_width=max(1, req.beam))
         pid = store.save_plan(plan, st.config.runs_dir)

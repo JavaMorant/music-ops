@@ -26,3 +26,9 @@ def test_genre_block_at_splits_by_fraction():
 def test_parse_journey_moved_public():
     from librarian.setplan.spec import parse_journey
     assert parse_journey("amapiano:60,afrobeats:40") == [("amapiano", 0.6), ("afrobeats", 0.4)]
+
+
+def test_catalogue_only_defaults_true():
+    # The new scope toggle defaults to today's behavior: tracks you own.
+    assert GigSpec(minutes=30).catalogue_only is True
+    assert GigSpec(minutes=30, catalogue_only=False).catalogue_only is False

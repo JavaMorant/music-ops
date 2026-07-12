@@ -266,6 +266,7 @@ def setplan(
     out_dir: Annotated[Path, typer.Option("--out", help="Where to write the plan + exports")] = Path("setplan-run"),
     bpm_range: Annotated[str, typer.Option("--bpm-range", help="Hard BPM filter, e.g. 108-128")] = "",
     allow_low_bitrate: Annotated[bool, typer.Option("--allow-low-bitrate", help="Include <320kbps files")] = False,
+    catalogue_only: Annotated[bool, typer.Option("--catalogue-only/--no-catalogue-only", help="Limit to tracks you own (off: also suggest tracks to acquire — coming soon)")] = True,
     tracks_per_hour: Annotated[int, typer.Option("--tracks-per-hour", help="Slot density")] = 20,
     beam: Annotated[int, typer.Option("--beam", help="Beam width (1 = greedy)")] = 8,
     seed: Annotated[Optional[int], typer.Option("--seed", help="Reroll seed (reproducible)")] = None,
@@ -309,7 +310,11 @@ def setplan(
                    freshness=freshness, harmonic=harmonic, must_play=list(must),
                    avoid=list(avoid), opener=opener, seed=seed,
                    bpm_range=_parse_bpm_range(bpm_range),
-                   allow_low_bitrate=allow_low_bitrate, tracks_per_hour=tracks_per_hour)
+                   allow_low_bitrate=allow_low_bitrate, tracks_per_hour=tracks_per_hour,
+                   catalogue_only=catalogue_only)
+    if not catalogue_only:
+        typer.secho("Note: suggesting tracks beyond your library isn't built yet — "
+                    "building from your library only.", fg="yellow")
     runs_dir = default_runs_dir(root)
     typer.echo(f"Prepping {minutes}min {arc} set from {root} · history: {len(sessions)} past set(s)")
     from .setplan import store

@@ -32,6 +32,7 @@ class GigSpec:
     opener: str | None = None
     allow_low_bitrate: bool = False
     seed: int | None = None
+    catalogue_only: bool = True      # off (future): also suggest tracks to acquire, never downloaded
 
     def n_slots(self) -> int:
         return max(1, round(self.minutes / 60 * self.tracks_per_hour))

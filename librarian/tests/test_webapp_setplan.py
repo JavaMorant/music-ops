@@ -92,3 +92,13 @@ def test_setplan_bad_input_returns_readable_error_not_500(tmp_path):
     r = client.post("/api/setplan", json={"minutes": 0})
     assert r.status_code == 422
     assert isinstance(r.json()["detail"], list)   # the shape the page must now stringify
+
+
+def test_setplan_accepts_catalogue_only_flag(tmp_path):
+    client, root = _client(tmp_path)
+    make_library(root, [f"A{i} - T{i}.mp3" for i in range(6)])
+    r = client.post("/api/setplan", json={"minutes": 9, "catalogue_only": False})
+    assert r.status_code == 200
+    # threaded into the persisted spec so the page can show the "coming soon" note
+    assert r.json()["plan"]["spec"]["catalogue_only"] is False
+    assert client.post("/api/setplan", json={"minutes": 9}).json()["plan"]["spec"]["catalogue_only"] is True
