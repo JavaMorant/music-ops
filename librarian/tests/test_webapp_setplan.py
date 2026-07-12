@@ -64,3 +64,14 @@ def test_setplan_rejects_absurd_bounds(tmp_path):
     assert client.post("/api/setplan", json={"minutes": 9, "beam": 10000}).status_code == 422
     assert client.post("/api/setplan", json={"minutes": 9, "tracks_per_hour": 100000}).status_code == 422
     assert client.post("/api/setplan", json={"minutes": 9, "freshness": 7}).status_code == 422
+
+
+def test_setplan_page_served_and_navs_link_it(tmp_path):
+    client, root = _client(tmp_path)
+    r = client.get("/setplan.html")
+    assert r.status_code == 200
+    assert "<title>setplan — librarian</title>" in r.text
+    assert 'id="spForm"' in r.text and 'id="spOut"' in r.text
+    assert "--raised" in r.text                      # design tokens present
+    for page in ("/", "/pulse.html", "/dedupe.html"):
+        assert "setplan.html" in client.get(page).text
