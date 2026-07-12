@@ -121,6 +121,10 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None,
         elif 0 not in anchors and not any(a is m for a in anchors.values()):
             anchors[0] = m
             kinds[0] = "opener"
+        elif not any(a is m for a in anchors.values()):
+            # slot 0 already pinned and the opener isn't placed anywhere —
+            # surface the unhonored request instead of silently dropping it
+            unmatched.append(spec.opener)
     for q in spec.must_play:
         m = _match(q, pool)
         if m is None:
