@@ -5,66 +5,169 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>librarian</title>
 <style>
+  /* ── design tokens — duplicated verbatim across index/pulse/dedupe ────── */
   :root {
-    --bg:#0e0f12; --panel:#16181d; --line:#262a31; --text:#e7e9ee; --dim:#8b909b;
-    --accent:#7aa2ff; --move:#7aa2ff; --quarantine:#e0a85b; --ok:#5fd08a; --bad:#ff6b6b;
+    color-scheme: dark;
+    --bg:#0a0b0e; --panel:#111318; --raised:#181b21; --inset:#07080b;
+    --line:#20242c; --line-2:#2c313b;
+    --text:#e9ebf1; --dim:#99a0ac; --faint:#606672;
+    --accent:#7da7ff; --accent-ink:#071019;
+    --ok:#56d38f; --warm:#e5ab5b; --bad:#f07d7d; --cold:#74b8d8;
+    --accent-tint:rgba(125,167,255,.13); --ok-tint:rgba(86,211,143,.11);
+    --warm-tint:rgba(229,171,91,.12); --bad-tint:rgba(240,125,125,.10);
+    --move:var(--accent); --quarantine:var(--warm);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --r-sm:7px; --r-md:11px; --r-lg:14px;
+    --shadow-1:inset 0 1px 0 rgba(255,255,255,.03), 0 1px 2px rgba(0,0,0,.35);
+    --shadow-2:0 12px 32px rgba(0,0,0,.45);
+    --ease:cubic-bezier(.25,.6,.3,1);
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-    font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex;
-    align-items:center; gap:16px; }
-  header h1 { margin:0; font-size:18px; letter-spacing:.04em; font-weight:600; }
-  header .root { color:var(--dim); font-size:12px; font-family:ui-monospace,monospace; }
-  .brand { font-size:14px; font-weight:700; letter-spacing:.02em; color:var(--dim); }
-  .tabs { display:flex; gap:4px; }
+  ::selection { background:rgba(125,167,255,.3); }
+  *::-webkit-scrollbar { width:10px; height:10px; }
+  *::-webkit-scrollbar-track { background:transparent; }
+  *::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:99px;
+    border:3px solid transparent; background-clip:content-box; }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.55 var(--font);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+
+  /* ── app bar ───────────────────────────────────────────────────────────── */
+  header { position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:14px;
+    padding:10px 22px; border-bottom:1px solid var(--line);
+    background:rgba(10,11,14,.82); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+  .brand { display:inline-flex; align-items:center; gap:9px; font-size:13.5px; font-weight:650;
+    letter-spacing:.05em; color:var(--text); }
+  .brand::before { content:""; width:9px; height:9px; border-radius:3px;
+    background:linear-gradient(135deg,var(--accent),#5b74d6);
+    box-shadow:0 0 8px rgba(125,167,255,.45); }
+  header .root { color:var(--faint); font-size:12px; font-family:var(--mono); }
+  .tabs { display:flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:10px;
+    background:rgba(255,255,255,.02); }
   .tab { display:inline-flex; align-items:center; gap:7px; text-decoration:none; color:var(--dim);
-    font-size:13px; font-weight:600; padding:6px 13px; border-radius:8px; border:1px solid transparent; line-height:1; }
-  .tab:hover { color:var(--text); background:#1c1f25; }
-  .tab.active { color:var(--text); background:#1c1f25; border-color:var(--line); }
-  .tab .dot { width:7px; height:7px; border-radius:50%; opacity:.45; }
+    font-size:12.5px; font-weight:600; padding:5px 12px; border-radius:7px; line-height:1.4;
+    transition:color .14s var(--ease), background .14s var(--ease); }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--text); background:var(--raised); box-shadow:var(--shadow-1); }
+  .tab .dot { width:6px; height:6px; border-radius:50%; opacity:.4; transition:opacity .14s var(--ease); }
   .tab.active .dot { opacity:1; }
   .rootctl { display:inline-flex; align-items:center; gap:8px; }
-  .rootlbl { color:var(--dim); font-size:12px; }
-  .rootsel { background:#1c1f25; color:var(--text); border:1px solid var(--line); border-radius:8px;
-    padding:6px 10px; font-size:12px; font-weight:600; max-width:240px; cursor:pointer; }
+  .rootlbl { color:var(--faint); font-size:10.5px; font-weight:650; letter-spacing:.12em;
+    text-transform:uppercase; }
+  .rootsel { appearance:none; -webkit-appearance:none; color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:6px 26px 6px 10px; font:600 12px/1.4 var(--font); max-width:240px;
+    cursor:pointer; transition:border-color .14s var(--ease), box-shadow .14s var(--ease);
+    background:var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2399a0ac' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 9px center / 10px; }
+  .rootsel:hover { border-color:var(--line-2); }
+  .rootsel:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint); }
   .rootsel:disabled { opacity:.5; cursor:not-allowed; }
   .rbhint { color:var(--ok); text-decoration:none; font-size:12px; font-weight:600; padding:5px 10px;
-    border:1px solid rgba(95,208,138,.35); border-radius:8px; white-space:nowrap; }
-  body.scanning main { pointer-events:none; opacity:.5; }   /* lock everything while scanning/applying */
-  main { max-width:1100px; margin:0 auto; padding:24px; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:16px 18px; margin-bottom:18px; }
-  .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-  button { background:var(--accent); color:#0b0d12; border:0; border-radius:7px;
-    padding:8px 16px; font-weight:600; cursor:pointer; }
-  button.secondary { background:#2a2f39; color:var(--text); }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  label { color:var(--dim); display:inline-flex; gap:6px; align-items:center; }
-  input[type=text] { background:#0e0f12; border:1px solid var(--line); color:var(--text);
-    border-radius:6px; padding:6px 9px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line);
-    vertical-align:top; }
-  th { color:var(--dim); font-weight:500; }
-  td.path { font-family:ui-monospace,monospace; font-size:12px; }
-  .arrow { color:var(--dim); }
-  .badge { font-size:11px; padding:1px 7px; border-radius:999px; font-weight:600; }
-  .badge.move { background:rgba(122,162,255,.16); color:var(--move); }
-  .badge.quarantine { background:rgba(224,168,91,.16); color:var(--quarantine); }
-  .reason { color:var(--dim); }
-  .banner { padding:10px 14px; border-radius:8px; margin-bottom:14px; }
-  .banner.ok { background:rgba(95,208,138,.12); color:var(--ok); border:1px solid rgba(95,208,138,.3); }
-  .banner.bad { background:rgba(255,107,107,.1); color:var(--bad); border:1px solid rgba(255,107,107,.3); }
-  .dropzone { border:1.5px dashed var(--line); border-radius:10px; padding:26px; text-align:center;
-    color:var(--dim); cursor:pointer; }
-  .dropzone.over { border-color:var(--accent); color:var(--text); }
-  pre { white-space:pre-wrap; background:#0e0f12; border:1px solid var(--line); border-radius:8px;
-    padding:14px; font-size:12px; max-height:340px; overflow:auto; }
-  .muted { color:var(--dim); font-size:12px; }
-  .runs li { display:flex; gap:12px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line);
-    font-size:13px; font-family:ui-monospace,monospace; }
+    border:1px solid rgba(86,211,143,.3); border-radius:8px; white-space:nowrap;
+    transition:background .14s var(--ease); }
+  .rbhint:hover { background:var(--ok-tint); }
+
+  /* scan lock: freeze + dim the workspace while the engine is busy */
+  main { max-width:1100px; margin:0 auto; padding:24px 24px 90px; transition:opacity .2s var(--ease); }
+  body.scanning main { pointer-events:none; opacity:.45; }
+  body.scanning { cursor:progress; }
+
+  /* ── sections & panels ─────────────────────────────────────────────────── */
+  .kicker { display:flex; align-items:baseline; gap:10px; margin:26px 0 10px;
+    font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
+  .kicker:first-child { margin-top:2px; }
+  .kicker .note { font-weight:500; letter-spacing:.01em; text-transform:none; font-size:12px;
+    color:var(--faint); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
+    padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow-1); }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   .spacer { flex:1; }
+  .muted { color:var(--dim); font-size:12px; }
+
+  /* ── controls ──────────────────────────────────────────────────────────── */
+  button { font:600 13px/1.4 var(--font); letter-spacing:.01em; background:var(--accent);
+    color:var(--accent-ink); border:0; border-radius:var(--r-sm); padding:8px 16px; cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 1px 2px rgba(0,0,0,.3);
+    transition:filter .14s var(--ease), transform .14s var(--ease); }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:active:not(:disabled) { transform:translateY(1px); filter:brightness(.95); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.4; cursor:not-allowed; box-shadow:none; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--line-2);
+    box-shadow:none; }
+  button.secondary:hover:not(:disabled) { filter:none; background:var(--raised); }
+  label { color:var(--dim); display:inline-flex; gap:7px; align-items:center; font-size:13px; }
+  input[type=checkbox], input[type=radio] { accent-color:var(--accent); }
+  input[type=text] { background:var(--inset); border:1px solid var(--line); color:var(--text);
+    border-radius:var(--r-sm); padding:8px 11px; font:13px/1.4 var(--font);
+    transition:border-color .14s var(--ease), box-shadow .14s var(--ease); }
+  input[type=text]:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint); }
+  input::placeholder { color:var(--faint); }
+
+  /* mode picker: radios styled as a segmented control (inputs stay for a11y) */
+  .segbar { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--line);
+    border-radius:9px; background:var(--inset); }
+  .seg { position:relative; padding:5px 14px; border-radius:6px; font-size:12.5px; font-weight:600;
+    color:var(--dim); cursor:pointer; transition:color .14s var(--ease), background .14s var(--ease); }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg:hover { color:var(--text); }
+  .seg.on { color:var(--text); background:var(--raised); box-shadow:var(--shadow-1); }
+  .seg:focus-within { outline:2px solid var(--accent); outline-offset:1px; }
+
+  /* ── plan table ────────────────────────────────────────────────────────── */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { font-size:10.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--faint); text-align:left; padding:4px 10px 8px; border-bottom:1px solid var(--line-2); }
+  tbody td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tbody tr { transition:background .12s var(--ease); }
+  tbody tr:hover { background:rgba(255,255,255,.02); }
+  tbody tr:last-child td { border-bottom:0; }
+  td.path { font-family:var(--mono); font-size:12px; }
+  td.path .src { color:var(--dim); }
+  td.path .dst { color:var(--text); margin-top:1px; }
+  .arrow { color:var(--faint); }
+  .reason { color:var(--dim); font-size:12px; }
+  .badge { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; padding:2px 8px; border-radius:99px; line-height:1.5; }
+  .badge.move { background:var(--accent-tint); color:var(--move); }
+  .badge.quarantine { background:var(--warm-tint); color:var(--quarantine); }
+
+  /* ── feedback ──────────────────────────────────────────────────────────── */
+  .banner { display:flex; gap:10px; align-items:flex-start; padding:11px 14px;
+    border-radius:var(--r-sm); border:1px solid; margin-bottom:14px; font-size:13px; }
+  .banner::before { font-weight:700; line-height:1.55; }
+  .banner.ok { background:var(--ok-tint); color:var(--ok); border-color:rgba(86,211,143,.25); }
+  .banner.ok::before { content:"✓"; }
+  .banner.bad { background:var(--bad-tint); color:var(--bad); border-color:rgba(240,125,125,.25); }
+  .banner.bad::before { content:"✕"; }
+
+  .dropzone { border:1.5px dashed var(--line-2); border-radius:var(--r-md); padding:26px 20px;
+    text-align:center; color:var(--dim); cursor:pointer; font-size:13px;
+    transition:border-color .16s var(--ease), color .16s var(--ease), background .16s var(--ease); }
+  .dropzone::before { content:"⇣"; display:block; font-size:20px; line-height:1;
+    color:var(--faint); margin-bottom:8px; }
+  .dropzone:hover, .dropzone.over { border-color:var(--accent); color:var(--text);
+    background:rgba(125,167,255,.05); }
+  .dropzone:hover::before, .dropzone.over::before { color:var(--accent); }
+
+  pre { white-space:pre-wrap; background:var(--inset); border:1px solid var(--line);
+    border-radius:var(--r-sm); padding:14px; font:12px/1.6 var(--mono); color:var(--dim);
+    max-height:340px; overflow:auto; margin:0; }
+
+  /* ── apply bar (sticky) & runs ─────────────────────────────────────────── */
+  .applybar { position:sticky; bottom:14px; z-index:40; display:flex; align-items:center; gap:14px;
+    flex-wrap:wrap; background:rgba(24,27,33,.92); -webkit-backdrop-filter:blur(12px);
+    backdrop-filter:blur(12px); border:1px solid var(--line-2); border-radius:var(--r-md);
+    padding:12px 16px; margin-bottom:14px; box-shadow:var(--shadow-2); }
+  .runs ul { list-style:none; margin:0; padding:0; }
+  .runs li { display:flex; gap:12px; align-items:center; padding:8px 0;
+    border-bottom:1px solid var(--line); font-size:12.5px; font-family:var(--mono); }
+  .runs li:last-child { border-bottom:0; }
+  .runs .st { width:16px; text-align:center; color:var(--dim); }
+  .runs .st.applied { color:var(--ok); }
+  .runs .st.undone { color:var(--faint); }
 </style>
 </head>
 <body>
@@ -100,12 +203,17 @@ function append(el, kid) {
   el.appendChild(kid.nodeType ? kid : document.createTextNode(String(kid)));
 }
 
+// Section label: uppercase kicker + optional lowercase annotation.
+function kicker(label, note) {
+  return h("div", { class: "kicker" }, label, note && h("span", { class: "note" }, note));
+}
+
 // Shared 3-way nav (Review · Pulse · Duplicates), current section highlighted.
 function navTabs(active) {
   const tabs = [
-    ["review", "/", "#7aa2ff", "Review"],
-    ["pulse", "/pulse.html", "#5fd08a", "Pulse"],
-    ["dupes", "/dedupe.html", "#e0a85b", "Duplicates"],
+    ["review", "/", "#7da7ff", "Review"],
+    ["pulse", "/pulse.html", "#56d38f", "Pulse"],
+    ["dupes", "/dedupe.html", "#e5ab5b", "Duplicates"],
   ];
   return h("nav", { class: "tabs" },
     tabs.map(([k, href, color, label]) =>
@@ -141,7 +249,7 @@ function rootControl(s) {
         (r.kind === "usb" ? "🔌 " : r.kind === "folder" ? "📁 " : "▸ ")
         + r.label + (r.rekordbox ? " · rekordbox" : ""))));
   sel.value = data.current;   // set AFTER options exist, else it can't match
-  const kids = [h("span", { class: "rootlbl" }, "working in:"), sel];
+  const kids = [h("span", { class: "rootlbl" }, "working in"), sel];
   if (cur && cur.rekordbox)
     kids.push(h("a", { class: "rbhint", href: "/pulse.html" }, "▶ play history → Pulse"));
   return h("span", { class: "rootctl" }, kids);
@@ -182,10 +290,11 @@ function organizePanel(s) {
 }
 
 function modeBar(s) {
-  const radios = ["plan", "cleanup", "inbox"].map((m) =>
-    h("label", null,
-      h("input", { type: "radio", name: "mode", checked: s.mode === m,
-        onChange: () => { s.mode = m; render(); } }), " " + m));
+  const radios = h("div", { class: "segbar" },
+    ["plan", "cleanup", "inbox"].map((m) =>
+      h("label", { class: "seg" + (s.mode === m ? " on" : "") },
+        h("input", { type: "radio", name: "mode", checked: s.mode === m,
+          onChange: () => { s.mode = m; render(); } }), m)));
   return h("div", { class: "panel" },
     h("div", { class: "row" },
       radios,
@@ -231,22 +340,23 @@ function planTable(s) {
       h("td", null, h("input", { type: "checkbox", checked: s.kept.has(a.id),
         onChange: () => toggle(a.id) })),
       h("td", null, h("span", { class: "badge " + a.kind }, a.kind)),
-      h("td", { class: "path" }, a.src_rel, " ", h("span", { class: "arrow" }, "→"), " ", a.dest_rel),
+      h("td", { class: "path" },
+        h("div", { class: "src" }, a.src_rel),
+        h("div", { class: "dst" }, h("span", { class: "arrow" }, "→ "), a.dest_rel)),
       h("td", { class: "reason" }, a.reason)));
   return h("div", { class: "panel" },
     h("table", null,
       h("thead", null, h("tr", null,
         h("th", null, h("input", { type: "checkbox", checked: allOn, onChange: toggleAll })),
         h("th", null, "kind"), h("th", null, "from → to"), h("th", null, "reason"))),
-      h("tbody", null, rows)),
-    h("div", { class: "muted", style: { marginTop: "10px" } },
-      s.kept.size + " of " + actions.length + " selected"));
+      h("tbody", null, rows)));
 }
 
 function applyBar(s) {
-  return h("div", { class: "panel row" },
+  return h("div", { class: "applybar" },
     h("label", null, h("input", { type: "checkbox", checked: s.backup,
       onChange: (e) => { s.backup = e.target.checked; } }), " back up before apply"),
+    h("span", { class: "muted" }, s.kept.size + " of " + s.plan.actions.length + " selected"),
     h("div", { class: "spacer" }),
     h("button", { onClick: apply, disabled: s.busy || s.kept.size === 0 },
       "Apply " + s.kept.size + " change" + (s.kept.size === 1 ? "" : "s")));
@@ -254,16 +364,17 @@ function applyBar(s) {
 
 function runsPanel(s) {
   if (!s.runs.length) return null;
-  return h("div", { class: "panel runs" },
-    h("div", { class: "muted", style: { marginBottom: "8px" } }, "Runs"),
-    h("ul", { style: { listStyle: "none", margin: "0", padding: "0" } },
-      s.runs.map((r) =>
-        h("li", null,
-          h("span", null, r.status === "applied" ? "✓" : r.status === "undone" ? "↺" : "…"),
-          h("span", null, r.run_id),
-          h("span", { class: "muted" }, r.n_actions + " actions"),
-          h("div", { class: "spacer" }),
-          r.undoable && h("button", { class: "secondary", onClick: () => undo(r.run_id) }, "Undo")))));
+  return [kicker("History", "every applied run is journaled and undoable"),
+    h("div", { class: "panel runs" },
+      h("ul", null,
+        s.runs.map((r) =>
+          h("li", null,
+            h("span", { class: "st " + r.status },
+              r.status === "applied" ? "✓" : r.status === "undone" ? "↺" : "…"),
+            h("span", null, r.run_id),
+            h("span", { class: "muted" }, r.n_actions + " actions"),
+            h("div", { class: "spacer" }),
+            r.undoable && h("button", { class: "secondary", onClick: () => undo(r.run_id) }, "Undo")))))];
 }
 
 // --- render ----------------------------------------------------------------
@@ -279,12 +390,17 @@ function render() {
       h("span", { class: "spacer" }),
       rootControl(s)),
     h("main", null,
-      s.msg && h("div", { class: "banner " + s.msg.kind }, s.msg.text),
+      s.msg && h("div", { class: "banner " + s.msg.kind }, h("span", null, s.msg.text)),
+      kicker("Organise with AI", "describe it in plain English, review the plan"),
       organizePanel(s),
+      kicker("Scan", "dry-run — nothing changes until you apply"),
       modeBar(s),
       s.mode === "inbox" && dropzone(),
+      hasPlan && kicker("Proposed plan", s.plan.actions.length + " action"
+        + (s.plan.actions.length === 1 ? "" : "s") + " — untick anything you don't want"),
       hasPlan && planTable(s),
       hasPlan && applyBar(s),
+      s.plan && s.plan.report_md && kicker("Report"),
       s.plan && s.plan.report_md && h("div", { class: "panel" }, h("pre", null, s.plan.report_md)),
       runsPanel(s)));
 }

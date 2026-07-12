@@ -36,27 +36,32 @@
   function injectStyle() {
     if (document.getElementById("ws-style")) return;
     const css = `
-      .ws-modal{position:fixed;inset:0;background:rgba(8,9,12,.74);backdrop-filter:blur(3px);
-        display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
-      .ws-card{background:#16181d;border:1px solid #262a31;border-radius:16px;padding:24px;
-        max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);
-        font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
-      .ws-h{margin:0 0 4px;font-size:18px;color:#e7e9ee;font-weight:600}
-      .ws-sub{margin:0 0 16px;font-size:13px;color:#8b909b}
+      .ws-modal{position:fixed;inset:0;background:rgba(5,6,8,.72);-webkit-backdrop-filter:blur(4px);
+        backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+      .ws-card{background:#111318;border:1px solid #20242c;border-radius:14px;padding:24px;
+        max-width:460px;width:100%;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 24px 64px rgba(0,0,0,.55);
+        font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+      .ws-h{margin:0 0 4px;font-size:17px;color:#e9ebf1;font-weight:650;letter-spacing:.01em}
+      .ws-sub{margin:0 0 16px;font-size:13px;color:#99a0ac}
       .ws-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-bottom:18px}
-      .ws-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #262a31;
-        border-radius:10px;cursor:pointer;color:#e7e9ee;font-size:13px}
-      .ws-opt:hover{background:#1c1f25}
-      .ws-opt:has(input:checked){border-color:#7aa2ff;background:rgba(122,162,255,.08)}
-      .ws-opt input{accent-color:#7aa2ff}
+      .ws-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #20242c;
+        border-radius:9px;cursor:pointer;color:#e9ebf1;font-size:13px;
+        transition:background .14s ease,border-color .14s ease}
+      .ws-opt:hover{background:#181b21}
+      .ws-opt:has(input:checked){border-color:#7da7ff;background:rgba(125,167,255,.08)}
+      .ws-opt input{accent-color:#7da7ff}
       .ws-ico{width:18px;text-align:center}
       .ws-lab{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .ws-rb{font-size:10px;font-weight:700;color:#5fd08a;border:1px solid rgba(95,208,138,.4);
-        border-radius:5px;padding:1px 6px;white-space:nowrap}
+      .ws-rb{font-size:10px;font-weight:700;color:#56d38f;border:1px solid rgba(86,211,143,.4);
+        border-radius:5px;padding:1px 6px;white-space:nowrap;letter-spacing:.04em}
       .ws-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}
-      .ws-skip{background:none;border:0;color:#8b909b;font-size:12px;cursor:pointer}
-      .ws-go{background:#7aa2ff;color:#0b0d12;border:0;border-radius:8px;padding:9px 18px;
-        font-weight:600;cursor:pointer;font-size:13px}`;
+      .ws-skip{background:none;border:0;color:#99a0ac;font-size:12px;cursor:pointer}
+      .ws-skip:hover{color:#e9ebf1}
+      .ws-go{background:#7da7ff;color:#071019;border:0;border-radius:7px;padding:9px 18px;
+        font-weight:600;cursor:pointer;font-size:13px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 1px 2px rgba(0,0,0,.3)}
+      .ws-go:hover{filter:brightness(1.08)}
+      @media (prefers-reduced-motion:reduce){.ws-opt,.ws-go{transition:none}}`;
     const s = document.createElement("style");
     s.id = "ws-style"; s.textContent = css;
     document.head.appendChild(s);
