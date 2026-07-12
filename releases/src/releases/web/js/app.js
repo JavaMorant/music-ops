@@ -699,22 +699,201 @@ function expLoadImage(url){ return new Promise(function(res, rej){
   im.onload = function(){ res(im); }; im.onerror = function(){ rej(new Error('cover load failed')); };
   im.src = url; }); }
 function expStatus(msg){ const el = document.getElementById('exportstatus'); if(el) el.textContent = msg; }
+// ONE renderer config for both export paths (realtime + offline fast) - only the
+// isPlaying/getProgress drivers differ, so the visuals cannot fork.
+function expRenderCfg(t, ov, cimg, dims, fps, isPlaying, getProgress){
+  const cs = getComputedStyle(document.documentElement);
+  const cv = (n, d) => (cs.getPropertyValue(n).trim() || d);
+  return {
+    w: dims[0], h: dims[1], fps: fps,
+    getAnalyser: () => danalyser,
+    skin: ov.classList.contains('cassette-mode') ? 'cassette' : 'vinyl',
+    coverImg: cimg, producer: PRODUCER,
+    accent: cv('--accent', '#c9a227'), txt: cv('--txt', '#e8e4da'), dim: cv('--dim', '#9a9aa2'),
+    fontDisplay: cv('--font-display', 'Georgia,serif'),
+    hueOverride: () => window.__fxHue,
+    fxOn: n => !ov.classList.contains('off-' + n),
+    isPlaying: isPlaying, getProgress: getProgress,
+    track: { name: t.name || '',
+      tag: reelTag(),
+      hook: [t.name, (t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
+        .filter(Boolean).join(' \u00b7 '),
+      meta: [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : '']
+        .filter(Boolean).join(' \u00b7 ') },
+  };
+}
 function exportVideoStop(){  // second click / Esc / guard timer: finish early and save what we have
   if(!_exporting || !_expCtl) return;
   const c = _expCtl;
+  if(c.fast){  // offline fast path: cancel cleanly (nothing partial is saved)
+    c.cancel = true;
+    if(c.abort){ try{ c.abort.abort(); }catch(e){} }
+    return;
+  }
   try{ if(c.src){ c.src.onended = null; c.src.stop(); } }catch(e){}
   c.ren.setEnded();
   if(c.rec.state !== 'inactive') c.rec.stop();
+}
+// ---- OFFLINE fast export (several-times-realtime): render every frame flat-out
+// in DRIVEN mode (export.js renderFrame + ttOfflineSpectrum instead of the wall
+// clock + live analyser), encode with WebCodecs H.264, then mux the beat audio
+// on the server (/api/mux, ffmpeg -c:v copy). MessageChannel pacing keeps it
+// running full speed even in a hidden tab. Returns true when it handled the
+// export (saved, failed or cancelled); false when no H.264 encoder config is
+// supported here, so exportVideo falls through to the realtime recorder.
+const EXP_LEAD_MS = 350;  // the realtime path starts audio 0.35s in (title-card lead)
+let _expNoFast = false;   // a mid-flight fast failure routes the next click to realtime
+async function exportVideoFast(t, ov, btn, lbl0){
+  btn.disabled = true; btn.textContent = 'Preparing...';
+  const fps = 60;
+  const dims = REEL_DIMS[reelAspect] || REEL_DIMS['9:16'];
+  let config = null;
+  // level 4.2 first (1080p60 fits its macroblock budget), then the safe ladder
+  for(const codec of ['avc1.64002a', 'avc1.640028', 'avc1.4d0028', 'avc1.42e028']){
+    const cand = {codec: codec, width: dims[0], height: dims[1], framerate: fps,
+      bitrate: 16_000_000, avc: {format: 'annexb'}};
+    try{
+      const s = await VideoEncoder.isConfigSupported(cand);
+      if(s && s.supported){ config = cand; break; }
+    }catch(e){}
+  }
+  if(!config){ return false; }  // no fast encoder - the realtime path takes over
+  const stage = document.getElementById('exportstage');
+  const stopBtn = document.getElementById('exportstop');
+  const stop0 = stopBtn ? stopBtn.textContent : '';
+  let ren = null, enc = null, ctl = null;
+  const cancelled = () => { const e = new Error('cancelled'); e.cancelled = true; return e; };
+  function cleanup(){
+    _exporting = false; window.__exporting = false; _expCtl = null;
+    if(enc){ try{ if(enc.state !== 'closed') enc.close(); }catch(e){} }
+    btn.textContent = lbl0; btn.disabled = false;
+    if(stopBtn) stopBtn.textContent = stop0;
+  }
+  function hideOv(delay){
+    setTimeout(() => {
+      document.getElementById('exportov').classList.remove('show');
+      stage.innerHTML = '';
+    }, delay || 0);
+  }
+  try{
+    deckInitViz();
+    audioEl.pause();  // offline render - nothing should be sounding meanwhile
+    const resp = await fetch('/api/audio?id=' + encodeURIComponent(t.id));
+    if(!resp.ok) throw new Error('could not load the beat');
+    const ac = dactx || new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await ac.decodeAudioData(await resp.arrayBuffer());
+    let cimg = null;
+    if(COVER){ try{ cimg = await expLoadImage(COVER); }catch(e){ cimg = null; } }
+    const lead = EXP_LEAD_MS/1000, dur = buf.duration || 1;
+    const tailMs = ov.classList.contains('off-endcard') ? 500 : 1400;  // same tail as realtime
+    const total = Math.ceil((lead + dur + tailMs/1000)*fps);
+    const endFrame = Math.ceil((lead + dur)*fps);  // audio done -> outro card in the tail frames
+    const drv = {t: 0, ended: false};  // the driven clock: t = frameIdx/fps
+    ren = ttExportRender(expRenderCfg(t, ov, cimg, dims, fps,
+      () => !drv.ended,  // realtime keeps playRef.on through the lead-in too
+      () => drv.ended ? 1 : Math.max(0, Math.min(1, (drv.t - lead)/dur))));
+    const spec = ttOfflineSpectrum(buf, {fps: fps, leadSec: lead});
+    ctl = _expCtl = {fast: true, cancel: false, parts: [], err: null, abort: null};
+    enc = new VideoEncoder({
+      output: chunk => { const b = new Uint8Array(chunk.byteLength); chunk.copyTo(b); ctl.parts.push(b); },
+      error: e => { if(!ctl.err) ctl.err = e; },
+    });
+    enc.configure(config);
+    // MessageChannel pacing: message tasks are NOT throttled in hidden tabs
+    // (unlike setTimeout), so the export keeps running full speed unfocused.
+    const mc = new MessageChannel();
+    let wake = null;
+    mc.port1.onmessage = () => { const w = wake; wake = null; if(w) w(); };
+    const tick = () => new Promise(res => { wake = res; mc.port2.postMessage(0); });
+    stage.innerHTML = '';
+    const pv = document.createElement('canvas'); pv.width = dims[0]; pv.height = dims[1];
+    stage.appendChild(pv);
+    const pctx = pv.getContext('2d');
+    document.getElementById('exportov').classList.add('show');
+    if(stopBtn) stopBtn.textContent = '\u25a0 Cancel';
+    expStatus('Rendering ' + reelAspect + ' (' + dims[0] + 'x' + dims[1] + ') offline...');
+    _exporting = true; window.__exporting = true;  // ttRun's pauseDraw yields the frame budget
+    btn.textContent = '\u25a0 Cancel export'; btn.disabled = false;
+    const t0 = performance.now();
+    for(let i = 0; i < total; i++){
+      const stallT = performance.now();
+      while(enc.encodeQueueSize > 8 && !ctl.cancel && !ctl.err){  // encoder backpressure
+        await tick();
+        if(performance.now() - stallT > 15000) throw new Error('encoder stalled');
+      }
+      if(ctl.cancel) throw cancelled();
+      if(ctl.err) throw ctl.err;
+      drv.t = i/fps;
+      if(!drv.ended && i >= endFrame){ drv.ended = true; ren.setEnded(); }
+      ren.renderFrame(i, spec.frame(i));
+      const vf = new VideoFrame(ren.canvas, {timestamp: Math.round(i*1e6/fps), duration: Math.round(1e6/fps)});
+      try{ enc.encode(vf, {keyFrame: i % (fps*2) === 0}); }finally{ vf.close(); }
+      if(i % 10 === 0) pctx.drawImage(ren.canvas, 0, 0);  // occasional preview blit
+      if(i % 15 === 0){
+        const el = (performance.now() - t0)/1000;
+        const speed = el > 0.2 ? ((i + 1)/fps/el).toFixed(1) + 'x realtime' : '...';
+        expStatus('Rendering ' + Math.floor((i + 1)/total*100) + '% - ' + speed);
+      }
+      await tick();
+    }
+    if(ctl.err) throw ctl.err;
+    expStatus('Encoding the last frames...');
+    await enc.flush();
+    if(ctl.err) throw ctl.err;
+    try{ enc.close(); }catch(e){}
+    if(ctl.cancel) throw cancelled();
+    expStatus('Adding the beat audio...');
+    const abort = new AbortController(); ctl.abort = abort;
+    const mr = await fetch('/api/mux?id=' + encodeURIComponent(t.id) + '&fps=' + fps
+        + '&lead_ms=' + EXP_LEAD_MS + '&tail_ms=' + tailMs
+        + '&dur_ms=' + Math.round(total*1000/fps),  // exact rendered length - server trims with -t
+      {method: 'POST', headers: {'Content-Type': 'application/octet-stream'},
+       body: new Blob(ctl.parts, {type: 'application/octet-stream'}), signal: abort.signal});
+    if(!mr.ok){ const er = await mr.json().catch(() => ({detail: mr.statusText})); throw new Error(er.detail); }
+    const mp4 = await mr.blob();
+    if(ctl.cancel) throw cancelled();
+    const secs = (performance.now() - t0)/1000;
+    const fname = ((t && t.name) || 'reel').replace(/[\\/]/g, '_') + '.mp4';
+    const url = URL.createObjectURL(mp4);
+    const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+    URL.revokeObjectURL(url);
+    cleanup();
+    expStatus('Saved - check your downloads');
+    toast('Exported ' + fname + ' in ' + secs.toFixed(1) + 's - check your downloads');
+    showCaption(t);  // post text ready to paste alongside the video
+    hideOv(1200);
+    return true;
+  }catch(e){
+    const wasCancel = !!(e && (e.cancelled || e.name === 'AbortError'));
+    cleanup();
+    if(ren) ren.stop();
+    hideOv(wasCancel ? 0 : 1200);
+    if(wasCancel){
+      expStatus('Export cancelled');
+      toast('Export cancelled');
+    }else{
+      _expNoFast = true;  // don't loop on a broken encoder - next click records realtime
+      expStatus('Fast export failed');
+      toast('Fast export failed: ' + ((e && e.message) || e) + ' - press Export again to record in realtime', true);
+    }
+    return true;
+  }
 }
 async function exportVideo(){
   if(_exporting){ exportVideoStop(); return; }
   if(_recording){ toast('Tab recording already running', true); return; }
   if(stemMode){ toast('Exit remix first - export records the original beat', true); return; }
   if(deckCur < 0){ if(!DECK.length){ toast('Open the player and pick a beat first', true); return; } deckSelect(0); }
-  if(!window.ttExportRender || !('captureStream' in HTMLCanvasElement.prototype) || !window.MediaRecorder){
-    toast('Canvas recording not supported in this browser', true); return; }
+  if(!window.ttExportRender){ toast('Canvas recording not supported in this browser', true); return; }
   const t = DECK[deckCur], ov = document.getElementById('ov'), btn = document.getElementById('vidbtn');
   const lbl0 = btn.textContent;
+  // WebCodecs present -> offline fast path; anything else -> realtime capture
+  if(!_expNoFast && window.VideoEncoder && window.VideoFrame && window.EncodedVideoChunk
+      && window.ttOfflineSpectrum && typeof MessageChannel !== 'undefined'){
+    if(await exportVideoFast(t, ov, btn, lbl0)) return;
+  }
+  if(!('captureStream' in HTMLCanvasElement.prototype) || !window.MediaRecorder){
+    toast('Canvas recording not supported in this browser', true); return; }
   btn.disabled = true; btn.textContent = 'Preparing...';
   let ren = null, dest = null, src = null, stream = null;
   try{
@@ -727,29 +906,12 @@ async function exportVideo(){
     const buf = await dactx.decodeAudioData(await resp.arrayBuffer());
     let cimg = null;
     if(COVER){ try{ cimg = await expLoadImage(COVER); }catch(e){ cimg = null; } }
-    const cs = getComputedStyle(document.documentElement);
-    const cv = (n, d) => (cs.getPropertyValue(n).trim() || d);
     const playRef = {on: false, at: 0, dur: buf.duration || 1, ended: false};
     const dims = REEL_DIMS[reelAspect] || REEL_DIMS['9:16'];
-    ren = ttExportRender({
-      w: dims[0], h: dims[1],
-      getAnalyser: () => danalyser,
-      skin: ov.classList.contains('cassette-mode') ? 'cassette' : 'vinyl',
-      coverImg: cimg, producer: PRODUCER,
-      accent: cv('--accent', '#c9a227'), txt: cv('--txt', '#e8e4da'), dim: cv('--dim', '#9a9aa2'),
-      fontDisplay: cv('--font-display', 'Georgia,serif'),
-      hueOverride: () => window.__fxHue,
-      fxOn: n => !ov.classList.contains('off-' + n),
-      isPlaying: () => playRef.on,
-      getProgress: () => playRef.ended ? 1
-        : (playRef.on ? Math.max(0, Math.min(1, (dactx.currentTime - playRef.at)/playRef.dur)) : 0),
-      track: { name: t.name || '',
-        tag: reelTag(),
-        hook: [t.name, (t.genre && t.genre !== 'unknown') ? t.genre : '', t.bpm ? t.bpm + ' BPM' : '']
-          .filter(Boolean).join(' \u00b7 '),
-        meta: [PRODUCER, t.bpm ? t.bpm + ' BPM' : '', (t.genre && t.genre !== 'unknown') ? t.genre : '']
-          .filter(Boolean).join(' \u00b7 ') },
-    });
+    ren = ttExportRender(expRenderCfg(t, ov, cimg, dims, 60,
+      () => playRef.on,
+      () => playRef.ended ? 1
+        : (playRef.on ? Math.max(0, Math.min(1, (dactx.currentTime - playRef.at)/playRef.dur)) : 0)));
     dest = dactx.createMediaStreamDestination();
     danalyser.connect(dest);  // the analyser passes audio through - the recorder hears what the speakers hear
     src = dactx.createBufferSource(); src.buffer = buf; src.connect(danalyser);

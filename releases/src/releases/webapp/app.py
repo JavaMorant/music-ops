@@ -489,6 +489,77 @@ def create_app(config: AppConfig) -> FastAPI:
             background=BackgroundTask(lambda: os.path.exists(mp4) and os.unlink(mp4)),
         )
 
+    def _mux_h264(data: bytes, audio_path: str, fps: int, lead_ms: int, tail_ms: int,
+                  dur_ms: int) -> str:
+        """ffmpeg: raw annex-B H.264 + the beat's audio → one mp4 (video stream
+        copied, audio AAC). Runs in a threadpool. Returns the mp4 path.
+
+        The browser's offline export renders the title card over the first
+        0.35s of video and the outro card into the tail, so the audio is
+        delayed by ``lead_ms`` and padded with ``tail_ms`` of silence — the
+        same alignment the realtime recording gets from src.start(now+0.35).
+        Explicit -map keeps ffmpeg off any embedded cover-art video stream in
+        the audio file (mp3 APIC would otherwise win "best video"). ``-t``
+        (the exact rendered duration, known client-side) trims instead of
+        ``-shortest``: a raw annex-B stream carries no timestamps, and the mp4
+        muxer's -shortest then drops the WHOLE audio stream (verified)."""
+        fdh, h264 = tempfile.mkstemp(suffix=".h264"); os.close(fdh)
+        fdm, mp4 = tempfile.mkstemp(suffix=".mp4"); os.close(fdm)
+        Path(h264).write_bytes(data)
+        af = f"adelay={lead_ms}:all=1,apad=pad_dur={tail_ms}ms"
+        cut = ["-t", f"{dur_ms / 1000:.3f}"] if dur_ms > 0 else []
+        try:
+            subprocess.run(
+                ["ffmpeg", "-v", "error", "-f", "h264", "-r", str(fps), "-i", h264,
+                 "-i", audio_path, "-map", "0:v:0", "-map", "1:a:0",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", af,
+                 *cut, "-movflags", "+faststart", "-y", mp4],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            if os.path.exists(mp4):
+                os.unlink(mp4)
+            raise HTTPException(500, f"ffmpeg mux failed: {e.stderr.strip()[-600:]}")
+        finally:
+            if os.path.exists(h264):
+                os.unlink(h264)
+        return mp4
+
+    @app.post("/api/mux", dependencies=[Depends(guard_origin)])
+    async def mux(request: Request, id: str, fps: int = 60, lead_ms: int = 350,
+                  tail_ms: int = 0, dur_ms: int = 0):
+        """Mux the browser's WebCodecs-encoded video (raw annex-B H.264 request
+        body) with the track's audio into an mp4 — the server half of the
+        offline fast export. The id is re-validated exactly like /api/audio."""
+        from .. import preview as previewmod
+        c = conn()
+        abspath = _resolve(c, id)  # 404 on unknown/forged/stale ids
+        if Path(abspath).suffix.lower() not in orgmod.AUDIO_EXTS:
+            raise HTTPException(404, "not an audio file")
+        fps = max(1, min(fps, 240))
+        lead_ms = max(0, min(lead_ms, 10_000))
+        tail_ms = max(0, min(tail_ms, 30_000))
+        dur_ms = max(0, min(dur_ms, 20 * 60 * 1000))  # 0 = no trim (streams ~equal anyway)
+        limit = 800 * 1024 * 1024
+        try:
+            declared = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            declared = 0
+        if declared > limit:
+            raise HTTPException(413, "video too large (max 800 MB)")
+        data = await request.body()
+        if not data:
+            raise HTTPException(400, "empty upload")
+        if len(data) > limit:
+            raise HTTPException(413, "video too large (max 800 MB)")
+        if not previewmod.has_ffmpeg():
+            raise HTTPException(400, "ffmpeg required to make an mp4")
+        mp4 = await run_in_threadpool(_mux_h264, data, abspath, fps, lead_ms, tail_ms, dur_ms)
+        return FileResponse(
+            mp4, media_type="video/mp4", filename="reel.mp4",
+            background=BackgroundTask(lambda: os.path.exists(mp4) and os.unlink(mp4)),
+        )
+
     @app.get("/api/runs")
     def runs():
         out = []

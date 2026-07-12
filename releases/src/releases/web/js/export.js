@@ -96,6 +96,12 @@ function ttExportRender(cfg){
   var rot = 0, reelRot = 0, armA = 8;
   var sparks = [], embers = [], smoke = [], bokeh = [], dust = [];
   var running = false, raf = 0, lastNow = 0, startT = 0, endedAt = 0;
+  // DRIVEN mode (offline fast export): the caller walks frames one by one via
+  // renderFrame(frameIdx, freqBytes) on a synthetic clock, injecting precomputed
+  // spectrum bytes instead of reading a live analyser. Same frame() end to end -
+  // the drawing code is never duplicated, so the two paths cannot diverge.
+  var FPS = cfg.fps || 60;
+  var driven = false, drivenNow = 0, drivenBytes = null;
 
   // hue seeded from the cover art, like the live deck
   (function seedHue(){
@@ -660,16 +666,25 @@ function ttExportRender(cfg){
     } else { raf = requestAnimationFrame(frame); }
   }
   function frame(now){
-    if(!running) return;
-    schedule();
+    if(!driven){
+      if(!running) return;
+      schedule();
+    }
     var dt = lastNow ? Math.min(0.05, (now - lastNow)/1000) : 0.016;
     lastNow = now;
     idleT += dt;
     playingNow = cfg.isPlaying ? !!cfg.isPlaying() : false;
-    // analyser -> bass / energy / kick (turntable.js math)
-    var an = cfg.getAnalyser ? cfg.getAnalyser() : null, bass = 0, energy = 0, i;
-    if(an){ if(!dataArr || dataArr.length !== an.frequencyBinCount) dataArr = new Uint8Array(an.frequencyBinCount);
-      an.getByteFrequencyData(dataArr);
+    // analyser -> bass / energy / kick (turntable.js math). Driven mode swaps
+    // ONLY the byte source (injected offline FFT vs live AnalyserNode).
+    var bass = 0, energy = 0, i, fresh = false;
+    if(driven){
+      if(drivenBytes){ dataArr = drivenBytes; fresh = true; }
+    } else {
+      var an = cfg.getAnalyser ? cfg.getAnalyser() : null;
+      if(an){ if(!dataArr || dataArr.length !== an.frequencyBinCount) dataArr = new Uint8Array(an.frequencyBinCount);
+        an.getByteFrequencyData(dataArr); fresh = true; }
+    }
+    if(fresh){
       for(i = 0; i < 5; i++) bass += dataArr[i]; bass /= 1275;
       for(i = 0; i < dataArr.length; i++) energy += dataArr[i]; energy /= dataArr.length*255; }
     curEnergy = energy;
@@ -732,7 +747,20 @@ function ttExportRender(cfg){
     startT = performance.now(); lastNow = 0; schedule(); }
   function stop(){ running = false; if(raf) cancelAnimationFrame(raf); raf = 0;
     if(bgTimer) clearTimeout(bgTimer); bgTimer = 0; }
-  function setEnded(){ if(!endedAt) endedAt = performance.now(); }
+  function setEnded(){ if(!endedAt) endedAt = driven ? drivenNow : performance.now(); }
+  function renderFrame(frameIdx, freqBytes){
+    // DRIVEN mode: synthetic clock now = startT + frameIdx*(1000/fps), fixed
+    // dt = 1/fps, spectrum bytes injected by the caller. Title card timing
+    // (now - startT) and the outro (setEnded -> endedAt) behave exactly like
+    // the realtime recording, just off the wall clock.
+    driven = true;
+    if(!startT){ startT = 10000; }                       // any epoch > 0 works
+    if(frameIdx === 0) lastNow = startT - 1000/FPS;      // first dt is exactly 1/fps
+    drivenNow = startT + frameIdx*(1000/FPS);
+    drivenBytes = freqBytes || null;
+    frame(drivenNow);
+    drivenBytes = null;
+  }
 
-  return {canvas: canvas, start: start, stop: stop, setEnded: setEnded};
+  return {canvas: canvas, start: start, stop: stop, setEnded: setEnded, renderFrame: renderFrame};
 }

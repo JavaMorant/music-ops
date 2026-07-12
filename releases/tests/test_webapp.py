@@ -12,6 +12,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from releases import db as dbmod  # noqa: E402
+from releases.preview import has_ffmpeg  # noqa: E402
 from releases.scan import scan  # noqa: E402
 from releases.webapp.app import create_app  # noqa: E402
 from releases.webapp.state import AppConfig  # noqa: E402
@@ -267,6 +268,70 @@ class TestExport:
     def test_tomp4_rejects_empty(self, client):
         c, _ = client
         assert c.post("/api/tomp4", content=b"", headers={"Content-Type": "video/webm"}).status_code == 400
+
+    def test_mux_unknown_id_404(self, client):
+        # /api/mux re-validates the track id exactly like /api/audio — a forged
+        # or stale id can never pull audio from outside Track List
+        c, _ = client
+        r = c.post("/api/mux?id=deadbeef&fps=60&lead_ms=350&tail_ms=500",
+                   content=b"\x00\x00\x00\x01e",
+                   headers={"Content-Type": "application/octet-stream"})
+        assert r.status_code == 404
+
+    def test_mux_rejects_empty_body(self, client):
+        c, _ = client
+        tid = _tracks(c)[0]["id"]
+        r = c.post(f"/api/mux?id={tid}", content=b"",
+                   headers={"Content-Type": "application/octet-stream"})
+        assert r.status_code == 400
+
+    @pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg not installed")
+    def test_mux_roundtrip_video_plus_audio(self, tmp_path):
+        # real round-trip: a tiny annex-B H.264 stream POSTed for a real (sine)
+        # track comes back as an mp4 holding BOTH a video and an audio stream
+        import shutil as _sh
+        import subprocess
+        if not _sh.which("ffprobe"):
+            pytest.skip("ffprobe not installed")
+        root = tmp_path / "projects"
+        tld = root / "Beats" / "Tracks" / "Track List"
+        tld.mkdir(parents=True)
+        wav = tld / "beat.wav"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-f", "lavfi",
+             "-i", "sine=frequency=220:duration=2", "-y", str(wav)],
+            check=True,
+        )
+        db = tmp_path / "index.db"
+        dbmod.upsert_projects(dbmod.connect(db), scan(root))
+        cfg = AppConfig(library_root=root, db_path=db, runs_dir=tmp_path / "runs")
+        c = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
+        tid = c.get("/api/tracks").json()["tracks"][0]["id"]
+        h264 = tmp_path / "v.h264"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-f", "lavfi",
+             "-i", "testsrc=duration=1:size=320x240:rate=30",
+             "-c:v", "libx264", "-f", "h264", "-y", str(h264)],
+            check=True,
+        )
+        r = c.post(f"/api/mux?id={tid}&fps=30&lead_ms=350&tail_ms=500&dur_ms=1000",
+                   content=h264.read_bytes(),
+                   headers={"Content-Type": "application/octet-stream"})
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "video/mp4"
+        assert b"ftyp" in r.content[:32]  # a real mp4 container
+        out = tmp_path / "out.mp4"
+        out.write_bytes(r.content)
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration",
+             "-of", "csv=p=0", str(out)],
+            capture_output=True, text=True, check=True,
+        )
+        rows = [ln.split(",") for ln in probe.stdout.split()]
+        kinds = {rw[0] for rw in rows}
+        assert kinds == {"video", "audio"}  # muxed, not video-only
+        # dur_ms trimmed the (2s beat + lead + pad) audio to the 1s video length
+        assert all(float(rw[1]) <= 1.2 for rw in rows if len(rw) > 1)
 
 
 class TestDeck:
@@ -527,3 +592,47 @@ class TestOneClickExport:
         ex = c.get("/static/js/export.js").text
         assert "track.tag" in ex                            # tag drawn into the frame
         assert "document.hidden" in ex                      # keeps rendering when the tab is hidden
+
+    def test_fast_export_webcodecs_pipeline(self, client):
+        # the offline fast path: WebCodecs feature-detected, MessageChannel-paced
+        # (not throttled in hidden tabs), backpressure-aware, muxed on the server;
+        # the realtime captureStream recorder stays as the automatic fallback.
+        c, _ = client
+        js = c.get("/static/js/app.js").text
+        assert "window.VideoEncoder" in js and "window.VideoFrame" in js  # feature detect
+        assert "isConfigSupported" in js                    # config probed, never assumed
+        assert "'avc1.640028'" in js and "'avc1.42e028'" in js  # codec fallback ladder
+        assert "avc: {format: 'annexb'}" in js              # raw annex-B for the server mux
+        assert "new MessageChannel()" in js                 # pacing survives hidden tabs
+        assert "encodeQueueSize" in js                      # encoder backpressure respected
+        assert "renderFrame" in js and "ttOfflineSpectrum" in js  # driven renderer + offline FFT
+        assert "'/api/mux?id='" in js and "lead_ms=" in js  # server mux with the 0.35s lead
+        assert "x realtime'" in js                          # measured speed in the overlay
+        assert "captureStream" in js                        # realtime fallback retained
+        fast = js.split("async function exportVideoFast")[1].split("async function exportVideo(")[0]
+        assert "getDisplayMedia" not in fast                # fast path never screen-shares
+
+    def test_export_renderer_driven_mode(self, client):
+        # DRIVEN mode: the offline exporter re-uses the exact same frame() as the
+        # realtime path (no duplicated draw code), on a synthetic frame clock
+        c, _ = client
+        ex = c.get("/static/js/export.js").text
+        assert "function renderFrame" in ex
+        assert "renderFrame: renderFrame" in ex             # exposed in the returned API
+        assert "drivenBytes" in ex                          # injected spectrum, not the analyser
+        assert ex.count("function frame(") == 1             # one frame loop for both modes
+        assert "requestAnimationFrame(frame)" in ex         # realtime rAF path untouched
+        assert ex.isascii()
+
+    def test_offline_spectrum_module_served(self, client):
+        c, _ = client
+        page = c.get("/").text
+        assert "/static/js/offline.js" in page              # loaded by the app page
+        r = c.get("/static/js/offline.js")
+        assert r.status_code == 200
+        js = r.text
+        assert "function ttOfflineSpectrum" in js
+        assert "0.42" in js and "0.08" in js                # Blackman window (Web Audio flavour)
+        assert "getChannelData" in js                       # works from the decoded AudioBuffer
+        assert "leadSec" in js                              # reproduces the 0.35s audio lead-in
+        assert js.isascii()
