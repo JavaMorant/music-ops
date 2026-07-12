@@ -53,6 +53,8 @@ def _step(x: int, y: int) -> int:
 
 def harmonic(a: Camelot | None, b: Camelot | None, *, rising: bool = False,
              mode: str = "loose") -> float:
+    if mode == "off":
+        return 0.5                                   # harmonic scoring disabled entirely
     if a is None or b is None:
         return 0.5                                   # never punish missing data
     if a == b:

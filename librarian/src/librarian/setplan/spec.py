@@ -13,6 +13,8 @@ _ARCS: dict[str, list[tuple[float, float]]] = {
     "journey": [(0.0, 0.30), (0.3, 0.80), (0.5, 0.55), (0.8, 0.90), (1.0, 0.70)],
 }
 
+ARC_NAMES = tuple(_ARCS)  # public: valid --arc values (CLI validates against this)
+
 
 @dataclass
 class GigSpec:

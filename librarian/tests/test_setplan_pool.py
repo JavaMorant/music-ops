@@ -35,3 +35,14 @@ def test_build_pool_reads_tags_and_joins_history(tmp_path, monkeypatch):
     assert by["x"].plays == 1 and by["x"].position_prior == 0.0
     assert by["y"].bpm is None and by["y"].camelot is None      # unknown, not guessed
     assert follows[norm("A - x")][norm("B - y")] == 1
+
+
+def test_to_bpm_rejects_zero_nan_inf():
+    # TBPM "0" / "nan" / "inf" are not tempos: unknown (None), never a crash
+    # in the scorer's divide-by-bpm or a nan-scrambled sort.
+    from librarian.setplan.pool import _to_bpm
+    assert _to_bpm("0") is None
+    assert _to_bpm("nan") is None
+    assert _to_bpm("inf") is None
+    assert _to_bpm("-120") is None
+    assert _to_bpm("120.5") == 120.5

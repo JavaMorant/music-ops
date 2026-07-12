@@ -22,6 +22,7 @@ class Slot:
 class SetPlan:
     spec: GigSpec
     slots: list
+    unmatched: list = field(default_factory=list)   # opener/must queries that matched nothing
 
 
 def _in_block(genre: str, block: str | None, adjacency: dict) -> bool:
@@ -62,11 +63,20 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None, adjacency: dict 
     n = spec.n_slots()
     # Anchors: opener at slot 0, must-plays spread across the peak region.
     anchors: dict[int, object] = {}
+    unmatched: list[str] = []
     if spec.opener:
         m = _match(spec.opener, pool)
         if m:
             anchors[0] = m
-    musts = [m for q in spec.must_play if (m := _match(q, pool))]
+        else:
+            unmatched.append(spec.opener)
+    musts = []
+    for q in spec.must_play:
+        m = _match(q, pool)
+        if m:
+            musts.append(m)
+        else:
+            unmatched.append(q)          # silent drops are the worst gig failure — surface them
     for j, m in enumerate(musts):
         preferred = min(n - 1, int(n * 0.5) + j)     # aim for the peak plateau
         # Nearest free slot: forward from the preferred slot, then backward.
@@ -124,4 +134,4 @@ def build_set(pool, spec: GigSpec, follows: dict | None = None, adjacency: dict 
         recent_artists.append(best.artist)
         prev = best
         clock += (best.length_s or 180.0) * 0.55 / 60.0
-    return SetPlan(spec=spec, slots=slots)
+    return SetPlan(spec=spec, slots=slots, unmatched=unmatched)

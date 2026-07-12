@@ -76,3 +76,13 @@ def test_parse_journey_string():
     assert _parse_journey("amapiano:60,afrobeats:40") == [("amapiano", 0.6), ("afrobeats", 0.4)]
     assert _parse_journey("") == []
     assert _parse_journey("house") == [("house", 1.0)]
+
+
+def test_unmatched_must_and_opener_are_reported():
+    # A typo'd must-play must never vanish silently — it surfaces on the plan.
+    spec = GigSpec(minutes=30, journey=[("amapiano", 1.0)],
+                   must_play=["No Such Track"], opener="Ghost Opener")
+    plan = build_set(_pool(20), spec)
+    assert "No Such Track" in plan.unmatched
+    assert "Ghost Opener" in plan.unmatched
+    assert len(plan.slots) == spec.n_slots()   # the set still builds

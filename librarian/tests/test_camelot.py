@@ -26,3 +26,9 @@ def test_harmonic_table():
     assert C.harmonic((8, "A"), (2, "A")) == 0.10           # far
     assert C.harmonic(None, (8, "A")) == 0.5                # unknown -> neutral
     assert C.harmonic((8, "A"), None) == 0.5
+
+
+def test_harmonic_mode_off_is_neutral():
+    # "off" disables the component entirely — same key and clashing key alike.
+    assert C.harmonic((8, "A"), (8, "A"), mode="off") == 0.5
+    assert C.harmonic((8, "A"), (2, "A"), mode="off") == 0.5

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,9 +48,12 @@ class Candidate:
 
 def _to_bpm(s: str | None) -> float | None:
     try:
-        return float(s) if s else None
+        v = float(s) if s else None
     except ValueError:
         return None
+    # TBPM "0" (common untagged convention), "nan" and "inf" are not tempos —
+    # treat as unknown rather than crash the scorer or scramble the sort.
+    return v if v is not None and math.isfinite(v) and v > 0 else None
 
 
 def history_stats(sessions: list[list[str]]) -> tuple[dict, dict, dict]:

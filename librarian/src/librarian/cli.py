@@ -274,10 +274,16 @@ def setplan(
 
     Read-only: reads tags + rekordbox/USB play history, writes a plan and exports. Moves nothing.
     """
-    from .setplan.spec import GigSpec
+    from .setplan.spec import ARC_NAMES, GigSpec
     from .setplan.pool import build_pool
     from .setplan.search import build_set
     from .setplan.export import to_m3u8, to_markdown
+
+    if arc not in ARC_NAMES:
+        raise typer.BadParameter(f"unknown arc {arc!r} — one of: {', '.join(ARC_NAMES)}",
+                                 param_hint="--arc")
+    if harmonic not in ("strict", "loose", "off"):
+        raise typer.BadParameter("must be strict, loose or off", param_hint="--harmonic")
 
     root = library_root.absolute()
     # Best-effort history: read every mounted CDJ stick; degrade to none if unavailable.
@@ -296,6 +302,9 @@ def setplan(
     typer.echo(f"Prepping {minutes}min {arc} set from {root} · history: {len(sessions)} past set(s)")
     cands, follows = build_pool(root, sessions=sessions)
     plan = build_set(cands, spec, follows=follows)
+    for q in plan.unmatched:
+        typer.secho(f"⚠ no match for {q!r} — not in the candidate pool "
+                    "(check spelling; it may be filtered by genre or bitrate)", fg="yellow")
     if not plan.slots:
         typer.secho("No candidates matched — loosen the journey/BPM filters.", fg="yellow")
         raise typer.Exit(1)
