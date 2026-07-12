@@ -172,3 +172,14 @@ def test_beam_multistep_lookahead_beats_greedy():
     assert b_h > g_h                      # STRICT: multi-step lookahead must win
     assert b_h >= 0.85
     assert beam.slots[2].candidate.title == "Six"
+
+
+def test_parse_bpm_range():
+    import pytest, typer
+    from librarian.cli import _parse_bpm_range
+    assert _parse_bpm_range("108-128") == (108, 128)
+    assert _parse_bpm_range("") is None
+    with pytest.raises(typer.BadParameter):
+        _parse_bpm_range("fast")
+    with pytest.raises(typer.BadParameter):
+        _parse_bpm_range("128-108")

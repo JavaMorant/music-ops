@@ -21,3 +21,8 @@ def test_genre_block_at_splits_by_fraction():
     assert genre_block_at(s, 0.1) == "amapiano"
     assert genre_block_at(s, 0.8) == "afrobeats"
     assert genre_block_at(GigSpec(minutes=60), 0.5) is None
+
+
+def test_parse_journey_moved_public():
+    from librarian.setplan.spec import parse_journey
+    assert parse_journey("amapiano:60,afrobeats:40") == [("amapiano", 0.6), ("afrobeats", 0.4)]

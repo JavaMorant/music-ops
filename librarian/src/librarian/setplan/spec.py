@@ -46,6 +46,24 @@ def target_percentile(arc: str, t: float) -> float:
     return anchors[-1][1]
 
 
+def parse_journey(s: str) -> list[tuple[str, float]]:
+    """'amapiano:60,afrobeats:40' -> [('amapiano',0.6),('afrobeats',0.4)]; 'house' -> [('house',1.0)]."""
+    s = (s or "").strip()
+    if not s:
+        return []
+    parts = []
+    for chunk in s.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" in chunk:
+            name, pct = chunk.rsplit(":", 1)
+            parts.append((name.strip(), float(pct) / 100.0))
+        else:
+            parts.append((chunk, 1.0))
+    return parts
+
+
 def genre_block_at(spec: GigSpec, t: float) -> str | None:
     if not spec.journey:
         return None
