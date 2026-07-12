@@ -214,7 +214,7 @@ function render() {
       ? `<details class="alts"><summary>${s.alternates.length} alternates</summary>` +
         s.alternates.map(a =>
           `<div class="why">↳ ${esc(a.candidate.artist)} — ${esc(a.candidate.title)} · ${esc(a.reason)}
-             <button class="btn" onclick="swap(${s.index}, '${esc(a.candidate.path)}')">use</button></div>`).join("") +
+             <button class="btn" data-swap-i="${s.index}" data-swap-path="${esc(a.candidate.path)}">use</button></div>`).join("") +
         `</details>` : "";
     return `<div class="slot${anchor ? " anchor" : ""}">
       <span class="n">${s.index + 1}</span><span class="clock">+${Math.round(s.clock_min)}m</span>
@@ -229,9 +229,9 @@ function render() {
     <div class="toolbar">
       <span class="pill">plan ${esc(PLAN.id)}</span>
       <button class="btn" onclick="reroll(null)">Reroll (respect locks)</button>
-      <a class="btn" href="/api/setplan/${PLAN.id}/export?fmt=m3u8">m3u8</a>
-      <a class="btn" href="/api/setplan/${PLAN.id}/export?fmt=md">markdown</a>
-      <a class="btn" href="/api/setplan/${PLAN.id}/export?fmt=xml">rekordbox xml</a>
+      <a class="btn" href="/api/setplan/${esc(PLAN.id)}/export?fmt=m3u8">m3u8</a>
+      <a class="btn" href="/api/setplan/${esc(PLAN.id)}/export?fmt=md">markdown</a>
+      <a class="btn" href="/api/setplan/${esc(PLAN.id)}/export?fmt=xml">rekordbox xml</a>
     </div>
     <div class="panel" style="padding:0">${rows}</div>`;
 }
@@ -241,6 +241,11 @@ async function swap(i, path) {
     headers:{"Content-Type":"application/json"}, body: JSON.stringify({locks: l})});
   if (r.ok) { PLAN = (await r.json()).plan; render(); }
 }
+// Delegated: swap buttons carry data-* payloads — never build JS source from data (XSS).
+document.getElementById("spOut").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-swap-i]");
+  if (b) swap(+b.dataset.swapI, b.dataset.swapPath);
+});
 </script>
 </body>
 </html>

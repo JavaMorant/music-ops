@@ -75,3 +75,11 @@ def test_setplan_page_served_and_navs_link_it(tmp_path):
     assert "--raised" in r.text                      # design tokens present
     for page in ("/", "/pulse.html", "/dedupe.html"):
         assert "setplan.html" in client.get(page).text
+
+
+def test_setplan_page_has_no_js_string_sinks(tmp_path):
+    # XSS regression guard: no JS source built from interpolated data (review PoC).
+    client, root = _client(tmp_path)
+    page = client.get("/setplan.html").text
+    assert 'onclick="swap(' not in page
+    assert "data-swap-path" in page and "data-swap-i" in page
