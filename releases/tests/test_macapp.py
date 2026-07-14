@@ -41,6 +41,7 @@ def test_build_app_bundle_structure(tmp_path):
     assert "open " in sh                              # default-browser fallback
     assert "PIDFILE" in sh and "kill" in sh           # stale server always replaced
     assert "curl" in sh                               # waits for the server to come up
+    assert "/opt/homebrew/bin" in sh                  # Finder apps lack the shell PATH; ffmpeg must resolve
 
 
 def test_build_app_no_artist_omits_flag(tmp_path):
