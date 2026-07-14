@@ -951,6 +951,22 @@ def web(
           cover_src=cover.resolve() if cover else None)
 
 
+@app.command()
+def macapp(
+    dest: Annotated[Path, typer.Option("--dest", help="Where to install the .app")] = Path.home() / "Applications",
+    port: Annotated[int, typer.Option("--port", help="Localhost port the app serves on")] = 8765,
+    artist: Annotated[str, typer.Option("--artist", help="Your name/alias, passed to the web app")] = "",
+) -> None:
+    """Install a double-clickable Mac app for the Track List web app: launching
+    it (re)starts the server from this repo's venv and opens its own window —
+    no terminal, never a stale server."""
+    from . import macapp as mac
+    dest.mkdir(parents=True, exist_ok=True)
+    bundle = mac.build_app(dest, port=port, artist=artist)
+    typer.secho(f"Installed {bundle}", fg="green")
+    typer.echo("Double-click it in Finder (or Spotlight 'releases'). It always serves the code currently on disk.")
+
+
 @app.command("pack")
 def pack_cmd(
     name: Annotated[str, typer.Argument(help="Pack name, e.g. \"Trap Pack June\"")],
