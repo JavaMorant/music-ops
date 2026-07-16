@@ -581,6 +581,17 @@ class TestOneClickExport:
         css = c.get("/static/css/app.css").text
         assert ".exportov" in css and ".exportstatus" in css
 
+    def test_batch_export_and_save_destination(self, client):
+        # "Export all" queues every beat in the filter; a chosen folder (e.g. an
+        # external SSD) receives each mp4 + its caption .txt, else Downloads.
+        c, _ = client
+        page = c.get("/").text
+        assert 'id="vidallbtn"' in page and 'id="ro-savedir"' in page
+        js = c.get("/static/js/app.js").text
+        assert "exportAllVideos" in js and "showDirectoryPicker" in js
+        assert "createWritable" in js               # writes straight into the picked folder
+        assert "captionText" in js                  # caption saved beside each video
+
     def test_export_tag_caption_and_background_render(self, client):
         # producer tag on the video + generated caption + hidden-tab render fallback
         c, _ = client

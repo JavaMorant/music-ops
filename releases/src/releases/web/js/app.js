@@ -309,6 +309,7 @@ function openReelOpts(){
     ch.classList.toggle('off', ov.classList.contains('off-'+ch.dataset.rofx)));
   document.getElementById('ro-hueauto').classList.toggle('off', window.__fxHue!=null);
   document.getElementById('ro-tag').value = reelTag();
+  saveDirLabel();
   document.getElementById('ro-crewrow').style.display = stemMode ? '' : 'none';  // dancers only exist in remix
   document.getElementById('ro-crew').classList.toggle('off', !ov.classList.contains('crewreel'));
   applyReelSize();
@@ -373,13 +374,15 @@ function genreTags(g){
   const own = map[g2] || ((g2 && g2 !== 'unknown') ? ['#' + g2.replace(/[^a-z0-9]/g, '')] : []);
   return own.concat(['#beats','#producer','#beatmaker','#typebeat','#newmusic']).slice(0, 8).join(' ');
 }
-function showCaption(t){
-  const lines = [
+function captionText(t){
+  return [
     [t.name, reelTag()].filter(Boolean).join(' — '),
     [t.bpm ? t.bpm + ' BPM' : '', t.key || '', (t.genre && t.genre !== 'unknown') ? t.genre : ''].filter(Boolean).join(' · '),
     genreTags(t.genre),
-  ].filter(Boolean);
-  document.getElementById('captext').value = lines.join('\n');
+  ].filter(Boolean).join('\n');
+}
+function showCaption(t){
+  document.getElementById('captext').value = captionText(t);
   document.getElementById('capcard').classList.add('show');
 }
 function capClose(){ document.getElementById('capcard').classList.remove('show'); }
@@ -694,11 +697,69 @@ function showEndCard(done){
 // the beat, then mp4 (direct, or /api/tomp4 transcode) straight to downloads.
 // The tab-capture exportReel() below stays as a fallback.
 let _exporting = false, _expCtl = null;
+let _batch = null;    // {i, total, saved, cancel} while "Export all" runs
+let _saveDir = null;  // FileSystemDirectoryHandle: exports write here (e.g. an SSD) instead of Downloads
 function expLoadImage(url){ return new Promise(function(res, rej){
   const im = new Image(); im.crossOrigin = 'anonymous';
   im.onload = function(){ res(im); }; im.onerror = function(){ rej(new Error('cover load failed')); };
   im.src = url; }); }
-function expStatus(msg){ const el = document.getElementById('exportstatus'); if(el) el.textContent = msg; }
+function expStatus(msg){ const el = document.getElementById('exportstatus');
+  if(el) el.textContent = (_batch ? 'Beat ' + _batch.i + '/' + _batch.total + ' - ' : '') + msg; }
+// ---- save destination: a folder the user picks once (kept across launches via
+// IndexedDB - directory handles are cloneable); no folder chosen = Downloads ----
+function _idb(){ return new Promise((res, rej) => {
+  const q = indexedDB.open('releases-app', 1);
+  q.onupgradeneeded = () => q.result.createObjectStore('kv');
+  q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function _idbPut(k, v){ const db = await _idb(); return new Promise((res, rej) => {
+  const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k);
+  tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function _idbGet(k){ const db = await _idb(); return new Promise((res, rej) => {
+  const q = db.transaction('kv').objectStore('kv').get(k);
+  q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+function saveDirLabel(){
+  const b = document.getElementById('ro-savedir');
+  if(b) b.textContent = _saveDir ? _saveDir.name : 'Downloads';
+}
+async function chooseSaveDir(){
+  if(!window.showDirectoryPicker){ toast('Choosing a folder needs Chrome', true); return; }
+  try{
+    _saveDir = await showDirectoryPicker({mode: 'readwrite'});
+    _idbPut('saveDir', _saveDir).catch(() => {});
+    saveDirLabel(); toast('Exports will save to "' + _saveDir.name + '"');
+  }catch(e){}  // picker dismissed
+}
+function clearSaveDir(){ _saveDir = null; _idbPut('saveDir', null).catch(() => {}); saveDirLabel(); toast('Exports will go to Downloads'); }
+async function ensureSaveDirPerm(){  // call from a click - permission prompts need a user gesture
+  if(!_saveDir) return true;
+  try{
+    if(await _saveDir.queryPermission({mode: 'readwrite'}) === 'granted') return true;
+    if(await _saveDir.requestPermission({mode: 'readwrite'}) === 'granted') return true;
+  }catch(e){}
+  toast('No permission for "' + _saveDir.name + '" - saving to Downloads instead', true);
+  return false;
+}
+// write the mp4 (+ its caption as a .txt beside it) into the chosen folder;
+// any problem falls back to a normal browser download. Returns the folder name
+// when it wrote there, '' when it downloaded.
+async function saveOut(blob, fname, caption){
+  if(_saveDir){
+    try{
+      if(await _saveDir.queryPermission({mode: 'readwrite'}) !== 'granted') throw new Error('no permission');
+      const fh = await _saveDir.getFileHandle(fname, {create: true});
+      const w = await fh.createWritable(); await w.write(blob); await w.close();
+      if(caption){
+        const th = await _saveDir.getFileHandle(fname.replace(/\.mp4$/, '') + '.txt', {create: true});
+        const tw = await th.createWritable(); await tw.write(caption); await tw.close();
+      }
+      return _saveDir.name;
+    }catch(e){ toast('Could not write to the folder (' + ((e && e.message) || e) + ') - downloading instead', true); }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+  URL.revokeObjectURL(url);
+  return '';
+}
 // ONE renderer config for both export paths (realtime + offline fast) - only the
 // isPlaying/getProgress drivers differ, so the visuals cannot fork.
 function expRenderCfg(t, ov, cimg, dims, fps, isPlaying, getProgress){
@@ -854,15 +915,13 @@ async function exportVideoFast(t, ov, btn, lbl0){
     if(ctl.cancel) throw cancelled();
     const secs = (performance.now() - t0)/1000;
     const fname = ((t && t.name) || 'reel').replace(/[\\/]/g, '_') + '.mp4';
-    const url = URL.createObjectURL(mp4);
-    const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
-    URL.revokeObjectURL(url);
+    const where = await saveOut(mp4, fname, captionText(t));
     cleanup();
-    expStatus('Saved - check your downloads');
-    toast('Exported ' + fname + ' in ' + secs.toFixed(1) + 's - check your downloads');
-    showCaption(t);  // post text ready to paste alongside the video
+    expStatus('Saved ' + fname);
+    toast('Exported ' + fname + ' in ' + secs.toFixed(1) + 's' + (where ? ' -> ' + where : ' - check your downloads'));
+    if(!_batch) showCaption(t);  // post text ready to paste (batch writes .txt files instead)
     hideOv(1200);
-    return true;
+    return 'saved';
   }catch(e){
     const wasCancel = !!(e && (e.cancelled || e.name === 'AbortError'));
     cleanup();
@@ -876,7 +935,7 @@ async function exportVideoFast(t, ov, btn, lbl0){
       expStatus('Fast export failed');
       toast('Fast export failed: ' + ((e && e.message) || e) + ' - press Export again to record in realtime', true);
     }
-    return true;
+    return wasCancel ? 'cancelled' : 'failed';
   }
 }
 async function exportVideo(){
@@ -887,6 +946,7 @@ async function exportVideo(){
   if(!window.ttExportRender){ toast('Canvas recording not supported in this browser', true); return; }
   const t = DECK[deckCur], ov = document.getElementById('ov'), btn = document.getElementById('vidbtn');
   const lbl0 = btn.textContent;
+  if(_saveDir) await ensureSaveDirPerm();  // re-grant while we still have the click gesture
   // WebCodecs present -> offline fast path; anything else -> realtime capture
   if(!_expNoFast && window.VideoEncoder && window.VideoFrame && window.EncodedVideoChunk
       && window.ttOfflineSpectrum && typeof MessageChannel !== 'undefined'){
@@ -947,12 +1007,10 @@ async function exportVideo(){
           if(!r.ok){ const er = await r.json().catch(()=>({detail:r.statusText})); throw new Error(er.detail); }
           mp4 = await r.blob();
         }
-        const url = URL.createObjectURL(mp4);
-        const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
-        URL.revokeObjectURL(url);
-        expStatus('Saved - check your downloads');
-        toast('Exported ' + fname + ' - check your downloads');
-        showCaption(t);  // post text ready to paste alongside the video
+        const where = await saveOut(mp4, fname, captionText(t));
+        expStatus('Saved ' + fname);
+        toast('Exported ' + fname + (where ? ' -> ' + where : ' - check your downloads'));
+        if(!_batch) showCaption(t);  // post text ready to paste alongside the video
       }catch(err){ expStatus('Export failed'); toast('Export failed: ' + err.message, true); }
       setTimeout(() => {
         document.getElementById('exportov').classList.remove('show');
@@ -990,6 +1048,40 @@ async function exportVideo(){
     btn.textContent = lbl0; btn.disabled = false;
     toast('Export failed: ' + e.message, true);
   }
+}
+// ---- batch: export every beat in the current filter, back-to-back, unattended.
+// Uses the offline fast path only (realtime for a whole list would take hours);
+// picks the save folder up front so a full run needs zero interaction. ----
+async function exportAllVideos(){
+  const btn = document.getElementById('vidallbtn');
+  if(_batch){ _batch.cancel = true; exportVideoStop(); return; }  // second click stops the queue
+  if(_exporting){ toast('An export is already running', true); return; }
+  if(_recording){ toast('Tab recording already running', true); return; }
+  if(stemMode){ toast('Exit remix first - export records the original beats', true); return; }
+  if(!DECK.length){ toast('No beats in this filter', true); return; }
+  const fastOk = !_expNoFast && window.VideoEncoder && window.VideoFrame
+    && window.EncodedVideoChunk && window.ttOfflineSpectrum && typeof MessageChannel !== 'undefined';
+  if(!fastOk){ toast('Export all needs the fast exporter (use Chrome)', true); return; }
+  if(window.showDirectoryPicker && !_saveDir) await chooseSaveDir();  // where should they all go? (e.g. the SSD)
+  await ensureSaveDirPerm();
+  const ov = document.getElementById('ov'), vbtn = document.getElementById('vidbtn');
+  const lbl0 = vbtn.textContent, albl0 = btn ? btn.textContent : '';
+  _batch = {i: 0, total: DECK.length, saved: 0, cancel: false};
+  if(btn) btn.textContent = '■ Stop all';
+  for(let i = 0; i < DECK.length; i++){
+    if(_batch.cancel) break;
+    _batch.i = i + 1;
+    const res = await exportVideoFast(DECK[i], ov, vbtn, lbl0);
+    if(res === 'saved') _batch.saved++;
+    else break;  // cancelled, failed, or no encoder: stop the queue rather than fail 12 times
+    await new Promise(r => setTimeout(r, 350));  // let the overlay settle between beats
+  }
+  const n = _batch.saved, total = _batch.total;
+  const dest = _saveDir ? ' -> ' + _saveDir.name : ' - check your downloads';
+  _batch = null;
+  if(btn) btn.textContent = albl0;
+  toast(n === total ? 'Exported all ' + n + ' beats' + dest
+                    : 'Exported ' + n + ' of ' + total + dest, n !== total);
 }
 // ---- fallback reel export: capture THIS tab (getDisplayMedia) in Clean mode so
 // the recording is EXACTLY the live web render with no UI chrome, + tab audio, then
@@ -1124,3 +1216,4 @@ loadTracks().then(()=>{
   const q = new URLSearchParams(location.search);
   if (q.has('deck')) { openDeck(); if (q.get('skin')==='cassette') deckSkin(); if (q.has('reel')) deckReel(); if (q.has('clean')) deckClean(); }
 }).catch(()=>{});
+_idbGet('saveDir').then(h => { if(h){ _saveDir = h; saveDirLabel(); } }).catch(()=>{});  // restore the export folder

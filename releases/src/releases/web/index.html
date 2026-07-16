@@ -82,6 +82,7 @@
     <div class="sp"></div>
     <button id="remixbtn" onclick="remixToggle()">🎛 Remix</button>
     <button class="primary" id="vidbtn" onclick="exportVideo()" title="One click: records the deck to an mp4 at the chosen aspect (9:16 / 1:1 / 16:9) — no screen share">⬇ Export video</button>
+    <button id="vidallbtn" onclick="exportAllVideos()" title="Export every beat in the current filter, back-to-back, into your chosen folder">⬇ Export all</button>
     <button id="exportbtn" onclick="exportReel()" title="Fallback: capture this tab via screen share">● Record reel</button>
     <button id="cleantgl" onclick="deckClean()">⛶ Clean</button>
     <button id="skintgl" onclick="deckSkin()">Cassette</button>
@@ -131,6 +132,8 @@
         <input type="range" id="ro-hue" min="0" max="360" value="42" oninput="reelHueSet(this.value)"></div></div>
       <div class="reelrow"><span>Tag</span>
         <div class="rofx"><input type="text" id="ro-tag" maxlength="60" oninput="reelTagSet(this.value)" placeholder="prod. @you" aria-label="Producer tag shown on exports"></div></div>
+      <div class="reelrow"><span>Save to</span>
+        <div class="rofx"><button class="fxchip" id="ro-savedir" onclick="chooseSaveDir()" title="Pick any folder — e.g. your external SSD">Downloads</button><button class="fxchip" onclick="clearSaveDir()" title="Back to the browser's Downloads folder">Reset</button></div></div>
       <div class="reelhint">Top buttons hide while you record — press <b>Esc</b> to leave reel mode. The beat starts <b>5 seconds</b> after you press Start, so you have time to hit record in OBS.</div>
       <div class="reelact"><button onclick="cancelReelOpts()">Cancel</button><button class="primary" onclick="startReel()">Start ▶</button></div>
     </div>
