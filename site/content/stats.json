@@ -1,8 +1,8 @@
 {
   "items": [
-    { "value": "120k", "label": "SoundCloud plays" },
-    { "value": "8k", "label": "Monthly listeners" },
-    { "value": "40+", "label": "Shows played" },
-    { "value": "3", "label": "Residencies" }
+    { "value": "20,000", "label": "Tickets a year across BPM & Throwbacks" },
+    { "value": "2,000–5,000", "label": "Crowd sizes" },
+    { "value": "10", "label": "Shows at that scale" },
+    { "value": "2021", "label": "Running Throwbacks since" }
   ]
 }

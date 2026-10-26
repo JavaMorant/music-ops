@@ -1,0 +1,12 @@
+{
+  "note": "Press photo gallery. Files live in public/photos/ (shown on the site) and content/press-kit/photos/ (bundled in the zip). orientation: portrait | landscape | wide.",
+  "items": [
+    { "src": "/photos/03-behind-the-decks-bpm-sign.jpg", "alt": "Dibsss behind the decks under the BPM sign", "orientation": "portrait" },
+    { "src": "/photos/04-mid-set.jpg", "alt": "Dibsss mid-set", "orientation": "portrait" },
+    { "src": "/photos/05-facing-the-crowd.jpg", "alt": "Dibsss facing the crowd", "orientation": "landscape" },
+    { "src": "/photos/06-red-light.jpg", "alt": "Dibsss on the decks in red light", "orientation": "landscape" },
+    { "src": "/photos/07-blue-light.jpg", "alt": "Dibsss in blue light", "orientation": "portrait" },
+    { "src": "/photos/08-crowd-from-the-booth.jpg", "alt": "Crowd from the booth", "orientation": "portrait" },
+    { "src": "/photos/02-facing-the-crowd-wide.jpg", "alt": "Dibsss facing the crowd from the booth", "orientation": "wide" }
+  ]
+}
