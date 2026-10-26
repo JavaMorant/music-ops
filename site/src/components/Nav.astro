@@ -1,16 +1,20 @@
 ---
 import site from "../../content/site.json";
-import mixes from "../../content/mixes.json";
+import sets from "../../content/sets.json";
+import photos from "../../content/photos.json";
 import productions from "../../content/productions.json";
 import dates from "../../content/dates.json";
+import collab from "../../content/collab.json";
 
 // Only link to sections that actually render (mirror index.astro's gating).
 const links = [
-  mixes.items?.length > 0 && { href: "#mixes", label: "Mixes" },
+  { href: "#about", label: "About" },
+  sets.items?.some((s) => s.embedUrl) && { href: "#sets", label: "Sets" },
+  photos.items?.some((p) => p.src) && { href: "#photos", label: "Photos" },
   productions.items?.some((p) => p.embedUrl || p.link) && { href: "#productions", label: "Productions" },
   (dates.upcoming?.length > 0 || dates.past?.length > 0) && { href: "#dates", label: "Dates" },
   { href: "#booking", label: "Booking" },
-  { href: "#collab", label: "Collab" },
+  Boolean(collab.heading) && { href: "#collab", label: "Collab" },
   { href: "#press", label: "Press kit" },
 ].filter(Boolean);
 ---

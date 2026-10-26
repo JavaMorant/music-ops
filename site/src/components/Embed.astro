@@ -1,9 +1,7 @@
 ---
-// Renders one embed (SoundCloud / Spotify audio, or a YouTube video). `title`
-// shows a visible heading AND names the iframe; `label` names the iframe only
-// (used where the title is already shown elsewhere, e.g. Productions). Provider
-// sets the sizing; if it's missing we infer it from the embed URL host so a
-// Spotify/YouTube embed isn't mis-sized as SoundCloud.
+// Renders one embed (SoundCloud / Mixcloud / Spotify audio, or a YouTube video).
+// `title` shows a visible heading AND names the iframe; `label` names the iframe
+// only. Provider sets the sizing; if it's missing we infer it from the embed URL.
 interface Props {
   title?: string;
   label?: string;
@@ -15,15 +13,17 @@ const provider =
   Astro.props.provider ??
   (/open\.spotify\.com/.test(embedUrl) ? "spotify"
     : /youtube\.com|youtu\.be/.test(embedUrl) ? "youtube"
+    : /mixcloud\.com/.test(embedUrl) ? "mixcloud"
     : "soundcloud");
 const klass =
   provider === "youtube" ? "embed video"
   : provider === "spotify" ? "embed audio-tall"
+  : provider === "mixcloud" ? "embed mixcloud"
   : "embed audio";
 const allow =
   provider === "youtube"
     ? "accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-    : "clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+    : "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
 ---
 <div class={klass}>
   {title && <h3>{title}</h3>}

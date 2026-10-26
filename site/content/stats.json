@@ -1,8 +1,20 @@
 {
   "items": [
-    { "value": "20,000", "label": "Tickets a year across BPM & Throwbacks" },
-    { "value": "2,000–5,000", "label": "Crowd sizes" },
-    { "value": "10", "label": "Shows at that scale" },
-    { "value": "2021", "label": "Running Throwbacks since" }
+    {
+      "value": "20,000",
+      "label": "Tickets a year across BPM & Throwbacks"
+    },
+    {
+      "value": "2k–5k",
+      "label": "Crowd sizes, 2,000 to 5,000"
+    },
+    {
+      "value": "10",
+      "label": "Shows at that scale"
+    },
+    {
+      "value": "2021",
+      "label": "Running Throwbacks since"
+    }
   ]
 }
