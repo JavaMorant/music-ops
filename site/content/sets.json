@@ -1,0 +1,9 @@
+{
+  "note": "Recorded sets. The section is hidden until at least one item has an embedUrl. Paste an EMBED url: SoundCloud (Share -> Embed, copy the src starting https://w.soundcloud.com/player/), Mixcloud (https://player-widget.mixcloud.com/widget/iframe/?feed=...), or YouTube (https://www.youtube.com/embed/VIDEO_ID). provider: soundcloud | mixcloud | youtube.",
+  "items": [
+    { "title": "", "lane": "Rap & hip hop", "provider": "soundcloud", "embedUrl": "" },
+    { "title": "", "lane": "Afrobeats", "provider": "soundcloud", "embedUrl": "" },
+    { "title": "", "lane": "House", "provider": "soundcloud", "embedUrl": "" },
+    { "title": "", "lane": "Crossover anthems", "provider": "soundcloud", "embedUrl": "" }
+  ]
+}

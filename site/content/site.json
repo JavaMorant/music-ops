@@ -1,13 +1,11 @@
 {
   "name": "Dibsss",
-  "tagline": "DJ, selector & producer — amapiano · UK garage · afro house",
-  "location": "London, UK",
+  "tagline": "DJ & event manager — rap & hip hop · Afrobeats · house · crossover anthems",
+  "location": "Scotland",
   "bookingEmail": "awanded75@gmail.com",
   "collabEmail": "awanded75@gmail.com",
-  "seoDescription": "Dibsss — DJ, selector and producer. Amapiano, UK garage and afro house. Mixes, productions, bookings and collabs.",
+  "seoDescription": "Dibsss — multi-genre DJ and event manager based in Scotland. Rap & hip hop, Afrobeats, house and crossover anthems. Bookings, photos and press kit.",
   "socials": [
-    { "label": "Instagram", "url": "https://instagram.com/" },
-    { "label": "SoundCloud", "url": "https://soundcloud.com/" },
-    { "label": "Spotify", "url": "https://open.spotify.com/" }
+    { "label": "Instagram", "url": "https://instagram.com/awandedibidi_" }
   ]
 }
